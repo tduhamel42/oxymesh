@@ -1,0 +1,16 @@
+# Régions MeshCore (repris de loranet) : préréglage radio et portée des inondations.
+# Proposées dans l'écran Settings (docs/spec/ui.md) ; portée : docs/spec/air.md §1.3. Clé de portée = SHA256("#" ‖ scope)[..16].
+#
+# Sources (vérifiées le 2026-11-05) :
+# - https://www.meshcore.fr : 869,618 MHz, BW 62,5 kHz, SF8, CR 8, région par défaut « fr » ;
+# - preset « EU/UK (Narrow) » de https://api.meshcore.nz/api/v1/config ;
+# - MeshCore companion-v1.18.0 : src/helpers/RegionMap.cpp, src/helpers/TransportKeyStore.cpp.
+# 869,4–869,65 MHz : sous-bande g3, 500 mW ERP, 10 % (config/eu868.toml).
+
+[fr]
+name = "France"
+freq_khz = 869618
+bw_hz = 62500
+sf = 8
+cr = 8
+scope = "fr"

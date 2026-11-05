@@ -1,0 +1,11 @@
+/target
+/fuzz/target
+/fuzz/corpus
+/fuzz/artifacts
+/fuzz/coverage
+/firmware/*/target
+node_modules/
+# Sauvegardes et images de flash d'un appareil : elles contiennent la clé privée.
+*.flash.bin
+/local/
+.DS_Store

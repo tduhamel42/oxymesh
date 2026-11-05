@@ -1,0 +1,12 @@
+[package]
+name = "mc-core"
+description = "Types communs sans IO : lecture/écriture d'octets, temps entier, temps d'antenne, budget de duty cycle"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

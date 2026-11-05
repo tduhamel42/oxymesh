@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+# fuzz/ et firmware/ ont leur propre workspace (toolchains différentes).
+exclude = ["fuzz", "firmware"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.97"
+publish = false
+
+[workspace.dependencies]
+# Internes
+mc-core = { path = "crates/mc-core" }
+
+# no_std
+heapless = { version = "0.9", default-features = false }
+rand_core = { version = "0.10", default-features = false }
+
+# std uniquement (simulateur, CLI, tests)
+proptest = "1.12"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+debug = 1
+
+[profile.test]
+opt-level = 1
