@@ -9,3 +9,4 @@ node_modules/
 *.flash.bin
 /local/
 .DS_Store
+/.claude/
