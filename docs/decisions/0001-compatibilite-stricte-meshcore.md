@@ -13,7 +13,7 @@ Tanguy veut un firmware Rust pour son ThinkNode M5 qui remplace le firmware Mesh
 - **Sur l'air** : mêmes octets émis que le firmware C++ dans les mêmes conditions, mêmes trames acceptées (y compris les variantes anciennes encore tolérées par v1.18).
 - **Protocole compagnon** : mêmes réponses, octet pour octet, aux mêmes commandes. Les seules différences permises sont ces **écarts volontaires**, invisibles pour l'app :
   1. la file des messages en attente survit au redémarrage (gardée en flash) ;
-  2. la fréquence est rapportée exacte (`869618` kHz au lieu de `869617`, effet d'une troncature flottante en C++) ;
+  2. la fréquence est rapportée exacte, en kHz entiers. Le C++ la recalcule en `float` (`(uint32)(freq × 1000)`) : vérifié valeur par valeur, le résultat est identique dans les bandes 433-435, 863-870 et 902-928 MHz (le M5 réel renvoie bien 869618), et ne perd 1 kHz que pour environ 1 % des fréquences hors de ces bandes ;
   3. le nom d'un canal dans `CHANNEL_INFO` est complété par des zéros (le C++ y laisse des octets résiduels) ;
   4. pas de troncature des trames de 174 à 176 octets en Bluetooth (MTU d'au moins 179 négociée) ;
   5. le PIN aléatoire est tiré à chaque appairage plutôt qu'à chaque démarrage ;

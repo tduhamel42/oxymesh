@@ -1,0 +1,21 @@
+[package]
+name = "mc-cli"
+description = "Binaire `mc` : interroger un compagnon MeshCore en USB, décoder ce qu'il entend, injecter des trames, éprouver la compatibilité"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "mc"
+path = "src/main.rs"
+
+[dependencies]
+mc-core.workspace = true
+mc-air.workspace = true
+mc-proto.workspace = true
+clap.workspace = true
+serialport.workspace = true
+
+[lints]
+workspace = true

@@ -108,6 +108,13 @@ scripts/ci.sh                         # tout ce que fait la CI (CI_SKIP_FUZZ=1, 
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 scripts/fuzz.sh N [cible…]            # fuzz, N secondes par cible
+python3 -I testdata/air/gen.py > testdata/air/vectors.toml   # vecteurs sur l'air (oracle Python pur)
+(cd testdata/proto && npm ci && node gen.mjs vectors.toml)   # vecteurs compagnon, recoupés avec meshcore.js
+cargo run --release -p mc-cli -- info /dev/cu.wchusbserial120          # interroger un compagnon USB
+cargo run --release -p mc-cli -- sniff /dev/cu.usbmodem141101 --channel '#test'   # trames entendues, décodées
+cargo run --release -p mc-cli -- airtest --ref /dev/cu.usbmodem141101 --dut /dev/cu.wchusbserial120   # mc-air contre un C++, en zéro saut
 ```
+
+Le Heltec sert aussi au bot d'écho de loranet (`ln mc bot`, lancé depuis `../loranet`) : demander à Tanguy avant de l'arrêter, et le relancer ensuite avec la même commande et le même `--state`.
 
 Appareils sur le Mac de Tanguy : Heltec V4 (référence C++) sur `/dev/cu.usbmodem141101`, ThinkNode M5 sur `/dev/cu.wchusbserial120` (pont CH340, pilote WCH installé).

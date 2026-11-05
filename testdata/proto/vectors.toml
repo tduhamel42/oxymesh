@@ -1,0 +1,518 @@
+# Vecteurs du protocole compagnon MeshCore, écrits depuis docs/spec/companion.md.
+# Générés par testdata/proto/gen.mjs, recoupés avec meshcore.js 1.15.0 (oracle indépendant).
+
+[[command]]
+name = "device-query"
+hex = "1603"
+expect = "ok"
+dump = "DEVICE_QUERY app_ver=3"
+
+[[command]]
+name = "app-start"
+hex = "01000000000000006c6e"
+expect = "ok"
+dump = "APP_START reserved=00000000000000 app=\"ln\""
+
+[[command]]
+name = "set-time"
+hex = "064002df6a"
+expect = "ok"
+dump = "SET_DEVICE_TIME 1793000000"
+
+[[command]]
+name = "get-contacts"
+hex = "04"
+expect = "ok"
+dump = "GET_CONTACTS"
+
+[[command]]
+name = "get-contacts-since"
+hex = "0405000000"
+expect = "ok"
+dump = "GET_CONTACTS since=5"
+
+[[command]]
+name = "add-contact"
+hex = "09101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f0100ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006c6e2d313031313132313300000000000000000000000000000000000000000000000000"
+expect = "ok"
+dump = "ADD_UPDATE_CONTACT key=101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f type=1 flags=0 path_len=255 path=00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 name=\"ln-10111213\" last_advert=0"
+
+[[command]]
+name = "reset-path"
+hex = "0d101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f"
+expect = "ok"
+dump = "RESET_PATH key=101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f"
+
+[[command]]
+name = "advert-flood"
+hex = "0701"
+expect = "ok"
+dump = "SEND_SELF_ADVERT flood=true"
+
+[[command]]
+name = "advert-zero-hop"
+hex = "0700"
+expect = "ok"
+dump = "SEND_SELF_ADVERT flood=false"
+
+[[command]]
+name = "txt-msg"
+hex = "0200024002df6a101112131415fe02100901020304050607010102410109e0e1e2e3e4e5e6e7"
+expect = "ok"
+dump = "SEND_TXT_MSG type=0 attempt=2 ts=1793000000 prefix=101112131415 text=fe02100901020304050607010102410109e0e1e2e3e4e5e6e7"
+
+[[command]]
+name = "get-channel"
+hex = "1f27"
+expect = "ok"
+dump = "GET_CHANNEL 39"
+
+[[command]]
+name = "set-channel"
+hex = "20276c6e2d6162636400000000000000000000000000000000000000000000000000404142434445464748494a4b4c4d4e4f"
+expect = "ok"
+dump = "SET_CHANNEL 39 name=\"ln-abcd\" secret=404142434445464748494a4b4c4d4e4f"
+
+[[command]]
+name = "set-channel-clear"
+hex = "2026000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+expect = "ok"
+dump = "SET_CHANNEL 38 name=\"\" secret=00000000000000000000000000000000"
+
+[[command]]
+name = "channel-data"
+hex = "3e27ff4cff100001020304050607010000410000e0e1e2e3e4e5e6e7"
+expect = "ok"
+dump = "SEND_CHANNEL_DATA 39 type=ff4c data=100001020304050607010000410000e0e1e2e3e4e5e6e7"
+
+[[command]]
+name = "sync"
+hex = "0a"
+expect = "ok"
+dump = "SYNC_NEXT_MESSAGE"
+
+[[command]]
+name = "radio"
+hex = "0bf2440d0024f400000808"
+expect = "ok"
+dump = "SET_RADIO_PARAMS freq=869618kHz bw=62500Hz sf=8 cr=8"
+
+[[command]]
+name = "get-scope"
+hex = "40"
+expect = "ok"
+dump = "GET_DEFAULT_FLOOD_SCOPE"
+
+[[command]]
+name = "set-scope"
+hex = "3f66720000000000000000000000000000000000000000000000000000000000e31f97b98d8ac10649b6822bf96d9b09"
+expect = "ok"
+dump = "SET_DEFAULT_FLOOD_SCOPE name=\"fr\" key=e31f97b98d8ac10649b6822bf96d9b09"
+
+[[command]]
+name = "set-scope-none"
+hex = "3f"
+expect = "ok"
+dump = "SET_DEFAULT_FLOOD_SCOPE none"
+
+[[command]]
+name = "get-device-time"
+hex = "05"
+expect = "ok"
+dump = "GET_DEVICE_TIME"
+
+[[command]]
+name = "export-private-key"
+hex = "17"
+expect = "ok"
+dump = "EXPORT_PRIVATE_KEY"
+
+[[command]]
+name = "import-private-key"
+hex = "18202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"
+expect = "ok"
+dump = "IMPORT_PRIVATE_KEY <64 octets>"
+
+[[command]]
+name = "send-raw-packet"
+hex = "4101110000010203040506070809"
+expect = "ok"
+dump = "SEND_RAW_PACKET prio=1 raw=110000010203040506070809"
+
+[[command]]
+name = "channel-data-zero-hop"
+hex = "3e01004cffaa"
+expect = "ok"
+dump = "SEND_CHANNEL_DATA 1 type=ff4c data=aa path=00:"
+
+[[command]]
+name = "channel-data-path"
+hex = "3e02421122334400ff0102"
+expect = "ok"
+dump = "SEND_CHANNEL_DATA 2 type=ff00 data=0102 path=42:11223344"
+
+[[command]]
+name = "remove-contact"
+hex = "0f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f"
+expect = "ok"
+dump = "REMOVE_CONTACT key=808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f"
+
+[[command]]
+name = "send-raw-packet-short"
+hex = "410111"
+expect = "err:Truncated"
+
+[[command]]
+name = "import-private-key-short"
+hex = "18000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e"
+expect = "err:Truncated"
+
+[[command]]
+name = "get-device-time-trailing"
+hex = "0500"
+expect = "err:Length"
+
+[[command]]
+name = "empty"
+hex = ""
+expect = "err:Truncated"
+
+[[command]]
+name = "unknown"
+hex = "99"
+expect = "err:Code"
+
+[[command]]
+name = "txt-no-text"
+hex = "0200004002df6a101112131415"
+expect = "err:Truncated"
+
+[[command]]
+name = "advert-mode-2"
+hex = "0702"
+expect = "err:Value"
+
+[[command]]
+name = "advert-no-mode"
+hex = "07"
+expect = "err:Truncated"
+
+[[command]]
+name = "channel-data-hash-size-4"
+hex = "3e01c1000000004cffaa"
+expect = "err:Value"
+
+[[command]]
+name = "channel-data-path-short"
+hex = "3e010211"
+expect = "err:Truncated"
+
+[[command]]
+name = "channel-data-type-0"
+hex = "3e01ff0000aa"
+expect = "err:Value"
+
+[[command]]
+name = "channel-data-empty"
+hex = "3e01ff4cff"
+expect = "err:Truncated"
+
+[[command]]
+name = "device-query-trailing"
+hex = "160300"
+expect = "err:Length"
+
+[[command]]
+name = "add-contact-short"
+hex = "0910111213141516171819"
+expect = "err:Truncated"
+
+[[command]]
+name = "add-contact-lat-lon"
+hex = "09101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f0100ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006c6e2d3130313131323133000000000000000000000000000000000000000000000000000000000000000000"
+expect = "err:Length"
+
+[[command]]
+name = "set-scope-short"
+hex = "3f66720000000000000000000000000000000000000000000000000000000000"
+expect = "err:Truncated"
+
+[[command]]
+name = "too-long"
+hex = "0200004002df6a1011121314154141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"
+expect = "err:Length"
+
+[[response]]
+name = "ok"
+hex = "00"
+expect = "ok"
+dump = "OK"
+
+[[response]]
+name = "err"
+hex = "0102"
+expect = "ok"
+dump = "ERR 2"
+
+[[response]]
+name = "contacts-start"
+hex = "0203000000"
+expect = "ok"
+dump = "CONTACTS_START total=3"
+
+[[response]]
+name = "contact"
+hex = "03808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f020102aabb000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000052656c61792d31000000000000000000000000000000000000000000000000000402df6a267ee9025ee423002202df6a"
+expect = "ok"
+dump = "CONTACT key=808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f type=2 flags=1 path_len=2 name=\"Relay-1\" last_advert=1792999940 lat=48856614 lon=2352222 lastmod=1792999970"
+
+[[response]]
+name = "contact-ext"
+hex = "03808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f020102aabb000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000052656c61792d31000000000000000000000000000000000000000000000000000402df6a267ee9025ee423002202df6a0102"
+expect = "ok"
+dump = "CONTACT key=808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f type=2 flags=1 path_len=2 name=\"Relay-1\" last_advert=1792999940 lat=48856614 lon=2352222 lastmod=1792999970 ext=0102"
+
+[[response]]
+name = "end-of-contacts"
+hex = "042202df6a"
+expect = "ok"
+dump = "END_OF_CONTACTS lastmod=1792999970"
+
+[[response]]
+name = "self-info"
+hex = "05011616101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f000000000000000000000000f2440d0024f4000008084d657368436f72652d63646466"
+expect = "ok"
+dump = "SELF_INFO type=1 tx=22/22 key=101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f lat=0 lon=0 manual_add=0 freq=869618kHz bw=62500Hz sf=8 cr=8 name=\"MeshCore-cddf\""
+
+[[response]]
+name = "sent"
+hex = "0600deadbeef88130000"
+expect = "ok"
+dump = "SENT flood=false ack=deadbeef timeout=5000ms"
+
+[[response]]
+name = "sent-flood"
+hex = "060101020304e02e0000"
+expect = "ok"
+dump = "SENT flood=true ack=01020304 timeout=12000ms"
+
+[[response]]
+name = "no-more"
+hex = "0a"
+expect = "ok"
+dump = "NO_MORE_MESSAGES"
+
+[[response]]
+name = "device-info"
+hex = "0d0eaf2840e201003135204f6374203230323600456c6563726f77205468696e6b4e6f6465204d35000000000000000000000000000000000000000076312e31382e30000000000000000000000000000000"
+expect = "ok"
+dump = "DEVICE_INFO fw=14 contacts=350 channels=40 pin=123456 build=\"15 Oct 2026\" maker=\"Elecrow ThinkNode M5\" version=\"v1.18.0\" repeat=0 path_hash_mode=0"
+
+[[response]]
+name = "device-info-ext"
+hex = "0d0eaf2840e201003135204f6374203230323600456c6563726f77205468696e6b4e6f6465204d35000000000000000000000000000000000000000076312e31382e3000000000000000000000000000000007"
+expect = "ok"
+dump = "DEVICE_INFO fw=14 contacts=350 channels=40 pin=123456 build=\"15 Oct 2026\" maker=\"Elecrow ThinkNode M5\" version=\"v1.18.0\" repeat=0 path_hash_mode=0 ext=07"
+
+[[response]]
+name = "contact-msg"
+hex = "10ec000080818283848503004002df6afe02100901020304050607010102410109e0e1e2e3e4e5e6e7"
+expect = "ok"
+dump = "CONTACT_MSG snr4=-20 prefix=808182838485 path_len=3 type=0 ts=1793000000 text=fe02100901020304050607010102410109e0e1e2e3e4e5e6e7"
+
+[[response]]
+name = "contact-msg-plain"
+hex = "10280000808182838485ff004002df6a68656c6c6f"
+expect = "ok"
+dump = "CONTACT_MSG snr4=40 prefix=808182838485 path_len=255 type=0 ts=1793000000 text=68656c6c6f"
+
+[[response]]
+name = "channel-msg"
+hex = "111400000001004002df6a616c6963653a206869"
+expect = "ok"
+dump = "CHANNEL_MSG snr4=20 idx=0 path_len=1 type=0 ts=1793000000 text=\"alice: hi\""
+
+[[response]]
+name = "channel-info"
+hex = "12276c6e2d6162636400000000000000000000000000000000000000000000000000404142434445464748494a4b4c4d4e4f"
+expect = "ok"
+dump = "CHANNEL_INFO 39 name=\"ln-abcd\" secret=404142434445464748494a4b4c4d4e4f"
+
+[[response]]
+name = "channel-info-empty"
+hex = "1205000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+expect = "ok"
+dump = "CHANNEL_INFO 5 name=\"\" secret=00000000000000000000000000000000"
+
+[[response]]
+name = "channel-data"
+hex = "1bf8000027024cff17100001020304050607010000410000e0e1e2e3e4e5e6e7"
+expect = "ok"
+dump = "CHANNEL_DATA snr4=-8 idx=39 path_len=2 type=ff4c data=100001020304050607010000410000e0e1e2e3e4e5e6e7"
+
+[[response]]
+name = "scope"
+hex = "1c66720000000000000000000000000000000000000000000000000000000000e31f97b98d8ac10649b6822bf96d9b09"
+expect = "ok"
+dump = "DEFAULT_FLOOD_SCOPE name=\"fr\" key=e31f97b98d8ac10649b6822bf96d9b09"
+
+[[response]]
+name = "scope-none"
+hex = "1c"
+expect = "ok"
+dump = "DEFAULT_FLOOD_SCOPE none"
+
+[[response]]
+name = "advert"
+hex = "80808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f"
+expect = "ok"
+dump = "ADVERT key=808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f"
+
+[[response]]
+name = "path-updated"
+hex = "81808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f"
+expect = "ok"
+dump = "PATH_UPDATED key=808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f"
+
+[[response]]
+name = "send-confirmed"
+hex = "82deadbeefd2040000"
+expect = "ok"
+dump = "SEND_CONFIRMED ack=deadbeef rtt=1234ms"
+
+[[response]]
+name = "msg-waiting"
+hex = "83"
+expect = "ok"
+dump = "MSG_WAITING"
+
+[[response]]
+name = "new-advert"
+hex = "8a808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f020102aabb0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000426f6200000000000000000000000000000000000000000000000000000000000402df6a267ee9025ee423002202df6a"
+expect = "ok"
+dump = "NEW_ADVERT key=808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f type=2 flags=1 path_len=2 name=\"Bob\" last_advert=1792999940 lat=48856614 lon=2352222 lastmod=1792999970"
+
+[[response]]
+name = "contact-deleted"
+hex = "8f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f"
+expect = "ok"
+dump = "CONTACT_DELETED key=808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f"
+
+[[response]]
+name = "contacts-full"
+hex = "90"
+expect = "ok"
+dump = "CONTACTS_FULL"
+
+[[response]]
+name = "log-rx-data"
+hex = "882cb01122"
+expect = "ok"
+dump = "LOG_RX_DATA snr4=44 rssi=-80 raw=1122"
+
+[[response]]
+name = "curr-time"
+hex = "094002df6a"
+expect = "ok"
+dump = "CURR_TIME 1793000000"
+
+[[response]]
+name = "private-key"
+hex = "0e202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"
+expect = "ok"
+dump = "PRIVATE_KEY <64 octets>"
+
+[[response]]
+name = "disabled"
+hex = "0f"
+expect = "ok"
+dump = "DISABLED"
+
+[[response]]
+name = "other-unknown"
+hex = "990102"
+expect = "ok"
+dump = "OTHER code=0x99 body=0102"
+
+[[response]]
+name = "empty"
+hex = ""
+expect = "err:Truncated"
+
+[[response]]
+name = "ok-trailing"
+hex = "0000"
+expect = "err:Length"
+
+[[response]]
+name = "err-no-code"
+hex = "01"
+expect = "err:Truncated"
+
+[[response]]
+name = "sent-flood-2"
+hex = "06020000000001000000"
+expect = "err:Value"
+
+[[response]]
+name = "sent-trailing"
+hex = "0600deadbeef8813000000"
+expect = "err:Length"
+
+[[response]]
+name = "contact-short"
+hex = "03808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f"
+expect = "err:Truncated"
+
+[[response]]
+name = "channel-info-short"
+hex = "12276c6e2d6162636400000000000000000000000000000000000000000000000000"
+expect = "err:Truncated"
+
+[[response]]
+name = "channel-info-trailing"
+hex = "12276c6e2d6162636400000000000000000000000000000000000000000000000000404142434445464748494a4b4c4d4e4f00"
+expect = "err:Length"
+
+[[response]]
+name = "channel-data-short"
+hex = "1b00000027024cff05010203"
+expect = "err:Truncated"
+
+[[response]]
+name = "channel-data-trailing"
+hex = "1b00000027024cff02010203"
+expect = "err:Length"
+
+[[response]]
+name = "scope-short"
+hex = "1c66720000000000000000000000000000000000000000000000000000000000"
+expect = "err:Truncated"
+
+[[response]]
+name = "private-key-short"
+hex = "0e000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e"
+expect = "err:Truncated"
+
+[[response]]
+name = "curr-time-trailing"
+hex = "094002df6a00"
+expect = "err:Length"
+
+[[response]]
+name = "log-rx-data-short"
+hex = "882c"
+expect = "err:Truncated"
+
+[[response]]
+name = "too-long"
+hex = "1000000080818283848500004002df6a4141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"
+expect = "err:Length"
+
+[[scope]]
+scope = "fr"
+key = "e31f97b98d8ac10649b6822bf96d9b09"
+
+[[scope]]
+scope = "eu"
+key = "1b39b9a89c74b7c11db356b757ebe45a"

@@ -1,0 +1,18 @@
+[package]
+name = "mc-proto"
+description = "Protocole compagnon MeshCore (docs/spec/companion.md), dans les deux sens, et tramage USB"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+mc-core.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+serde.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true

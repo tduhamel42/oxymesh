@@ -145,7 +145,7 @@ SELF_INFO, 89 octets au plus (M:1085-1117) :
 | [45] | advert_loc_policy |
 | [46] | télémétrie : env << 4 \| pos << 2 \| base |
 | [47] | manual_add_contacts |
-| [48..51] | fréquence kHz (**écart volontaire 2** : valeur exacte, le C++ donne 869617 pour 869,618) |
+| [48..51] | fréquence kHz, `(uint32)(freq_float × 1000)` en C++ ; nous : valeur exacte (écart volontaire 2, sans effet dans les bandes usuelles : le M5 réel renvoie 869618) |
 | [52..55] | BW en Hz |
 | [56] | SF |
 | [57] | CR |
@@ -263,7 +263,7 @@ Partition `mcdata` (sequential-storage, ADR-0006) : identité, réglages (binair
 ## 9. Écarts volontaires (ADR-0001)
 
 1. File d'attente gardée en flash.
-2. Fréquence exacte dans SELF_INFO.
+2. Fréquence exacte dans SELF_INFO (identique au C++ dans 433-435, 863-870 et 902-928 MHz, vérifié pour chaque kHz ; 1 kHz de moins côté C++ pour environ 1 % des fréquences ailleurs).
 3. Nom de canal complété par des zéros dans CHANNEL_INFO.
 4. Pas de troncature des trames de 174-176 octets en Bluetooth (MTU ≥ 179).
 5. PIN aléatoire tiré à chaque appairage.
