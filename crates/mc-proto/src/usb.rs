@@ -31,8 +31,10 @@ enum State {
     Body,
 }
 
-/// Retrouve les trames dans un flux d'octets. Tout ce qui précède l'octet de début est ignoré
-/// (journal de démarrage, bruit), comme une longueur nulle ou trop grande.
+/// Retrouve les trames dans un flux d'octets, comme `ArduinoSerialInterface::checkRecvFrame`
+/// (ASI:38-73) : tout ce qui précède l'octet de début est ignoré (journal de démarrage, bruit),
+/// comme une longueur nulle ; une trame annoncée plus longue que 176 octets est lue en entier et
+/// tronquée à 176.
 #[derive(Debug, Clone)]
 pub struct UsbDeframer {
     start: u8,
@@ -69,7 +71,7 @@ impl UsbDeframer {
             }
             State::Len2(lo) => {
                 let len = usize::from(u16::from_le_bytes([lo, b]));
-                if len == 0 || len > FRAME_MAX {
+                if len == 0 {
                     self.state = State::Idle;
                 } else {
                     self.len = len;
@@ -87,7 +89,7 @@ impl UsbDeframer {
                     return None;
                 }
                 self.state = State::Idle;
-                self.buf.get(..self.len)
+                self.buf.get(..self.len.min(FRAME_MAX))
             }
         }
     }

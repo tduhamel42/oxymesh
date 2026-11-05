@@ -11,6 +11,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 mc-core = { path = "../crates/mc-core" }
 mc-air = { path = "../crates/mc-air" }
+mc-proto = { path = "../crates/mc-proto" }
 
 # Workspace séparé : nightly et instrumentation propres au fuzz.
 [workspace]
@@ -19,6 +20,13 @@ members = ["."]
 [[bin]]
 name = "air_decode"
 path = "fuzz_targets/air_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cmd_decode"
+path = "fuzz_targets/cmd_decode.rs"
 test = false
 doc = false
 bench = false

@@ -198,6 +198,8 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
         path: [0; 64],
         name: to_fixed::<32>(ALICE_NAME.as_bytes()),
         last_advert: ts_adv,
+        lat_lon: None,
+        lastmod: None,
     };
     expect_ok(&d.ask(&add)?, "ADD_UPDATE_CONTACT")?;
 
@@ -335,7 +337,7 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
 
     // 4. Annonce du C++, vérifiée par mc-air.
     expect_ok(
-        &d.ask(&Command::SendSelfAdvert { flood: false })?,
+        &d.ask(&Command::SendSelfAdvert { flood: Some(false) })?,
         "SEND_SELF_ADVERT",
     )?;
     rep.check(
