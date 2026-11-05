@@ -1,0 +1,347 @@
+# Vecteurs MeshCore sur l'air, produits par testdata/air/gen.py (oracle indépendant).
+# Ne pas éditer à la main : relancer `python3 -I testdata/air/gen.py > testdata/air/vectors.toml`.
+
+[[identity]]
+name = "alice"
+seed = "b6ff817b2d5b3108fff31ef8c61c3207a08d098a12e2bc694c680abf276f6b6c"
+prv = "e87b6db1004c742385f2cbdee59e30d844eeedc570493791fac9f1e858c955794fe206d12155d3f021e9ea84c2991c43afbef7dffe51a88618050a0c1eeae38d"
+pub = "538db9085023d1024df3044288251c6f3b9125ab67e147acb514a7775789a49b"
+
+[[identity]]
+name = "bob"
+seed = "8878fd3eeb1fd3a57d2006c66e3a3f33fbd5214ed03d2acb077cc014b46a60ea"
+prv = "d89576534b2c47146ec2e27f9d618b67e5bcbcd9223b32fe4f2fc8959239537bc3f4a3ec7ed225e55a1b3f851836fc8df9707ae3188c698208cf74b35bee87a9"
+pub = "2ced7fd239c9a78b832629aaa90edda5ce80009ee9f6bef86a1243cc3ff33923"
+
+[[identity]]
+name = "relay"
+seed = "42b8405826bd0811fa33347459bd00fd3278867e5f4c6024cedc1f3b4c8e3a92"
+prv = "184b82c8aa7dce238a8c7b18b68027636f4f854fdf06ffab15d6a1532110ba6a6c29806deb3ff3e69881cdd3c317286de94911be4047973ac2e2b94d6888397d"
+pub = "9fb422f53c423ea9d0a7de50277c85ff4e9c8c6e1a5cb5af90c53a1a3a38c9a3"
+
+[[ecdh]]
+a = "alice"
+b = "bob"
+secret = "cd1cb9bd63da5052c1f3530f879fdc1a53f14e9f1e06830d89653c3332b3e078"
+
+[[seal]]
+secret = "cd1cb9bd63da5052c1f3530f879fdc1a53f14e9f1e06830d89653c3332b3e078"
+plain = "78"
+sealed = "7155ad643a427c200e922379d9613ce069c7"
+
+[[seal]]
+secret = "cd1cb9bd63da5052c1f3530f879fdc1a53f14e9f1e06830d89653c3332b3e078"
+plain = "000102030405060708090a0b0c0d0e0f"
+sealed = "f321c663a017752875e216be617ef106b51b"
+
+[[seal]]
+secret = "cd1cb9bd63da5052c1f3530f879fdc1a53f14e9f1e06830d89653c3332b3e078"
+plain = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324252627"
+sealed = "4d29c663a017752875e216be617ef106b51b37ef5ef15bd1df18777df39d6c9e25a78b3bf6f2633ec547062660780cf9bb6c"
+
+[[packet]]
+name = "advert_alice"
+raw = "1100538db9085023d1024df3044288251c6f3b9125ab67e147acb514a7775789a49be0bdec6a7784c90250f20f78191feb115a4c9c611d2a6c6c08a9ec5d1f83ca02fca79e3598f8d4939b22bd486c243f6a4dae2e9f49432912e019f6d9aa6cef4be6791d0081416c696365"
+route = 1
+ptype = 4
+path_len = 0
+path = ""
+payload = "538db9085023d1024df3044288251c6f3b9125ab67e147acb514a7775789a49be0bdec6a7784c90250f20f78191feb115a4c9c611d2a6c6c08a9ec5d1f83ca02fca79e3598f8d4939b22bd486c243f6a4dae2e9f49432912e019f6d9aa6cef4be6791d0081416c696365"
+hash = "018ac01dc6bc7d2d"
+
+[[advert]]
+packet = "advert_alice"
+identity = "alice"
+ts = 1793900000
+app_data = "81416c696365"
+kind = 1
+adv_name = "416c696365"
+
+[[packet]]
+name = "advert_bob_loc"
+raw = "11002ced7fd239c9a78b832629aaa90edda5ce80009ee9f6bef86a1243cc3ff33923e0bdec6a08d1204752cd38c63c4343191e399c2ac526946d0e14c0907151f131249b4c105e44102ee6165253b2f4795885eb455123cee3d51d50934d7f18ed54be837c0591257ee9025ee42300426f6220636166c3a9"
+route = 1
+ptype = 4
+path_len = 0
+path = ""
+payload = "2ced7fd239c9a78b832629aaa90edda5ce80009ee9f6bef86a1243cc3ff33923e0bdec6a08d1204752cd38c63c4343191e399c2ac526946d0e14c0907151f131249b4c105e44102ee6165253b2f4795885eb455123cee3d51d50934d7f18ed54be837c0591257ee9025ee42300426f6220636166c3a9"
+hash = "6394110a9fb06786"
+
+[[advert]]
+packet = "advert_bob_loc"
+identity = "bob"
+ts = 1793900000
+app_data = "91257ee9025ee42300426f6220636166c3a9"
+kind = 1
+lat = 48856613
+lon = 2352222
+adv_name = "426f6220636166c3a9"
+
+[[packet]]
+name = "advert_relay_2hops"
+raw = "110212349fb422f53c423ea9d0a7de50277c85ff4e9c8c6e1a5cb5af90c53a1a3a38c9a3e0bdec6a439b0fe16e9472660d54f9199a498bb8f9976a6bdf670ee7aef93da1c7b2c683d6319129fc5f9557876fbc393d21cf1fa57a5bb60dcbd7e32fa73eead10c7e098252656c616973204d6f6e746d617274726520e29bb0207472c3a873206c6f6e"
+route = 1
+ptype = 4
+path_len = 2
+path = "1234"
+payload = "9fb422f53c423ea9d0a7de50277c85ff4e9c8c6e1a5cb5af90c53a1a3a38c9a3e0bdec6a439b0fe16e9472660d54f9199a498bb8f9976a6bdf670ee7aef93da1c7b2c683d6319129fc5f9557876fbc393d21cf1fa57a5bb60dcbd7e32fa73eead10c7e098252656c616973204d6f6e746d617274726520e29bb0207472c3a873206c6f6e"
+hash = "3f56d026f8ad2208"
+
+[[advert]]
+packet = "advert_relay_2hops"
+identity = "relay"
+ts = 1793900000
+app_data = "8252656c616973204d6f6e746d617274726520e29bb0207472c3a873206c6f6e"
+kind = 2
+adv_name = "52656c616973204d6f6e746d617274726520e29bb0207472c3a873206c6f6e"
+
+[[packet]]
+name = "txt_flood"
+raw = "09002c5397423be4ae2daf594ecf214f83de82a9b84a"
+route = 1
+ptype = 2
+path_len = 0
+path = ""
+payload = "2c5397423be4ae2daf594ecf214f83de82a9b84a"
+hash = "9cbab63834fbf865"
+
+[[txt]]
+packet = "txt_flood"
+from = "alice"
+to = "bob"
+ts = 1793900000
+attempt = 0
+text = "48656c6c6f20426f62"
+plain = "e0bdec6a0048656c6c6f20426f62"
+ack = 3963141667
+
+[[packet]]
+name = "txt_attempt5"
+raw = "09002c53af1f8d1519b44cf71a680bca51704949e7f89f5db7ae06498e84e1e341d5f5d6d4a2"
+route = 1
+ptype = 2
+path_len = 0
+path = ""
+payload = "2c53af1f8d1519b44cf71a680bca51704949e7f89f5db7ae06498e84e1e341d5f5d6d4a2"
+hash = "85e7cdaa3b91e428"
+
+[[txt]]
+packet = "txt_attempt5"
+from = "alice"
+to = "bob"
+ts = 1793900000
+attempt = 5
+text = "53616c75742c20c3a761207661203f"
+plain = "e0bdec6a0153616c75742c20c3a761207661203f0005"
+ack = 141847465
+
+[[packet]]
+name = "txt_direct"
+raw = "0a02abcd2c53502e4dd1644c994e6ffaebd1e0e0f65f1f4fbcf672637ae9cb2561d4a2c50d1fa990"
+route = 2
+ptype = 2
+path_len = 2
+path = "abcd"
+payload = "2c53502e4dd1644c994e6ffaebd1e0e0f65f1f4fbcf672637ae9cb2561d4a2c50d1fa990"
+hash = "86f1ccf0b5f2b745"
+
+[[txt]]
+packet = "txt_direct"
+from = "alice"
+to = "bob"
+ts = 1793900000
+attempt = 1
+text = "706172206c65206368656d696e20646972656374"
+plain = "e0bdec6a01706172206c65206368656d696e20646972656374"
+ack = 2991381516
+
+[[packet]]
+name = "grp_txt_public"
+raw = "1500112fc4ce834fd4d5e46e300810e5b8740062095503f761606bf845d38e0ddd7a54a98b"
+route = 1
+ptype = 5
+path_len = 0
+path = ""
+payload = "112fc4ce834fd4d5e46e300810e5b8740062095503f761606bf845d38e0ddd7a54a98b"
+hash = "87b192b7a8218ce1"
+
+[[group]]
+packet = "grp_txt_public"
+secret = "8b3387e9c5cdea6ac9e5edbaa115cd7200000000000000000000000000000000"
+channel_hash = 17
+plain = "e0bdec6a00416c6963653a20426f6e6a6f757220c3a020746f7573"
+
+[[packet]]
+name = "grp_data_test"
+raw = "1900d9046149ec560cef94059be8474d6dad2d61a3e153ea107029232f4e0dede26df6b029"
+route = 1
+ptype = 6
+path_len = 0
+path = ""
+payload = "d9046149ec560cef94059be8474d6dad2d61a3e153ea107029232f4e0dede26df6b029"
+hash = "93aa5f28d75e0b10"
+
+[[group]]
+packet = "grp_data_test"
+secret = "9cd8fcf22a47333b591d96a2b848b73f00000000000000000000000000000000"
+channel_hash = 217
+plain = "4cff146465666768696a6b6c6d6e6f7071727374757677"
+
+[[packet]]
+name = "grp_txt_public_fr"
+raw = "14902b00000011f2fb787e19826f12a5a57886c2589680bbc4f22cd9e502162d925152dbf0fe5e5385"
+route = 0
+ptype = 5
+path_len = 0
+path = ""
+payload = "11f2fb787e19826f12a5a57886c2589680bbc4f22cd9e502162d925152dbf0fe5e5385"
+transport = [11152, 0]
+hash = "e08bfcd2ae61061f"
+
+[[group]]
+packet = "grp_txt_public_fr"
+secret = "8b3387e9c5cdea6ac9e5edbaa115cd7200000000000000000000000000000000"
+channel_hash = 17
+plain = "e0bdec6a00416c6963653a2064616e73206c6120706f72746565206672"
+region = "fr"
+region_key = "e31f97b98d8ac10649b6822bf96d9b09"
+
+[[packet]]
+name = "path_return_ack"
+raw = "2100532cc862630fcdc79b7accbb5ae1ff5715bb846a"
+route = 1
+ptype = 8
+path_len = 0
+path = ""
+payload = "532cc862630fcdc79b7accbb5ae1ff5715bb846a"
+hash = "570304c9f95c329f"
+
+[[path]]
+packet = "path_return_ack"
+in_path_len = 66
+in_path = "12345678"
+extra_type = 3
+extra = "23be38ec005a"
+plain = "42123456780323be38ec005a"
+
+[[packet]]
+name = "ack_direct"
+raw = "0e01a123be38ec005a"
+route = 2
+ptype = 3
+path_len = 1
+path = "a1"
+payload = "23be38ec005a"
+hash = "c94fc843b21cfe3a"
+
+[[packet]]
+name = "multipart_ack"
+raw = "2a001323be38ec"
+route = 2
+ptype = 10
+path_len = 0
+path = ""
+payload = "1323be38ec"
+hash = "f68b035b1b86128d"
+
+[[packet]]
+name = "anon_login"
+raw = "1d009f538db9085023d1024df3044288251c6f3b9125ab67e147acb514a7775789a49be1fea612e13f5b0334d17f67e91a49836259"
+route = 1
+ptype = 7
+path_len = 0
+path = ""
+payload = "9f538db9085023d1024df3044288251c6f3b9125ab67e147acb514a7775789a49be1fea612e13f5b0334d17f67e91a49836259"
+hash = "7a9662fef12c03fd"
+
+[[anon]]
+packet = "anon_login"
+from = "alice"
+to = "relay"
+secret = "f51c972d6cd4b6944c37aa0b039baee726a216f0dc9743b969b86eb75122da73"
+plain = "e0bdec6a70617373776f7264"
+
+[[packet]]
+name = "trace_one_snr"
+note = "1 saut parcouru, SNR 10 dB"
+raw = "26012804030201d0c0b0a000112233"
+route = 2
+ptype = 9
+path_len = 1
+path = "28"
+payload = "04030201d0c0b0a000112233"
+hash = "6cddefa550df2c91"
+
+[[packet]]
+name = "control_discover"
+raw = "2e008004efbeadde"
+route = 2
+ptype = 11
+path_len = 0
+path = ""
+payload = "8004efbeadde"
+hash = "13c3073d7692d29a"
+
+[[transport]]
+region = "fr"
+ptype = 5
+payload = "010203"
+code = 17745
+
+[[transport]]
+region = "fr"
+ptype = 4
+payload = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f60616263"
+code = 49955
+
+[[transport]]
+region = "#fr"
+ptype = 5
+payload = "010203"
+code = 17745
+
+[[transport]]
+region = "#fr"
+ptype = 4
+payload = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f60616263"
+code = 49955
+
+[[transport]]
+region = "be"
+ptype = 5
+payload = "010203"
+code = 20625
+
+[[transport]]
+region = "be"
+ptype = 4
+payload = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f60616263"
+code = 41450
+
+[[reject]]
+name = "version_1"
+raw = "490078"
+
+[[reject]]
+name = "path_hash_size_4"
+raw = "09c10000000000"
+
+[[reject]]
+name = "path_too_long"
+raw = "0968000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000078"
+
+[[reject]]
+name = "path_truncated"
+raw = "09050102"
+
+[[reject]]
+name = "transport_truncated"
+raw = "14010203"
+
+[[reject]]
+name = "payload_185"
+raw = "15000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+
+[[reject]]
+name = "empty"
+raw = ""

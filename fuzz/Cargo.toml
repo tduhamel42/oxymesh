@@ -1,0 +1,24 @@
+[package]
+name = "oxymesh-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+mc-core = { path = "../crates/mc-core" }
+mc-air = { path = "../crates/mc-air" }
+
+# Workspace séparé : nightly et instrumentation propres au fuzz.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "air_decode"
+path = "fuzz_targets/air_decode.rs"
+test = false
+doc = false
+bench = false

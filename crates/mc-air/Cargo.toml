@@ -1,0 +1,23 @@
+[package]
+name = "mc-air"
+description = "Trames MeshCore sur l'air (docs/spec/air.md) : codec, charges utiles, crypto, hashes, portée, annonces"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+mc-core.workspace = true
+aes.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+ed25519-dalek.workspace = true
+curve25519-dalek.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+serde.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true

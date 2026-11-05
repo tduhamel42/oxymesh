@@ -1,0 +1,49 @@
+//! Trames MeshCore sur l'air (`docs/spec/air.md`). Le premier octet choisit : trame complète,
+//! texte clair (message direct, canal, données, PATH) ou données d'annonce.
+//!
+//! Oracle : jamais de panic ; toute trame acceptée se réécrit à l'identique ; tout découpage de
+//! charge utile reste dans la trame ; des données d'annonce réencodées se relisent pareil.
+#![no_main]
+
+use libfuzzer_sys::fuzz_target;
+use mc_air::payload::{Advert, GroupDataPlain, GroupTxtPlain, PathPlain, Payload, TxtPlain};
+use mc_air::{AppData, Packet};
+
+fuzz_target!(|data: &[u8]| {
+    let Some((&which, bytes)) = data.split_first() else { return };
+    match which % 3 {
+        0 => {
+            if let Ok(p) = Packet::decode(bytes) {
+                let mut out = [0u8; 255];
+                let n = p.encode(&mut out).unwrap();
+                assert_eq!(&out[..n], bytes);
+                if let Ok(pl) = Payload::parse(p.header.ptype, p.payload) {
+                    if let Payload::Advert(a) = pl {
+                        let _ = a.verify();
+                    }
+                }
+            }
+        }
+        1 => {
+            let _ = TxtPlain::parse(bytes);
+            let _ = GroupTxtPlain::parse(bytes);
+            if let Ok(g) = GroupDataPlain::parse(bytes) {
+                assert!(g.data.len() + 3 <= bytes.len());
+            }
+            if let Ok(pp) = PathPlain::parse(bytes) {
+                assert_eq!(pp.path.len(), pp.path_len.byte_len());
+            }
+            let _ = Advert::parse(bytes);
+        }
+        _ => {
+            if let Ok(ad) = AppData::decode(bytes) {
+                let mut buf = [0u8; 32];
+                let n = ad.encode(&mut buf).unwrap();
+                let back = AppData::decode(&buf[..n]).unwrap();
+                assert_eq!(back.kind, ad.kind);
+                assert_eq!(back.location, ad.location);
+                assert!(ad.name_str().starts_with(back.name_str()));
+            }
+        }
+    }
+});
