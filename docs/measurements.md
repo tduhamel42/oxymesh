@@ -63,7 +63,8 @@ Findings:
 - Firmware `mc-m5` with `mc-ui`: 64 KB heap, one Ratatui terminal drawing into the panel frame, overlays, refresh-debt policy, gestures from the two buttons, light auto-off, unread LED, hibernation.
 - Image 900,384 bytes, against a 1.75 MB app partition.
 - `mc duo --a /dev/cu.wchusbserial210 --b /dev/cu.usbmodem1101 --pings 3 --reboot`: 13/13 with the interface running in the same loop as the radio.
-- Still to check by hand (U6 checklist): navigation, a message to the Heltec with its delivery, the tools on real traffic, light and potentiometer, no packet lost during a refresh.
+- Checked by hand (Tanguy): a quick reply ("On my way") written on the M5 reached the Heltec (flood, SNR 12.25 dB) and showed "delivered" on the M5; the Heltec's answer (`mc send`, direct, acknowledged in 1.1 s) brought up the new-message banner.
+- Still to check by hand: the tools on real traffic, light and potentiometer, the unread LED, no packet lost during a refresh.
 
 ## 2026-11-06 — offline queue in flash, screen history (U2)
 
