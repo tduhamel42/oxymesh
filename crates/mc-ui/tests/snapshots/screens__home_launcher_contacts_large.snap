@@ -2,16 +2,16 @@
 source: crates/mc-ui/tests/screens.rs
 expression: "text(&mut app, grid, &c)"
 ---
-|Tanguy                87%|
+|Tanguy             ●2 87%|
 |                         |
 |                         |
 |          18:33          |
 |                         |
 |     Thu 5 Nov 2026      |
-|No new messages          |
-|Heard Bob · 18:33        |
+|2 new messages           |
+|Bob: Coffee at the refuge|
 |                         |
-|  Messages               |
+|  Messages          2 new|
 |▸ Contacts              2|
 |  Channels              1|
 |  Tools                  |

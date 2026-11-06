@@ -2,7 +2,7 @@
 source: crates/mc-ui/tests/screens.rs
 expression: "text(&mut app, grid, &c)"
 ---
-|About                   18:33 87%|
+|About                ●2 18:33 87%|
 |Name                       Tanguy|
 |Key                      7888b006|
 |Firmware          v1.18.0-oxymesh|
@@ -13,7 +13,7 @@ expression: "text(&mut app, grid, &c)"
 |Channels                     1/40|
 |Battery                    -- 87%|
 |Uptime                 1 h 02 min|
-|For the app              0 queued|
+|For the app              2 queued|
 |                                 |
 |                                 |
 |                                 |

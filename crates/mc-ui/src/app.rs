@@ -1,6 +1,7 @@
-//! The interface as a state machine: a stack of screens, a modal popup, a toast. Fed with
-//! gestures and node events, it draws into a Ratatui frame and tells the runner what to do
-//! (`Intent`). It never touches the radio, the storage or the backlight itself.
+//! The interface as a state machine: a stack of screens, a modal popup, a toast, the new
+//! message banner. Fed with gestures and device notifications, it draws into a Ratatui frame
+//! and queues `Intent`s; the runner applies them with [`crate::act::perform`] and reports the
+//! outcome back. The App never touches the radio, the storage or the backlight itself.
 
 use alloc::boxed::Box;
 use alloc::format;
@@ -9,6 +10,7 @@ use alloc::vec::Vec;
 
 use mc_node::Device;
 use mc_node::device::UiEvent;
+use mc_node::history::Peer;
 use ratatui_core::buffer::CellDiffOption;
 use ratatui_core::layout::Rect;
 use ratatui_core::terminal::Frame;
@@ -17,11 +19,13 @@ use ratatui_widgets::block::Block;
 use ratatui_widgets::clear::Clear;
 use ratatui_widgets::paragraph::{Paragraph, Wrap};
 
+use crate::act::{Intent, Outcome};
 use crate::chrome::{self, Footer};
 use crate::input::{Button, Gesture};
+use crate::keyboard::Keyboard;
 use crate::overlay::{Overlay, PixelRect};
 use crate::panel::{COMPACT, Grid};
-use crate::screens::Home;
+use crate::screens::{self, Home};
 use crate::theme::{self, Symbols};
 
 /// What the runner provides for one draw or one input.
@@ -46,15 +50,6 @@ pub struct Ui<'a> {
     pub grid: Grid,
 }
 
-/// Something only the runner can do.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Intent {
-    ToggleLight,
-    SendAdvert { flood: bool },
-    Reboot,
-    FactoryReset,
-}
-
 /// A-button input as screens see it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Input {
@@ -69,7 +64,15 @@ pub enum Input {
 pub enum Nav {
     Stay,
     Push(Box<dyn Screen>),
+    /// Open a screen and run an intent (open a conversation and mark it read).
+    PushWith(Box<dyn Screen>, Intent),
+    /// Replace the current screen (steps of a flow).
+    Replace(Box<dyn Screen>),
     Pop,
+    /// Run the intent, show the toast if any, and go back.
+    PopWith(Intent, Option<&'static str>),
+    /// Run the intent and go back to Home.
+    HomeWith(Intent),
     Intent(Intent),
     /// Run the intent and show the toast.
     IntentToast(Intent, &'static str),
@@ -90,6 +93,10 @@ pub trait Screen: core::fmt::Debug {
     fn input(&mut self, _input: Input, _ui: &Ui<'_>) -> Nav {
         Nav::Stay
     }
+    /// B click: `None` goes back (the default); a screen may use B itself (deleting text).
+    fn back(&mut self, _ui: &Ui<'_>) -> Option<Nav> {
+        None
+    }
     fn footer(&self, _ui: &Ui<'_>) -> Footer {
         Footer::LIST
     }
@@ -100,6 +107,18 @@ pub trait Screen: core::fmt::Debug {
     /// Pixel parts of the screen, as cell rectangles inside `body`.
     fn paints(&self, _body: Rect, _ui: &Ui<'_>) -> Vec<(Rect, Paint)> {
         Vec::new()
+    }
+    /// The conversation shown, if any (no banner for it; new messages are read at once).
+    fn peer(&self) -> Option<Peer> {
+        None
+    }
+    /// The outcome of an intent this screen asked for.
+    fn result(&mut self, _intent: &Intent, _outcome: &Outcome, _ui: &Ui<'_>) -> Nav {
+        Nav::Stay
+    }
+    /// The text entry, for tests and scripts.
+    fn keyboard(&self) -> Option<&Keyboard> {
+        None
     }
 }
 
@@ -138,6 +157,9 @@ pub struct App {
     stack: Vec<Box<dyn Screen>>,
     popup: Option<Confirm>,
     toast: Option<(String, u64)>,
+    /// A received message not seen yet: its history entry.
+    banner: Option<u32>,
+    intents: Vec<Intent>,
     grid: Grid,
     /// Drawing for the panel: overlays are painted, their cells skipped by Ratatui.
     panel: bool,
@@ -152,11 +174,20 @@ impl App {
             stack: alloc::vec![Box::new(Home::default()) as Box<dyn Screen>],
             popup: None,
             toast: None,
+            banner: None,
+            intents: Vec::new(),
             grid,
             panel,
             overlays: Vec::new(),
             dirty: true,
             screen_changed: true,
+        }
+    }
+
+    /// At boot: the first-boot setup, unless it was done or skipped.
+    pub fn start(&mut self, ctx: &Ctx<'_>) {
+        if !ctx.dev.node.prefs.ui.setup_done {
+            self.push(Box::new(screens::setup_start()));
         }
     }
 
@@ -179,6 +210,15 @@ impl App {
         self.popup.as_ref()
     }
 
+    pub fn banner(&self) -> Option<u32> {
+        self.banner
+    }
+
+    /// The text entry on screen, if any.
+    pub fn keyboard(&self) -> Option<&Keyboard> {
+        self.stack.last().and_then(|s| s.keyboard())
+    }
+
     /// Something changed since the last draw.
     pub fn take_dirty(&mut self) -> bool {
         core::mem::take(&mut self.dirty)
@@ -187,6 +227,25 @@ impl App {
     /// The screen changed since the last call (refresh policy).
     pub fn take_screen_changed(&mut self) -> bool {
         core::mem::take(&mut self.screen_changed)
+    }
+
+    /// What the runner must apply now ([`crate::act::perform`]), in order.
+    pub fn take_intents(&mut self) -> Vec<Intent> {
+        core::mem::take(&mut self.intents)
+    }
+
+    /// The runner applied `intent`: the screen that asked may react.
+    pub fn done(&mut self, intent: &Intent, outcome: &Outcome, ctx: &Ctx<'_>) {
+        self.dirty = true;
+        if let Outcome::Failed(_) = outcome {
+            self.toast("Failed", ctx.now_ms);
+        }
+        let ui = make_ui(self.grid, ctx);
+        let nav = match self.stack.last_mut() {
+            Some(s) => s.result(intent, outcome, &ui),
+            None => Nav::Stay,
+        };
+        self.apply(nav, ctx);
     }
 
     pub fn toast(&mut self, text: &str, now_ms: u64) {
@@ -206,31 +265,84 @@ impl App {
         }
     }
 
-    /// A notification from the device (`Device::poll_ui`): something on screen may change.
+    /// A notification from the device (`Device::poll_ui`).
     pub fn event(&mut self, e: &UiEvent, _ctx: &Ctx<'_>) {
-        let _ = e;
         self.dirty = true;
+        if let UiEvent::Message {
+            seq,
+            peer,
+            outgoing: false,
+        } = *e
+        {
+            let shown = self.stack.last().and_then(|s| s.peer());
+            if shown == Some(peer) {
+                // Already on screen: read.
+                self.intents.push(Intent::MarkRead(peer));
+            } else if matches!(peer, Peer::Contact(_)) {
+                // Banner for direct messages only; channels just count as unread.
+                self.banner = Some(seq);
+            }
+        }
     }
 
-    /// A gesture; returns what the runner must do, if anything.
-    pub fn gesture(&mut self, g: Gesture, ctx: &Ctx<'_>) -> Option<Intent> {
+    /// A gesture.
+    pub fn gesture(&mut self, g: Gesture, ctx: &Ctx<'_>) {
         self.dirty = true;
+        if g == Gesture::Long(Button::B) {
+            self.intents.push(Intent::ToggleLight);
+            return;
+        }
+        if let Some(seq) = self.banner {
+            // The first press acts on the banner and is never lost.
+            match g {
+                Gesture::Click(Button::A)
+                | Gesture::Double(Button::A)
+                | Gesture::Long(Button::A) => {
+                    self.banner = None;
+                    if let Some(m) = ctx.dev.history().get(seq) {
+                        let peer = m.peer;
+                        self.apply(
+                            Nav::PushWith(
+                                Box::new(screens::Conversation::new(peer)),
+                                Intent::MarkRead(peer),
+                            ),
+                            ctx,
+                        );
+                    }
+                    return;
+                }
+                Gesture::Click(Button::B) | Gesture::Double(Button::B) => {
+                    self.banner = None;
+                    return;
+                }
+                _ => {}
+            }
+        }
         match g {
-            Gesture::Long(Button::B) => return Some(Intent::ToggleLight),
             Gesture::Double(Button::B) => {
                 self.popup = None;
                 if self.stack.len() > 1 {
                     self.stack.truncate(1);
                     self.screen_changed = true;
                 }
-                return None;
+                return;
             }
             Gesture::Click(Button::B) => {
-                if self.popup.take().is_none() && self.stack.len() > 1 {
-                    self.stack.pop();
-                    self.screen_changed = true;
+                if self.popup.take().is_some() {
+                    return;
                 }
-                return None;
+                let ui = make_ui(self.grid, ctx);
+                let own = self.stack.last_mut().and_then(|s| s.back(&ui));
+                match own {
+                    Some(nav) => self.apply(nav, ctx),
+                    None => {
+                        if self.stack.len() > 1 {
+                            self.stack.pop();
+                            self.screen_changed = true;
+                        }
+                    }
+                }
+                return;
             }
             _ => {}
         }
@@ -239,18 +351,18 @@ impl App {
                 Gesture::Held(Button::A, ms) => {
                     p.held_ms = ms;
                     if ms >= CONFIRM_MS {
-                        let (intent, toast) = (p.intent, p.toast);
+                        let (intent, toast) = (p.intent.clone(), p.toast);
                         self.popup = None;
                         if let Some(t) = toast {
                             self.toast(t, ctx.now_ms);
                         }
-                        return Some(intent);
+                        self.intents.push(intent);
                     }
                 }
                 Gesture::HeldEnd(Button::A) => p.held_ms = 0,
                 _ => {}
             }
-            return None;
+            return;
         }
         let input = match g {
             Gesture::Click(Button::A) => Input::Next(1),
@@ -262,44 +374,58 @@ impl App {
                 2_000..4_000 => 2,
                 _ => 4,
             }),
-            _ => return None,
+            _ => return,
         };
         let ui = make_ui(self.grid, ctx);
         let nav = match self.stack.last_mut() {
             Some(s) => s.input(input, &ui),
             None => Nav::Stay,
         };
-        self.apply(nav, ctx)
+        self.apply(nav, ctx);
     }
 
-    fn apply(&mut self, nav: Nav, ctx: &Ctx<'_>) -> Option<Intent> {
+    fn apply(&mut self, nav: Nav, ctx: &Ctx<'_>) {
         match nav {
-            Nav::Stay => None,
-            Nav::Push(s) => {
-                self.stack.push(s);
-                self.screen_changed = true;
-                None
+            Nav::Stay => {}
+            Nav::Push(s) => self.push(s),
+            Nav::PushWith(s, i) => {
+                self.push(s);
+                self.intents.push(i);
+            }
+            Nav::Replace(s) => {
+                if self.stack.len() > 1 {
+                    self.stack.pop();
+                }
+                self.push(s);
             }
             Nav::Pop => {
                 if self.stack.len() > 1 {
                     self.stack.pop();
                     self.screen_changed = true;
                 }
-                None
             }
-            Nav::Intent(i) => Some(i),
+            Nav::PopWith(i, toast) => {
+                self.intents.push(i);
+                if let Some(t) = toast {
+                    self.toast(t, ctx.now_ms);
+                }
+                if self.stack.len() > 1 {
+                    self.stack.pop();
+                    self.screen_changed = true;
+                }
+            }
+            Nav::HomeWith(i) => {
+                self.intents.push(i);
+                self.stack.truncate(1);
+                self.screen_changed = true;
+            }
+            Nav::Intent(i) => self.intents.push(i),
             Nav::IntentToast(i, t) => {
                 self.toast(t, ctx.now_ms);
-                Some(i)
+                self.intents.push(i);
             }
-            Nav::Confirm(c) => {
-                self.popup = Some(c);
-                None
-            }
-            Nav::Toast(t) => {
-                self.toast(&t, ctx.now_ms);
-                None
-            }
+            Nav::Confirm(c) => self.popup = Some(c),
+            Nav::Toast(t) => self.toast(&t, ctx.now_ms),
         }
     }
 
@@ -322,7 +448,8 @@ impl App {
         chrome::header(f, areas.header, &title, top.header_time(), &ui);
         top.draw(f, areas.body, &ui);
         self.overlays.clear();
-        if self.panel && self.popup.is_none() {
+        let covered = self.popup.is_some() || self.banner.is_some();
+        if self.panel && !covered {
             let (cw, ch) = cell_px(self.grid);
             for (cells, paint) in top.paints(areas.body, &ui) {
                 let cells = cells.intersection(areas.body);
@@ -343,19 +470,29 @@ impl App {
                 });
             }
         }
-        let hints = match &self.popup {
-            Some(_) => Footer {
+        let hints = if self.popup.is_some() {
+            Footer {
                 a_click: None,
                 a_hold: Some("confirm"),
                 b_click: Some("cancel"),
                 b_hold: None,
-            },
-            None => top.footer(&ui),
+            }
+        } else if self.banner.is_some() {
+            Footer {
+                a_click: None,
+                a_hold: Some("open"),
+                b_click: Some("later"),
+                b_hold: None,
+            }
+        } else {
+            top.footer(&ui)
         };
         let toast = self.toast.as_ref().map(|(t, _)| t.as_str());
         chrome::footer(f, areas.footer, &hints, toast, &ui);
         if let Some(p) = &self.popup {
             draw_confirm(f, areas.body, p, &ui);
+        } else if let Some(seq) = self.banner {
+            draw_banner(f, areas.body, seq, &ui);
         }
     }
 
@@ -383,6 +520,29 @@ fn make_ui<'a>(grid: Grid, ctx: &'a Ctx<'a>) -> Ui<'a> {
 /// Size of a cell in pixels.
 pub fn cell_px(grid: Grid) -> (u32, u32) {
     if grid == COMPACT { (6, 10) } else { (8, 13) }
+}
+
+/// New direct message: sender and the start of the text, over the top of the body.
+fn draw_banner(f: &mut Frame<'_>, body: Rect, seq: u32, ui: &Ui<'_>) {
+    let Some(m) = ui.ctx.dev.history().get(seq) else {
+        return;
+    };
+    let w = usize::from(body.width);
+    let area = Rect {
+        height: 4.min(body.height),
+        ..body
+    };
+    f.render_widget(Clear, area);
+    let who = screens::peer_name(ui, m.peer);
+    let text = String::from_utf8_lossy(&m.text);
+    let mut lines = alloc::vec![Line::from(chrome::fit(&format!("New message: {who}"), w))];
+    for l in chrome::wrap(&text, w)
+        .into_iter()
+        .take(usize::from(area.height) - 1)
+    {
+        lines.push(Line::from(l));
+    }
+    f.render_widget(Paragraph::new(lines).style(theme::reversed()), area);
 }
 
 fn draw_confirm(f: &mut Frame<'_>, body: Rect, p: &Confirm, ui: &Ui<'_>) {

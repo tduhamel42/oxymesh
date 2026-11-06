@@ -1,6 +1,6 @@
 //! `mc ui`: the device's interface in a terminal (`docs/spec/ui.md` §11). The real `mc-ui` App
-//! runs on a simulated device (`mc-sim`) with two peers, Alice and Bob, who advertise
-//! themselves. `--png <dir>` instead renders the tour (`mc_ui::tour`) through mousefood, the
+//! runs on a simulated device (`mc-sim`) with two peers who advertise themselves: Alice, an
+//! echo bot who greets you, and Bob, who posts on the Public channel. `--png <dir>` instead renders the tour (`mc_ui::tour`) through mousefood, the
 //! way the panel shows it, overlays included.
 
 use std::io::stdout;
@@ -8,11 +8,13 @@ use std::path::Path;
 use std::time::{Duration as StdDuration, Instant as StdInstant};
 
 use mc_core::{Duration, Instant};
+use mc_node::Event;
 use mc_proto::Command;
 use mc_sim::World;
-use mc_ui::app::{App, Ctx, Intent};
+use mc_ui::app::{App, Ctx};
 use mc_ui::input::{Button, Gesture};
 use mc_ui::panel::{self, COMPACT, Frame, Grid, LARGE};
+use mc_ui::{Outcome, perform};
 use ratatui_core::layout::Rect;
 use ratatui_core::terminal::Terminal;
 use ratatui_core::text::Line;
@@ -26,6 +28,8 @@ use ratatui_crossterm::crossterm::terminal::{
 };
 use ratatui_widgets::block::Block;
 use ratatui_widgets::paragraph::Paragraph;
+
+use rand_core::SeedableRng;
 
 use crate::port::now_unix;
 
@@ -91,23 +95,40 @@ pub fn run(compact: bool, png: Option<&Path>) -> Result<(), String> {
     }
 }
 
+/// Node `from` writes to the device.
+fn say(w: &mut World, from: usize, text: &str) {
+    let now = w.now;
+    let ts = w.node(from).time(now);
+    let to: [u8; 6] = w.nodes[ME].dev.node.id.pub_key()[..6]
+        .try_into()
+        .unwrap_or([0; 6]);
+    let _ = w.node(from).send_text(now, &to, 0, 0, ts, text.as_bytes());
+}
+
+/// Node `from` writes on the Public channel.
+fn say_channel(w: &mut World, from: usize, text: &str) {
+    let now = w.now;
+    let ts = w.node(from).time(now);
+    let _ = w.node(from).send_channel_text(now, 0, ts, text.as_bytes());
+}
+
 /// Every tour screen at both grid sizes, as the panel shows them (×3).
 fn render_tour(dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let mut w = world(1_793_973_720);
-    for (i, peer) in [(1, 1u64), (2, 4)] {
-        w.run(Duration::from_secs(peer));
+    for i in [1, 2, ME] {
         let now = w.now;
         let _ = w.node(i).send_self_advert(now, false);
+        w.run(Duration::from_secs(3));
     }
-    w.run(Duration::from_secs(3));
+    say_channel(&mut w, 1, "Snow on the pass, take chains");
+    w.run(Duration::from_secs(5));
+    say(&mut w, 2, "Coffee at the refuge around 4?");
+    w.run(Duration::from_secs(5));
     let c = ctx(&w, false);
     for grid in [LARGE, COMPACT] {
         for (name, gestures) in mc_ui::tour::TOUR {
             let mut app = App::new(grid, true);
-            for e in &w.nodes[ME].ui {
-                app.event(e, &c);
-            }
             for g in *gestures {
                 app.gesture(*g, &c);
             }
@@ -162,13 +183,22 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
     let mut term = Terminal::new(CrosstermBackend::new(stdout()))?;
     let mut w = world(now_unix());
     let mut app = App::new(*grid, false);
+    {
+        let c = ctx(&w, false);
+        app.start(&c);
+    }
+    let mut rng = rand_chacha::ChaCha20Rng::seed_from_u64(1);
+    let me_key = *w.nodes[ME].dev.node.id.pub_key();
     let start = StdInstant::now();
     let mut light = false;
     let mut hold_since: Option<StdInstant> = None;
     let mut ticks_sent = 0u32;
     let mut log: Vec<String> = Vec::new();
-    // Alice and Bob advertise themselves a few seconds in, then every 2 minutes.
-    let mut next_advert = [(1usize, 3_000u64), (2, 7_000)];
+    // Alice and Bob advertise themselves a few seconds in, then every 2 minutes; the device
+    // too, so they can write to it. Alice greets at 10 s and echoes; Bob posts on Public.
+    let mut next_advert = [(1usize, 3_000u64), (2, 7_000), (ME, 4_000)];
+    let mut alice_hello = Some(10_000u64);
+    let mut bob_post = 30_000u64;
     loop {
         // The simulated world follows the wall clock.
         let wall = start.elapsed().as_millis() as u64;
@@ -182,6 +212,29 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
                 *at += 120_000;
             }
         }
+        if alice_hello.is_some_and(|t| wall >= t) {
+            alice_hello = None;
+            say(&mut w, 1, "Hi! I'm Alice, an echo bot. Write me anything.");
+        }
+        if wall >= bob_post {
+            bob_post += 180_000;
+            say_channel(&mut w, 2, "Anyone up on the hill today?");
+        }
+        let echoes: Vec<String> = std::mem::take(&mut w.nodes[1].events)
+            .into_iter()
+            .filter_map(|e| match e {
+                Event::ContactMsg { key, text, .. } if key == me_key => {
+                    Some(format!("echo: {}", String::from_utf8_lossy(&text)))
+                }
+                _ => None,
+            })
+            .collect();
+        for t in echoes {
+            say(&mut w, 1, &t);
+        }
+        // Node event copies (simulator tap) are not needed beyond the bot: keep memory flat.
+        w.nodes[ME].events.clear();
+        w.nodes[2].events.clear();
         let events = std::mem::take(&mut w.nodes[ME].ui);
         {
             let c = ctx(&w, light);
@@ -240,24 +293,24 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
             gestures.extend(g);
         }
         for g in gestures {
-            let intent = {
-                let c = ctx(&w, light);
-                app.gesture(g, &c)
-            };
+            let c = ctx(&w, light);
+            app.gesture(g, &c);
             log.push(format!("{g:?}"));
-            if let Some(i) = intent {
-                log.push(format!("  → {i:?}"));
-                match i {
-                    Intent::ToggleLight => light = !light,
-                    Intent::SendAdvert { flood } => {
-                        let now = w.now;
-                        let _ = w.node(ME).send_self_advert(now, flood);
-                    }
-                    Intent::Reboot | Intent::FactoryReset => {
-                        app.toast("Ignored by the emulator", ms(w.now));
-                    }
+        }
+        for i in app.take_intents() {
+            let now = w.now;
+            let sn = &mut w.nodes[ME];
+            let o = perform(&i, &mut sn.dev, now, &mut rng, &mut sn.st);
+            log.push(format!("  → {i:?}: {o:?}"));
+            match o {
+                Outcome::Light => light = !light,
+                Outcome::Reboot | Outcome::FactoryReset => {
+                    app.toast("Ignored by the emulator", ms(w.now));
                 }
+                _ => {}
             }
+            let c = ctx(&w, light);
+            app.done(&i, &o, &c);
         }
         if log.len() > 12 {
             log.drain(..log.len() - 12);

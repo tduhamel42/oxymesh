@@ -2,7 +2,8 @@
 //! and a text snapshot of every screen at both grid sizes.
 
 use mc_core::Duration;
-use mc_ui::app::{App, CONFIRM_MS, Ctx, Intent};
+use mc_ui::Intent;
+use mc_ui::app::{App, CONFIRM_MS, Ctx};
 use mc_ui::input::{Button, Gesture};
 use mc_ui::panel::{self, COMPACT, Frame, Grid, LARGE};
 use mc_ui::{overlay, screens};
@@ -12,7 +13,8 @@ use ratatui_core::terminal::Terminal;
 use Button::{A, B};
 use Gesture::*;
 
-/// "Tanguy" with two contacts heard (Alice, Bob), 2026-11-05 around 18:3x in Paris.
+/// "Tanguy" with two contacts heard (Alice, Bob), 2026-11-05 around 18:3x in Paris; Alice
+/// wrote on the Public channel, then Bob wrote a DM.
 fn world() -> mc_sim::World {
     let mut w = mc_sim::World::new(5);
     let me = w.add("Tanguy", |_| {});
@@ -23,6 +25,35 @@ fn world() -> mc_sim::World {
         w.node(i).send_self_advert(now, false).unwrap();
         w.run(Duration::from_secs(3));
     }
+    // Tanguy's advert, so Bob can write to him.
+    let now = w.now;
+    w.node(me).send_self_advert(now, false).unwrap();
+    w.run(Duration::from_secs(3));
+    let now = w.now;
+    let ts = w.node(1).time(now);
+    w.node(1)
+        .send_channel_text(now, 0, ts, "Snow on the pass, take chains".as_bytes())
+        .unwrap();
+    w.run(Duration::from_secs(5));
+    let now = w.now;
+    let ts = w.node(2).time(now);
+    let to: [u8; 6] = w.node(me).id.pub_key()[..6].try_into().unwrap();
+    w.node(2)
+        .send_text(
+            now,
+            &to,
+            0,
+            0,
+            ts,
+            "Coffee at the refuge around 4?".as_bytes(),
+        )
+        .unwrap();
+    w.run(Duration::from_secs(5));
+    assert_eq!(
+        w.nodes[me].dev.history().unread(),
+        2,
+        "Bob's DM and Alice's channel message"
+    );
     w
 }
 
@@ -30,7 +61,7 @@ fn ctx(w: &mc_sim::World) -> Ctx<'_> {
     Ctx {
         dev: &w.nodes[0].dev,
         now_ms: 3_725_000,
-        unix: mc_sim::EPOCH + 10,
+        unix: mc_sim::EPOCH + 30,
         tz_offset_min: 60,
         battery_percent: Some(87),
         charging: false,
@@ -52,7 +83,10 @@ fn text(app: &mut App, grid: Grid, c: &Ctx<'_>) -> String {
 }
 
 fn press(app: &mut App, c: &Ctx<'_>, gs: &[Gesture]) -> Vec<Intent> {
-    gs.iter().filter_map(|g| app.gesture(*g, c)).collect()
+    for g in gs {
+        app.gesture(*g, c);
+    }
+    app.take_intents()
 }
 
 #[test]

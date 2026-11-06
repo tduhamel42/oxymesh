@@ -11,6 +11,7 @@ license.workspace = true
 mc-core.workspace = true
 mc-node.workspace = true
 heapless.workspace = true
+rand_core.workspace = true
 qrcodegen-no-heap = "1.8"
 ratatui-core = { version = "0.1", default-features = false }
 ratatui-widgets = { version = "0.3", default-features = false }
@@ -19,6 +20,7 @@ embedded-graphics = "0.8"
 
 [dev-dependencies]
 mc-air.workspace = true
+rand_chacha.workspace = true
 mc-sim.workspace = true
 insta = "1.49"
 

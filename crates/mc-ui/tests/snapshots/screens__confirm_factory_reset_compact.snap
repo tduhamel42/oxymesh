@@ -2,7 +2,7 @@
 source: crates/mc-ui/tests/screens.rs
 expression: "text(&mut app, grid, &c)"
 ---
-|System                  18:33 87%|
+|System               ●2 18:33 87%|
 |  About                          |
 |  Setup again                    |
 |  Reboot                         |

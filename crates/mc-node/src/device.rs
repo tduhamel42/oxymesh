@@ -1221,26 +1221,17 @@ impl Device {
                 self.done(r);
             }
             Command::ResetPath { key } => {
-                if self.node.reset_path(&key) {
-                    self.mark_contacts(now);
-                    self.ok();
-                } else {
-                    self.err(err::NOT_FOUND);
-                }
+                let r = self.reset_contact_path(now, &key);
+                self.done(r);
             }
             Command::SetAdvertLatLon { lat, lon, .. } => {
                 let r = self.set_location(lat, lon, st);
                 self.done(r);
             }
-            Command::RemoveContact { key } => match self.node.contacts.find(&key) {
-                Some(Slot::List(i)) => {
-                    let _ = self.node.contacts.list.remove(i);
-                    st.remove_blob(&key);
-                    self.mark_contacts(now);
-                    self.ok();
-                }
-                _ => self.err(err::NOT_FOUND),
-            },
+            Command::RemoveContact { key } => {
+                let r = self.remove_contact(now, &key, st);
+                self.done(r);
+            }
             Command::ShareContact { key } => {
                 if self.node.contacts.find(&key).is_none() {
                     return self.err(err::NOT_FOUND);

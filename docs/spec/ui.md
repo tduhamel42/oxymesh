@@ -42,7 +42,7 @@ Source of truth for `mc-ui`. On-screen text **in English**. 200×200 black and w
 - **Footer** (last row): the current meaning of the buttons, A on the left, B on the right: `A▸next hold▸open  B◂back` (compact grid: ► ◄). On Home, where B only toggles the light: `B☀`. "hold" is a word: the 8×13 font's ⏎ reads as a music note on the panel.
 - **Toasts**: short results ("Sent", "Delivered", "Failed"), shown in place of the footer for 3 s, from the next refresh.
 - **Popups**: centered, framed, modal. B click closes them (cancel).
-- **New message banner** (U3): full width, sender and text; the first press opens the conversation and is never swallowed.
+- **New message banner**: over the top of the body, sender and the start of the text, for direct messages (channel messages only count as unread). The first A press opens the conversation and is never swallowed; B dismisses it (`B◂later`). No banner for the conversation already on screen.
 
 ## 5. Backlight and potentiometer
 
@@ -67,8 +67,10 @@ Home (always-on face)
 ```
 
 - **Home**: big clock (overlay) and date; the next lines show unread DMs and channels, the last message (sender and start of the text), the radio (preset, last heard), and the GPS fix when enabled. At the bottom, a launcher row (`Messages · Contacts · Channels · Tools · Settings`) moved with A and opened with a long A.
-- **Messages**: conversations sorted by last message, unread first, one-line preview.
-- **Conversation**: received on the left, sent on the right, wrapped. Sent: `sending…`, `delivered 2.4 s`, `failed`. Received: `direct` or `3 hops`, and SNR.
+- **Messages**: `+ New message` (pick a contact, then write), then the conversations: unread first, then the most recent; the right column shows the unread count or the time.
+- **Conversation**: received on the left, sent on the right, wrapped, newest at the bottom; A scrolls (click down, double up), a long A writes. Sent: `sending…`, `try 2…`, `flood…`, `delivered 2.4 s`, `failed`; channels: `sent`. Received: `direct` or `3 hops`; on channels, the sender's name. Messages arriving while the conversation is open are read at once.
+- **Contact**: type and route (`direct`, `2 hops`, `no route yet`), short key, last heard; then Write, Messages, Ping (round trip shown on the screen), Favourite, Reset route, Trace route (U4), Share (QR card), Remove (hold-to-confirm).
+- **Channels**: `+ Add #channel` (name typed, secret derived from it like the app), then the channels with their unread count. A channel with unread messages opens on its conversation; otherwise on its screen: Messages, Write, Remove (hold-to-confirm).
 - **Compose and quick replies**: §7. 8 quick replies by default: OK, Yes, No, On my way, Call me, Where are you?, Running late, Thanks; plus "Send my position". Sent from the device: 3 direct attempts, then `RESET_PATH` and flood (deliberate deviation 6).
 - **Tools**:
   - Heard nodes (name, type, signal bars and SNR, hops, distance, last heard; repeaters first).
@@ -91,7 +93,8 @@ Home (always-on face)
 
 - Text box at the top, candidate strip at the bottom; the byte count and the 160-byte limit are shown live.
 - A click / double click moves through the candidates; a long A inserts the current one. B click deletes the last character; B on empty text cancels.
-- Candidate order: quick replies and recent words; completions from a built-in word list (about 2,000 French and 2,000 English words in flash, by prefix); letters by frequency (`space e a s i t n r u l o d c m p…`, accented letters right after their base letter), then digits and punctuation; `Send`.
+- Candidate order: quick replies (empty text only); up to 4 completions of the word being typed, your recent words first, then a built-in French and English list (about 600 common and messaging words to start; the goal stays about 2,000 per language); `space`; letters by frequency (`e é è ê a à â s i t n r u l o d c ç m p…`); digits and punctuation; the final action (`Send`, `Save`, `Add`) last, one double click away. A quick reply moves the cursor straight to `Send`.
+- The first letter of a sentence is offered in upper case. `#channel` names: lower-case ASCII letters, digits and `-`.
 - Long messages still come from the phone app.
 
 ## 8. Notifications

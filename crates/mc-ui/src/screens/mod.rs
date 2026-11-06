@@ -1,9 +1,12 @@
 //! The screens (`docs/spec/ui.md` §6) and what they share: list drawing and cursor moves.
 
+pub mod chat;
+pub mod contact;
 mod home;
 mod info;
 mod lists;
 mod menu;
+pub mod setup;
 
 use alloc::boxed::Box;
 use alloc::format;
@@ -19,8 +22,10 @@ use crate::app::{Input, Screen, Ui};
 use crate::chrome;
 use crate::theme;
 
+pub use chat::{Compose, Conversation, Messages, Target};
+pub use contact::{ChannelScreen, ContactScreen};
 pub use home::Home;
-pub use info::{About, Card, Messages, Soon, contact_link as info_link};
+pub use info::{About, Card, Soon, contact_link as info_link};
 pub use lists::{Channels, Contacts};
 pub use menu::{Action, Item, Menu};
 
@@ -36,11 +41,15 @@ pub enum Dest {
     System,
     About,
     MyCard,
+    /// First-boot setup, again.
+    Setup,
+    /// Edit the node's name.
+    Name,
 }
 
 pub fn open(d: Dest) -> Box<dyn Screen> {
     match d {
-        Dest::Messages => Box::new(Messages),
+        Dest::Messages => Box::new(Messages::default()),
         Dest::Contacts => Box::new(Contacts::default()),
         Dest::Channels => Box::new(Channels::default()),
         Dest::Tools => Box::new(menu::tools()),
@@ -48,7 +57,35 @@ pub fn open(d: Dest) -> Box<dyn Screen> {
         Dest::Identity => Box::new(menu::identity()),
         Dest::System => Box::new(menu::system()),
         Dest::About => Box::new(About),
-        Dest::MyCard => Box::new(Card),
+        Dest::MyCard => Box::new(Card::mine()),
+        Dest::Setup => Box::new(setup_start()),
+        Dest::Name => Box::new(Compose::new(Target::Name { setup: false }, "")),
+    }
+}
+
+/// The first screen of the first-boot setup.
+pub fn setup_start() -> setup::SetupRegion {
+    setup::SetupRegion::default()
+}
+
+/// Who a conversation is with: contact name, channel name, or the key prefix.
+pub fn peer_name(ui: &Ui<'_>, peer: mc_node::history::Peer) -> String {
+    let node = &ui.ctx.dev.node;
+    match peer {
+        mc_node::history::Peer::Contact(p) => node
+            .contacts
+            .find_prefix(&p)
+            .and_then(|s| node.contacts.get(s))
+            .map(|c| name_of(&c.name))
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| short_key(&p)),
+        mc_node::history::Peer::Channel(i) => node
+            .channels
+            .0
+            .get(usize::from(i))
+            .map(|c| name_of(&c.name))
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| format!("Channel {i}")),
     }
 }
 

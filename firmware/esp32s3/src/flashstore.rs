@@ -11,8 +11,8 @@ use embedded_storage_async::nor_flash::NorFlash;
 use mc_node::Device;
 use mc_node::history::HISTORY_RECORD;
 use mc_node::persist::{
-    CHANNEL_RECORD, CONTACT_RECORD, PREFS_RECORD, PREFS_RECORD_V1, decode_channel,
-    decode_contact, decode_prefs,
+    CHANNEL_RECORD, CONTACT_RECORD, PREFS_RECORD, PREFS_RECORD_V1, decode_channel, decode_contact,
+    decode_prefs,
 };
 use sequential_storage::cache::{Cache, Uncached};
 use sequential_storage::map::{MapConfig, MapStorage};

@@ -46,39 +46,6 @@ impl Screen for Soon {
     }
 }
 
-/// Conversations: the local history arrives in U2, the screens in U3.
-#[derive(Debug)]
-pub struct Messages;
-
-impl Screen for Messages {
-    fn title(&self, _ui: &Ui<'_>) -> String {
-        String::from("Messages")
-    }
-
-    fn draw(&mut self, f: &mut Frame<'_>, body: Rect, ui: &Ui<'_>) {
-        let h = ui.ctx.dev.history();
-        let n = h.iter().count();
-        let text = match (n, h.unread()) {
-            (0, _) => String::from("No messages yet."),
-            (n, 0) => format!("{n} messages, all read."),
-            (n, u) => format!("{n} messages, {u} unread."),
-        };
-        let lines = alloc::vec![
-            Line::from(text),
-            Line::from(""),
-            Line::from("Conversations on the device arrive in U3."),
-        ];
-        f.render_widget(
-            Paragraph::new(lines).wrap(Wrap { trim: true }),
-            rows(body, 1, body.height.saturating_sub(1)),
-        );
-    }
-
-    fn footer(&self, _ui: &Ui<'_>) -> Footer {
-        Footer::BACK
-    }
-}
-
 /// System → About.
 #[derive(Debug)]
 pub struct About;
@@ -156,9 +123,34 @@ impl Screen for About {
     }
 }
 
-/// Identity → My card: a QR the official app scans to add us.
-#[derive(Debug)]
-pub struct Card;
+/// A contact card as a QR the official app scans: ours (Identity → My card) or a contact's.
+#[derive(Debug, Default)]
+pub struct Card {
+    /// `None`: this device.
+    of: Option<(String, [u8; 32])>,
+}
+
+impl Card {
+    pub fn mine() -> Self {
+        Self { of: None }
+    }
+
+    pub fn of(name: &str, key: &[u8; 32]) -> Self {
+        Self {
+            of: Some((String::from(name), *key)),
+        }
+    }
+
+    fn who(&self, ui: &Ui<'_>) -> (String, [u8; 32]) {
+        match &self.of {
+            Some((n, k)) => (n.clone(), *k),
+            None => (
+                name_of(&ui.ctx.dev.node.prefs.name),
+                *ui.ctx.dev.node.id.pub_key(),
+            ),
+        }
+    }
+}
 
 /// `meshcore://contact/add?name=…&public_key=…&type=1`, the official app's contact link.
 pub fn contact_link(name: &str, key: &[u8; 32]) -> String {
@@ -178,11 +170,11 @@ pub fn contact_link(name: &str, key: &[u8; 32]) -> String {
 
 impl Screen for Card {
     fn title(&self, _ui: &Ui<'_>) -> String {
-        String::from("My card")
+        String::from(if self.of.is_none() { "My card" } else { "Card" })
     }
 
     fn draw(&mut self, f: &mut Frame<'_>, body: Rect, ui: &Ui<'_>) {
-        let dev = ui.ctx.dev;
+        let (name, key) = self.who(ui);
         let qr = rows(body, 0, body.height.saturating_sub(1));
         // Text fallback under the QR (the terminal cannot show it).
         f.render_widget(
@@ -197,13 +189,8 @@ impl Screen for Card {
             qr,
         );
         f.render_widget(
-            Paragraph::new(format!(
-                "{} {} {}",
-                name_of(&dev.node.prefs.name),
-                ui.sym.dot,
-                short_key(dev.node.id.pub_key())
-            ))
-            .alignment(Alignment::Center),
+            Paragraph::new(format!("{name} {} {}", ui.sym.dot, short_key(&key)))
+                .alignment(Alignment::Center),
             rows(body, body.height.saturating_sub(1), 1),
         );
     }
@@ -213,8 +200,8 @@ impl Screen for Card {
     }
 
     fn paints(&self, body: Rect, ui: &Ui<'_>) -> Vec<(Rect, Paint)> {
-        let dev = ui.ctx.dev;
-        let link = contact_link(&name_of(&dev.node.prefs.name), dev.node.id.pub_key());
+        let (name, key) = self.who(ui);
+        let link = contact_link(&name, &key);
         alloc::vec![(
             rows(body, 0, body.height.saturating_sub(1)),
             Paint::Qr(link)

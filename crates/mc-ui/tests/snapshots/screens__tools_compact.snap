@@ -2,7 +2,7 @@
 source: crates/mc-ui/tests/screens.rs
 expression: "text(&mut app, grid, &c)"
 ---
-|Tools                   18:33 87%|
+|Tools                ●2 18:33 87%|
 |► Heard nodes                    |
 |  Discover                       |
 |  Trace route                    |

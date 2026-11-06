@@ -10,16 +10,20 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
+pub mod act;
 pub mod app;
 pub mod chrome;
 pub mod clock;
 pub mod demo;
 pub mod input;
+pub mod keyboard;
 pub mod overlay;
 pub mod panel;
 pub mod refresh;
+pub mod regions;
 pub mod screens;
 pub mod theme;
 pub mod tour;
 
-pub use app::{App, Ctx, Intent};
+pub use act::{Intent, Outcome, perform};
+pub use app::{App, Ctx};

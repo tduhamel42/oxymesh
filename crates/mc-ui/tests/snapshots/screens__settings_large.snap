@@ -2,7 +2,7 @@
 source: crates/mc-ui/tests/screens.rs
 expression: "text(&mut app, grid, &c)"
 ---
-|Settings        18:33 87%|
+|Settings     ●2 18:33 87%|
 |▸ Radio       SF8 869.618|
 |  Identity         Tanguy|
 |  Bluetooth              |

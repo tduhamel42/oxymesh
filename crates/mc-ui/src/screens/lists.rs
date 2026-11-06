@@ -10,7 +10,10 @@ use ratatui_core::terminal::Frame;
 use ratatui_widgets::list::ListState;
 use ratatui_widgets::paragraph::{Paragraph, Wrap};
 
-use super::{Soon, draw_list, name_of, rows, step};
+use super::chat::{Compose, Conversation, Target};
+use super::contact::{ChannelScreen, ContactScreen};
+use super::{draw_list, name_of, rows, step};
+use crate::act::Intent;
 use crate::app::{Input, Nav, Screen, Ui};
 use crate::chrome::Footer;
 use crate::clock;
@@ -18,14 +21,30 @@ use crate::clock;
 #[derive(Debug, Default)]
 pub struct Contacts {
     state: ListState,
+    /// Choosing whom to write to (Messages → New message).
+    pick: bool,
+}
+
+impl Contacts {
+    pub fn picker() -> Self {
+        Self {
+            state: ListState::default(),
+            pick: true,
+        }
+    }
 }
 
 /// Favourites first, then the most recently updated.
+fn sorted_contacts<'a>(ui: &Ui<'a>) -> Vec<&'a mc_node::contacts::Contact> {
+    let mut list: Vec<&mc_node::contacts::Contact> = ui.ctx.dev.node.contacts.list.iter().collect();
+    list.sort_by_key(|k| (k.flags & 1 == 0, core::cmp::Reverse(k.lastmod)));
+    list
+}
+
 fn sorted(ui: &Ui<'_>) -> Vec<(String, String)> {
     let c = ui.ctx;
-    let mut list: Vec<&mc_node::contacts::Contact> = c.dev.node.contacts.list.iter().collect();
-    list.sort_by_key(|k| (k.flags & 1 == 0, core::cmp::Reverse(k.lastmod)));
-    list.iter()
+    sorted_contacts(ui)
+        .iter()
         .map(|k| {
             let tag = match k.kind {
                 2 => "rpt ",
@@ -45,7 +64,11 @@ fn sorted(ui: &Ui<'_>) -> Vec<(String, String)> {
 
 impl Screen for Contacts {
     fn title(&self, ui: &Ui<'_>) -> String {
-        format!("Contacts {}", ui.ctx.dev.node.contacts.list.len())
+        if self.pick {
+            String::from("Write to…")
+        } else {
+            format!("Contacts {}", ui.ctx.dev.node.contacts.list.len())
+        }
     }
 
     fn draw(&mut self, f: &mut Frame<'_>, body: Rect, ui: &Ui<'_>) {
@@ -62,16 +85,20 @@ impl Screen for Contacts {
     }
 
     fn input(&mut self, input: Input, ui: &Ui<'_>) -> Nav {
-        let list = sorted(ui);
-        if step(&mut self.state, list.len(), input)
-            && let Some((name, _)) = list.get(self.state.selected().unwrap_or(0))
-        {
-            return Nav::Push(Box::new(Soon::new(
-                name,
-                "Messages, ping, trace, telemetry and the rest arrive in U3.",
-            )));
+        let list = sorted_contacts(ui);
+        if !step(&mut self.state, list.len(), input) {
+            return Nav::Stay;
         }
-        Nav::Stay
+        let Some(c) = list.get(self.state.selected().unwrap_or(0)) else {
+            return Nav::Stay;
+        };
+        if self.pick {
+            let mut p = [0u8; 6];
+            p.copy_from_slice(&c.pub_key[..6]);
+            let peer = mc_node::history::Peer::Contact(p);
+            return Nav::Replace(Box::new(Compose::to(peer)));
+        }
+        Nav::Push(Box::new(ContactScreen::new(c.pub_key)))
     }
 
     fn footer(&self, ui: &Ui<'_>) -> Footer {
@@ -88,7 +115,9 @@ pub struct Channels {
     state: ListState,
 }
 
-fn channels(ui: &Ui<'_>) -> Vec<(String, String)> {
+/// (slot, name, unread or empty).
+fn channels(ui: &Ui<'_>) -> Vec<(u8, String, String)> {
+    let h = ui.ctx.dev.history();
     ui.ctx
         .dev
         .node
@@ -97,7 +126,16 @@ fn channels(ui: &Ui<'_>) -> Vec<(String, String)> {
         .iter()
         .enumerate()
         .filter(|(_, c)| !c.is_empty())
-        .map(|(i, c)| (name_of(&c.name), format!("#{i}")))
+        .map(|(i, c)| {
+            let idx = i as u8;
+            let unread = h.unread_with(mc_node::history::Peer::Channel(idx));
+            let detail = if unread > 0 {
+                format!("{}{unread}", ui.sym.unread)
+            } else {
+                String::new()
+            };
+            (idx, name_of(&c.name), detail)
+        })
         .collect()
 }
 
@@ -107,27 +145,27 @@ impl Screen for Channels {
     }
 
     fn draw(&mut self, f: &mut Frame<'_>, body: Rect, ui: &Ui<'_>) {
-        let list = channels(ui);
-        if list.is_empty() {
-            f.render_widget(
-                Paragraph::new("No channels.").wrap(Wrap { trim: true }),
-                rows(body, 1, body.height.saturating_sub(1)),
-            );
-            return;
-        }
-        draw_list(f, body, &list, &mut self.state, ui);
+        let mut rows_: Vec<(String, String)> =
+            alloc::vec![(String::from("+ Add #channel"), String::new())];
+        rows_.extend(channels(ui).into_iter().map(|(_, n, d)| (n, d)));
+        draw_list(f, body, &rows_, &mut self.state, ui);
     }
 
     fn input(&mut self, input: Input, ui: &Ui<'_>) -> Nav {
         let list = channels(ui);
-        if step(&mut self.state, list.len(), input)
-            && let Some((name, _)) = list.get(self.state.selected().unwrap_or(0))
-        {
-            return Nav::Push(Box::new(Soon::new(
-                name,
-                "The channel view and compose arrive in U3.",
-            )));
+        if !step(&mut self.state, list.len() + 1, input) {
+            return Nav::Stay;
         }
-        Nav::Stay
+        match self.state.selected().unwrap_or(0) {
+            0 => Nav::Push(Box::new(Compose::new(Target::Hashtag, ""))),
+            i => match list.get(i - 1) {
+                Some((idx, _, d)) if !d.is_empty() => Nav::PushWith(
+                    Box::new(Conversation::new(mc_node::history::Peer::Channel(*idx))),
+                    Intent::MarkRead(mc_node::history::Peer::Channel(*idx)),
+                ),
+                Some((idx, _, _)) => Nav::Push(Box::new(ChannelScreen::new(*idx))),
+                None => Nav::Stay,
+            },
+        }
     }
 }

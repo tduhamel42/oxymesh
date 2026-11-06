@@ -2,12 +2,10 @@
 source: crates/mc-ui/tests/screens.rs
 expression: "text(&mut app, grid, &c)"
 ---
-|Messages                18:33 87%|
-|                                 |
-|No messages yet.                 |
-|                                 |
-|Conversations on the device      |
-|arrive in U3.                    |
+|Messages             ●2 18:33 87%|
+|► + New message                  |
+|  Bob                          ●1|
+|  Public                       ●1|
 |                                 |
 |                                 |
 |                                 |
@@ -21,4 +19,6 @@ expression: "text(&mut app, grid, &c)"
 |                                 |
 |                                 |
 |                                 |
-|                           B◄back|
+|                                 |
+|                                 |
+|A►next hold►open           B◄back|

@@ -2,7 +2,7 @@
 source: crates/mc-ui/tests/screens.rs
 expression: "text(&mut app, grid, &c)"
 ---
-|Contacts 2      18:33 87%|
+|Contacts 2   ●2 18:33 87%|
 |▸ Bob               18:33|
 |  Alice             18:33|
 |                         |

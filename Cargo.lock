@@ -835,6 +835,8 @@ dependencies = [
  "mc-proto",
  "mc-sim",
  "mc-ui",
+ "rand_chacha",
+ "rand_core",
  "ratatui-core",
  "ratatui-crossterm",
  "ratatui-widgets",
@@ -897,6 +899,8 @@ dependencies = [
  "mc-sim",
  "mousefood",
  "qrcodegen-no-heap",
+ "rand_chacha",
+ "rand_core",
  "ratatui-core",
  "ratatui-widgets",
 ]

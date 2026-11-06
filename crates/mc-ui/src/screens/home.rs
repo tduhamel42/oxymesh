@@ -68,9 +68,21 @@ impl Home {
             None => String::from("Nothing heard yet"),
         };
         let r = &dev.node.prefs.radio;
+        let last = match dev.history().iter().filter(|m| !m.outgoing).last() {
+            Some(m) => {
+                let text = String::from_utf8_lossy(&m.text);
+                match m.peer {
+                    // Channel texts already start with "Name: ".
+                    mc_node::history::Peer::Channel(_) => String::from(text),
+                    p => format!("{}: {text}", super::peer_name(ui, p)),
+                }
+            }
+            None => String::new(),
+        };
         alloc::vec![
             clock::date(clock::local(c.unix, c.tz_offset_min)),
             unread,
+            last,
             heard,
             format!(
                 "{} {} {}",

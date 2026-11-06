@@ -95,6 +95,38 @@ pub fn spread(left: &str, right: &str, width: usize) -> String {
     format!("{l}{:pad$}{right}", "")
 }
 
+/// `text` in lines of at most `width` cells, broken at spaces when possible.
+pub fn wrap(text: &str, width: usize) -> Vec<String> {
+    let width = width.max(1);
+    let mut out: Vec<String> = Vec::new();
+    for para in text.split('\n') {
+        let mut line = String::new();
+        let mut len = 0usize;
+        for word in para.split(' ') {
+            let wl = word.chars().count();
+            if len > 0 && len + 1 + wl > width {
+                out.push(core::mem::take(&mut line));
+                len = 0;
+            }
+            if len > 0 {
+                line.push(' ');
+                len += 1;
+            }
+            // A word longer than a line is cut.
+            for c in word.chars() {
+                if len == width {
+                    out.push(core::mem::take(&mut line));
+                    len = 0;
+                }
+                line.push(c);
+                len += 1;
+            }
+        }
+        out.push(line);
+    }
+    out
+}
+
 /// Status on the right of the header: unread, backlight, time, battery.
 pub fn status(ui: &Ui<'_>, time: bool) -> String {
     let c = ui.ctx;
@@ -179,6 +211,12 @@ mod tests {
         assert_eq!(fit("Settings", 8), "Settings");
         assert_eq!(fit("Notifications", 8), "Notific…");
         assert_eq!(spread("A▸next", "B◂back", 14), "A▸next  B◂back");
+        assert_eq!(
+            wrap("hello there my friend", 11),
+            ["hello there", "my friend"]
+        );
+        assert_eq!(wrap("abcdefghij", 4), ["abcd", "efgh", "ij"]);
+        assert_eq!(wrap("", 4), [""]);
         assert_eq!(spread("a long left part", "right", 12), "a lon… right");
     }
 }

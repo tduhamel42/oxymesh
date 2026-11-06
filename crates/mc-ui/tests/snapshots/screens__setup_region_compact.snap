@@ -1,0 +1,24 @@
+---
+source: crates/mc-ui/tests/screens.rs
+expression: "text(&mut app, grid, &c)"
+---
+|1/3 Region           ●2 18:33 87%|
+|Radio settings shared by the     |
+|nodes around you.                |
+|                                 |
+|► Keep current          869.6 SF8|
+|  France                869.6 SF8|
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|A►next hold►choose         B◄skip|

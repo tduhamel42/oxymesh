@@ -10,10 +10,11 @@ use ratatui_core::terminal::Frame;
 use ratatui_widgets::list::ListState;
 
 use super::{Dest, Soon, draw_list, open, step};
-use crate::app::{Confirm, Input, Intent, Nav, Screen, Ui};
+use crate::act::Intent;
+use crate::app::{Confirm, Input, Nav, Screen, Ui};
 
 /// What choosing an item does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     Open(Dest),
     /// Not built yet: a screen that says which milestone brings it.
@@ -27,7 +28,7 @@ pub enum Action {
     },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Item {
     pub label: &'static str,
     /// Value shown on the right, computed when drawn.
@@ -98,7 +99,7 @@ impl Screen for Menu {
         let Some(item) = self.items.get(self.selected()) else {
             return Nav::Stay;
         };
-        match item.action {
+        match item.action.clone() {
             Action::Open(d) => Nav::Push(open(d)),
             Action::Soon(note) => Nav::Push(Box::new(Soon::new(item.label, note))),
             Action::Intent(i, toast) => Nav::IntentToast(i, toast),
@@ -216,11 +217,7 @@ pub fn identity() -> Menu {
         "Identity",
         &[
             item("My card (QR)", Action::Open(Dest::MyCard)),
-            item_with(
-                "Name",
-                name,
-                Action::Soon("Name entry arrives with the keyboard (U3)."),
-            ),
+            item_with("Name", name, Action::Open(Dest::Name)),
             item(
                 "Advert, zero hop",
                 Action::Intent(Intent::SendAdvert { flood: false }, "Advert sent"),
@@ -242,10 +239,7 @@ pub fn system() -> Menu {
         "System",
         &[
             item("About", Action::Open(Dest::About)),
-            item(
-                "Setup again",
-                Action::Soon("The first-boot setup arrives in U3."),
-            ),
+            item("Setup again", Action::Open(Dest::Setup)),
             item(
                 "Reboot",
                 Action::Confirm {

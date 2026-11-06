@@ -4,8 +4,10 @@
 
 use mc_proto::codec::err;
 
+use mc_core::Instant;
+
 use super::{Action, Device, REPEAT_FREQS, Storage};
-use crate::contacts::{Channel, MAX_CHANNELS, name_str};
+use crate::contacts::{Channel, MAX_CHANNELS, Slot, name_str};
 use crate::node::UiPrefs;
 use crate::persist::encode_channel;
 
@@ -203,5 +205,44 @@ impl Device {
     pub fn set_ui(&mut self, ui: UiPrefs, st: &mut impl Storage) {
         self.node.prefs.ui = ui;
         self.save_prefs(st);
+    }
+
+    /// `REMOVE_CONTACT`: the contact and its stored advert.
+    pub fn remove_contact(
+        &mut self,
+        now: Instant,
+        key: &[u8; 32],
+        st: &mut impl Storage,
+    ) -> SetResult {
+        match self.node.contacts.find(key) {
+            Some(Slot::List(i)) => {
+                let _ = self.node.contacts.list.remove(i);
+                st.remove_blob(key);
+                self.mark_contacts(now);
+                self.notify(super::UiEvent::Contacts);
+                Ok(())
+            }
+            _ => Err(err::NOT_FOUND),
+        }
+    }
+
+    /// `RESET_PATH`: the next message to this contact floods and learns a new route.
+    pub fn reset_contact_path(&mut self, now: Instant, key: &[u8; 32]) -> SetResult {
+        if self.node.reset_path(key) {
+            self.mark_contacts(now);
+            Ok(())
+        } else {
+            Err(err::NOT_FOUND)
+        }
+    }
+
+    /// Favourite: bit 0 of the contact flags (the app shows it too).
+    pub fn set_favourite(&mut self, now: Instant, key: &[u8; 32], on: bool) -> SetResult {
+        let slot = self.node.contacts.find(key).ok_or(err::NOT_FOUND)?;
+        let c = self.node.contacts.get_mut(slot).ok_or(err::NOT_FOUND)?;
+        c.flags = (c.flags & !1) | u8::from(on);
+        self.mark_contacts(now);
+        self.notify(super::UiEvent::Contacts);
+        Ok(())
     }
 }
