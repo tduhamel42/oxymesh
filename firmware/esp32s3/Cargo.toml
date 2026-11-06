@@ -30,6 +30,17 @@ embedded-graphics = "0.8"
 mc-core = { path = "../../crates/mc-core" }
 mc-air = { path = "../../crates/mc-air" }
 mc-node = { path = "../../crates/mc-node" }
+mc-proto = { path = "../../crates/mc-proto" }
+esp-storage = { version = "0.10", features = ["esp32s3"] }
+sequential-storage = "8.0"
+embassy-embedded-hal = "0.6"
+embedded-storage = "0.3"
+embedded-storage-async = "0.4"
+embassy-futures = "0.1"
+
+[features]
+# Journal sur l'UART0 : interfère avec le protocole compagnon, pour la mise au point seulement.
+debug-log = []
 
 [profile.dev]
 opt-level = "s"

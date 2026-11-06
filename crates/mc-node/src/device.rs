@@ -168,8 +168,16 @@ fn err_of(e: SendError) -> u8 {
 
 impl Device {
     pub fn new(node: Node, info: Info) -> Self {
+        let mut d = Self::empty(info);
+        d.node = node;
+        d
+    }
+
+    /// Appareil vide, constructible à la compilation (≈ 150 Ko : il vit dans une statique sur
+    /// l'appareil) ; le nœud s'initialise ensuite par `node.reset`.
+    pub const fn empty(info: Info) -> Self {
         Self {
-            node,
+            node: Node::empty(),
             info,
             app_target_ver: 0,
             connected: false,

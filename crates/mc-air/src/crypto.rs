@@ -157,6 +157,13 @@ impl core::fmt::Debug for LocalIdentity {
 }
 
 impl LocalIdentity {
+    /// Identité vide (clés nulles), seulement pour réserver une place statique avant de la
+    /// remplacer par une vraie identité. Elle ne signe ni ne déchiffre rien d'utile.
+    pub const PLACEHOLDER: Self = Self {
+        prv: [0; PRV_KEY_LEN],
+        pub_key: [0; PUB_KEY_LEN],
+    };
+
     /// Identité tirée d'une graine de 32 octets, comme `ed25519_create_keypair` d'orlp :
     /// `SHA512(graine)`, scalaire clampé.
     pub fn from_seed(seed: &[u8; 32]) -> Self {

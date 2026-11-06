@@ -2,6 +2,7 @@
 #![no_std]
 
 pub mod battery;
+pub mod flashstore;
 pub mod pca9557;
 pub mod ssd1681;
 pub mod sx126x;

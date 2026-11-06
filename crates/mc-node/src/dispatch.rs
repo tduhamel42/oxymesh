@@ -96,12 +96,26 @@ pub const ERR_EVENT_FULL: u16 = 1 << 0;
 pub const ERR_EVENT_CAD_TIMEOUT: u16 = 1 << 1;
 
 /// `airtime_factor` × 1000 (le C++ le garde en `float`, défaut 1,0).
-fn duty_div(af_milli: u32) -> u64 {
-    1000 + u64::from(af_milli)
+const fn duty_div(af_milli: u32) -> u64 {
+    1000 + af_milli as u64
+}
+
+impl Stats {
+    pub const ZERO: Self = Self {
+        sent_flood: 0,
+        sent_direct: 0,
+        recv_flood: 0,
+        recv_direct: 0,
+        recv_errors: 0,
+        tx_airtime_ms: 0,
+        rx_airtime_ms: 0,
+        err_flags: 0,
+        dropped_full: 0,
+    };
 }
 
 impl Dispatcher {
-    pub fn new(now: Instant, af_milli: u32) -> Self {
+    pub const fn new(now: Instant, af_milli: u32) -> Self {
         Self {
             queue: heapless::Vec::new(),
             budget_ms: WINDOW_MS * 1000 / duty_div(af_milli),
@@ -110,7 +124,7 @@ impl Dispatcher {
             busy_since: None,
             in_flight: None,
             regulatory: None,
-            stats: Stats::default(),
+            stats: Stats::ZERO,
         }
     }
 

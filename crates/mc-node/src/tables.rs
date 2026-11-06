@@ -15,6 +15,12 @@ pub struct Seen {
 
 impl Default for Seen {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Seen {
+    pub const fn new() -> Self {
         Self {
             hashes: [[0; PACKET_HASH_LEN]; SEEN_MAX],
             next: 0,

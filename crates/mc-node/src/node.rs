@@ -47,6 +47,41 @@ pub struct Prefs {
 }
 
 impl Prefs {
+    /// Réglages nuls, pour [`Node::empty`].
+    pub const ZERO: Self = Self {
+        name: [0; 32],
+        lat: 0,
+        lon: 0,
+        radio: RadioParams {
+            freq_khz: 869_618,
+            bw_hz: 62_500,
+            sf: 8,
+            cr: 5,
+            tx_power_dbm: 22,
+        },
+        airtime_factor_milli: 1000,
+        tx_delay_milli: 500,
+        direct_tx_delay_milli: 200,
+        rx_delay_base_milli: 0,
+        multi_acks: 0,
+        manual_add_contacts: 0,
+        autoadd_config: 0,
+        autoadd_max_hops: 0,
+        telemetry_base: 0,
+        telemetry_loc: 0,
+        telemetry_env: 0,
+        advert_loc_policy: 0,
+        ble_pin: 0,
+        repeat: false,
+        path_hash_mode: 0,
+        default_scope_name: [0; 31],
+        default_scope_key: [0; 16],
+        interference_threshold: 0,
+        cad_enabled: false,
+        gps_enabled: false,
+        buzzer_quiet: false,
+    };
+
     /// Réglages d'usine du build M5 (`MyMesh.cpp:916-1007`) : nom = 4 premiers octets de la clé
     /// en hexadécimal majuscule, 869,618 MHz / 62,5 kHz / SF8 / CR 5, 22 dBm.
     pub fn defaults(pub_key: &[u8; PUB_KEY_LEN]) -> Self {
@@ -272,15 +307,22 @@ impl core::fmt::Debug for Node {
 
 impl Node {
     pub fn new(id: LocalIdentity, prefs: Prefs, epoch: u32, now: Instant) -> Self {
-        let af = prefs.airtime_factor_milli;
+        let mut n = Self::empty();
+        n.reset(id, prefs, epoch, now);
+        n
+    }
+
+    /// Nœud vide, constructible à la compilation : sur l'appareil, il vit dans une statique
+    /// (87 Ko, plus que la pile) et [`Node::reset`] l'initialise sur place.
+    pub const fn empty() -> Self {
         Self {
-            id,
-            prefs,
-            rtc: Rtc::new(epoch, now),
-            disp: Dispatcher::new(now, af),
-            seen: Seen::default(),
-            contacts: Contacts::default(),
-            channels: Channels::default(),
+            id: LocalIdentity::PLACEHOLDER,
+            prefs: Prefs::ZERO,
+            rtc: Rtc::new(0, Instant::ZERO),
+            disp: Dispatcher::new(Instant::ZERO, 1000),
+            seen: Seen::new(),
+            contacts: Contacts::new(),
+            channels: Channels::new(),
             acks: [None; ACK_TABLE],
             next_ack: 0,
             events: heapless::Deque::new(),
@@ -288,9 +330,31 @@ impl Node {
             send_unscoped: false,
             last_snr4: 0,
             last_rssi: 0,
-            boot: now,
+            boot: Instant::ZERO,
             pending_discovery: 0,
         }
+    }
+
+    /// (Ré)initialise le nœud sur place : identité, réglages, heure ; tables vidées.
+    pub fn reset(&mut self, id: LocalIdentity, prefs: Prefs, epoch: u32, now: Instant) {
+        let af = prefs.airtime_factor_milli;
+        self.id = id;
+        self.prefs = prefs;
+        self.rtc = Rtc::new(epoch, now);
+        self.disp = Dispatcher::new(now, af);
+        self.seen = Seen::new();
+        self.contacts.list.clear();
+        self.contacts.anon = [const { None }; crate::contacts::ANON_SLOTS];
+        self.channels = Channels::new();
+        self.acks = [None; ACK_TABLE];
+        self.next_ack = 0;
+        self.events.clear();
+        self.send_scope = [0; 16];
+        self.send_unscoped = false;
+        self.last_snr4 = 0;
+        self.last_rssi = 0;
+        self.boot = now;
+        self.pending_discovery = 0;
     }
 
     pub(crate) fn emit(&mut self, e: Event) {

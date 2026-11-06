@@ -121,6 +121,12 @@ pub struct Contacts {
 
 impl Default for Contacts {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Contacts {
+    pub const fn new() -> Self {
         Self {
             anon: [const { None }; ANON_SLOTS],
             list: heapless::Vec::new(),
@@ -253,17 +259,17 @@ pub struct Channels(pub [Channel; MAX_CHANNELS]);
 
 impl Default for Channels {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Channels {
+    pub const fn new() -> Self {
         let mut c = [const { Channel::EMPTY }; MAX_CHANNELS];
-        if let Some(first) = c.first_mut() {
-            let mut name = [0u8; 32];
-            for (o, b) in name.iter_mut().zip(b"Public") {
-                *o = *b;
-            }
-            *first = Channel {
-                name,
-                secret: ChannelSecret::PUBLIC,
-            };
-        }
+        c[0] = Channel {
+            name: *b"Public\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
+            secret: ChannelSecret::PUBLIC,
+        };
         Self(c)
     }
 }
