@@ -58,13 +58,32 @@ Findings:
   - With 100 to 300 ms before each ping: 0 lost in 2 runs. With 3 s between the prefs change and the first ping: 0 lost in 5 runs (100 pings). `mc duo` now waits 3 s.
   - Not reproduced between two oxymesh nodes in mc-sim. Cause unknown; next step is a run with the C++ firmware on both ends.
 
+## 2026-11-06 — message bursts while the M5 redraws (U6)
+
+- `mc burst --a <receiver> --b <sender> --count N --gap MS`: the sender's companion sends N direct messages MS apart without waiting for them, then counts its delivery confirmations; the receiver's waiting messages are fetched last. Each message the M5 receives redraws its screen (partial refresh: 542 ms, see U0).
+- Radio: 869.618 MHz, SF8, 62.5 kHz; the Heltec at CR 4/8, the M5 at CR 4/5. A 38-byte DM takes 321 to 443 ms on air, its direct ACK 157 to 181 ms.
+- Ports: M5 `/dev/cu.wchusbserial120`, Heltec `/dev/cu.usbmodem14301`.
+
+| Sender → receiver | Gap | Sent | Confirmed to the sender | Received |
+|---|---|---|---|---|
+| Heltec → M5 | 0.7 s | 30 | 0 | 15 (every odd one missing) |
+| M5 → Heltec | 0.7 s | 12 | 0 | 6 (every odd one missing) |
+| Heltec → M5 | 1.5 s | 20 | 20 | 20 |
+| M5 → Heltec | 1.5 s (twice) | 20 | 20 | 16 queued (see below) |
+| Heltec → M5 | 2.5 s | 12 | 12 | 12 |
+
+- **At 0.7 s the loss is the same when the C++ firmware receives.** The ACK for message *n* goes out while message *n + 1* arrives, and both radios are half-duplex. The receiver misses *n + 1*, and the sender, busy transmitting, misses the ACK. That is the air at this spacing, not the screen.
+- **At 1.5 s every message reached the M5 and was acknowledged, each one redrawn: no packet lost during a refresh.**
+- The 4 messages missing on the Heltec were acknowledged, so they were received. The C++ USB build then dropped them because it keeps 16 waiting messages (`OFFLINE_QUEUE_SIZE` defaults to 16, `MyMesh.h:61-62`; the BLE and Wi-Fi builds, and every M5 build, set 256). Same result on a second run. Not a radio loss.
+- `mc latency /dev/cu.wchusbserial120 --count 150` measures USB command round trips (GET_DEVICE_TIME). It ran while the Heltec sent the M5 6 DMs with `mc send`, each delivered in 975 to 1218 ms and redrawn. Result: min 10 ms, median 12 ms, max 37 ms, none over 100 ms. The Heltec, idle: 10 / 12 / 17 ms. The panel refresh never stalls the main loop: BUSY is polled.
+
 ## 2026-11-06 — the interface on the M5 (U6, part 1)
 
 - Firmware `mc-m5` with `mc-ui`: 64 KB heap, one Ratatui terminal drawing into the panel frame, overlays, refresh-debt policy, gestures from the two buttons, light auto-off, unread LED, hibernation.
 - Image 900,384 bytes, against a 1.75 MB app partition.
 - `mc duo --a /dev/cu.wchusbserial210 --b /dev/cu.usbmodem1101 --pings 3 --reboot`: 13/13 with the interface running in the same loop as the radio.
 - Checked by hand (Tanguy): a quick reply ("On my way") written on the M5 reached the Heltec (flood, SNR 12.25 dB) and showed "delivered" on the M5; the Heltec's answer (`mc send`, direct, acknowledged in 1.1 s) brought up the new-message banner.
-- Still to check by hand: the tools on real traffic, light and potentiometer, the unread LED, no packet lost during a refresh.
+- Still to check by hand: the tools on real traffic, light and potentiometer, the unread LED. No packet lost during a refresh: see the bursts below.
 
 ## 2026-11-06 — offline queue in flash, screen history (U2)
 

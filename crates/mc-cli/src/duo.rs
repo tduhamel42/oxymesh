@@ -700,3 +700,94 @@ pub fn run(
         Err(format!("{} checks failed", rep.failed))
     }
 }
+
+/// `mc burst`: B sends `count` direct messages to A, `gap_ms` apart, without waiting; then
+/// counts B's delivery confirmations and the messages A actually queued for its app. With A's
+/// screen redrawing on each message, this shows whether reception survives the refreshes.
+pub fn burst(
+    a_path: &str,
+    b_path: &str,
+    count: u32,
+    gap_ms: u64,
+    verbose: bool,
+) -> Result<(), String> {
+    let mut a = open(a_path, "A", verbose)?;
+    let mut b = open(b_path, "B", verbose)?;
+    let tag = now_unix();
+    let mut acks: Vec<[u8; 4]> = Vec::new();
+    let t0 = Instant::now();
+    for i in 0..count {
+        let text = format!("burst {tag} #{i:02}");
+        let sent = b.port.ask(&Command::SendTxtMsg {
+            txt_type: 0,
+            attempt: 0,
+            timestamp: tag + i,
+            prefix: a.prefix(),
+            text: text.as_bytes(),
+        })?;
+        match Response::decode(&sent) {
+            Ok(Response::Sent { ack, flood, .. }) => {
+                if flood {
+                    println!("  #{i:02} went by flood: A has no direct route on B");
+                }
+                acks.push(ack);
+            }
+            other => println!("  #{i:02} not sent: {other:?}"),
+        }
+        std::thread::sleep(Duration::from_millis(gap_ms));
+    }
+    // Confirmations, as they come.
+    let mut confirmed = 0;
+    let end = Instant::now() + Duration::from_secs(30);
+    while confirmed < acks.len() && Instant::now() < end {
+        let left = end
+            .saturating_duration_since(Instant::now())
+            .as_secs()
+            .max(1);
+        match b.port.wait(left, |r| match r {
+            Response::SendConfirmed { ack, .. } => Some(*ack),
+            _ => None,
+        }) {
+            Ok(ack) if acks.contains(&ack) => confirmed += 1,
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    }
+    // What A queued for its app.
+    let prefix = b.prefix();
+    let mut got = std::collections::BTreeSet::new();
+    for _ in 0..400 {
+        let f = a.port.ask(&Command::SyncNextMessage)?;
+        match Response::decode(&f) {
+            Ok(Response::NoMoreMessages) => break,
+            Ok(Response::ContactMsg {
+                prefix: p, text, ..
+            }) if p == prefix => {
+                let t = String::from_utf8_lossy(text).into_owned();
+                if let Some(n) = t.strip_prefix(&format!("burst {tag} #")) {
+                    got.insert(n.to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    let missing: Vec<String> = (0..count)
+        .map(|i| format!("{i:02}"))
+        .filter(|i| !got.contains(i))
+        .collect();
+    println!(
+        "{count} sent over {:.1} s; {confirmed} delivery confirmations on B; {} received by A{}",
+        t0.elapsed().as_secs_f32(),
+        got.len(),
+        if missing.is_empty() {
+            String::new()
+        } else {
+            format!(" (missing: {})", missing.join(" "))
+        }
+    );
+    if got.len() as u32 == count && confirmed as u32 == count {
+        Ok(())
+    } else {
+        Err("losses".into())
+    }
+}

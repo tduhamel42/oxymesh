@@ -213,7 +213,7 @@ Only one request (login, status, telemetry, discovery, binary) pending at a time
 
 ## 5. Received messages and offline queue
 
-**Offline queue** (M:224-260): FIFO of 256 frames (direct messages 7/16, channels 8/17, channel data 27). Full: the oldest channel frame is removed; if there is none, the new one is dropped. MSG_WAITING is sent anyway. **The format is fixed at queueing time**, according to `app_target_ver` at that moment. (**Deliberate deviation 1**: our queue survives a reboot.)
+**Offline queue** (M:224-260): FIFO of `OFFLINE_QUEUE_SIZE` frames (direct messages 7/16, channels 8/17, channel data 27): 16 by default (M.h:61-62), 256 in every ThinkNode M5 companion build (`variants/thinknode_m5/platformio.ini`), so 256 here. The Heltec V4 USB build used as the reference keeps the default 16. Full: the oldest channel frame is removed; if there is none, the new one is dropped. MSG_WAITING is sent anyway. **The format is fixed at queueing time**, according to `app_target_ver` at that moment. (**Deliberate deviation 1**: our queue survives a reboot.)
 
 **CONTACT_MSG_RECV_V3 (16)** (M:440-467): SNR×4, 0, 0, sender prefix (6), path_len (the packet's if received by flood, **0xFF if direct**), txt_type, ts (4), author prefix (4, only for txt_type 2), text. **Legacy (7)**: the same without `[1..3]`.
 

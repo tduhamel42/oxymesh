@@ -36,11 +36,31 @@ enum Cmd {
         #[arg(long)]
         channel: Vec<String>,
     },
+    /// B sends A a burst of direct messages; counts deliveries and what A received.
+    Burst {
+        #[arg(long)]
+        a: String,
+        #[arg(long)]
+        b: String,
+        #[arg(long, default_value_t = 30)]
+        count: u32,
+        /// Milliseconds between two messages.
+        #[arg(long, default_value_t = 700)]
+        gap: u64,
+        #[arg(short, long)]
+        verbose: bool,
+    },
     /// Send a direct message to a contact, by the hex prefix of its key (6 bytes or more).
     Send {
         port: String,
         to: String,
         text: String,
+    },
+    /// Command round trips to the device (GET_DEVICE_TIME), to spot a slow main loop.
+    Latency {
+        port: String,
+        #[arg(long, default_value_t = 20)]
+        count: u32,
     },
     /// Fetch and print the messages waiting on the device (SYNC_NEXT_MESSAGE until empty).
     Inbox { port: String },
@@ -107,6 +127,14 @@ fn main() {
         Cmd::Inject { port, hex, prio } => inject(&port, &hex, prio),
         Cmd::Advert { port, flood } => advert(&port, flood),
         Cmd::Inbox { port } => inbox(&port),
+        Cmd::Latency { port, count } => latency(&port, count),
+        Cmd::Burst {
+            a,
+            b,
+            count,
+            gap,
+            verbose,
+        } => duo::burst(&a, &b, count, gap, verbose),
         Cmd::Send { port, to, text } => send(&port, &to, &text),
         Cmd::Airtest {
             ref_port,
@@ -204,6 +232,27 @@ fn send(path: &str, to: &str, text: &str) -> Result<(), String> {
             Err(_) => println!("no delivery confirmation within 20 s"),
         }
     }
+    Ok(())
+}
+
+fn latency(path: &str, count: u32) -> Result<(), String> {
+    let mut p = Port::open(path, "device")?;
+    p.ask(&Command::DeviceQuery { app_ver: APP_VER })?;
+    let mut ms: Vec<u128> = Vec::new();
+    for _ in 0..count {
+        let t = std::time::Instant::now();
+        p.ask(&Command::GetDeviceTime)?;
+        ms.push(t.elapsed().as_millis());
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let slow = ms.iter().filter(|&&m| m > 100).count();
+    ms.sort_unstable();
+    println!(
+        "{count} round trips: min {} ms, median {} ms, max {} ms; {slow} over 100 ms",
+        ms[0],
+        ms[ms.len() / 2],
+        ms[ms.len() - 1]
+    );
     Ok(())
 }
 
