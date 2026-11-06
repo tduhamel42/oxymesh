@@ -31,8 +31,8 @@ use esp_hal::uart::{Config as UartConfig, Uart};
 use esp_storage::FlashStorage;
 use log::{error, info};
 use mc_air::crypto::LocalIdentity;
-use mc_node::device::{Action, Info};
-use mc_node::{Device, Event, Prefs};
+use mc_node::device::{Action, Info, UiEvent};
+use mc_node::{Device, Prefs};
 use mc_proto::{FROM_DEVICE, TO_DEVICE, USB_MAX, UsbDeframer, usb_frame};
 use oxymesh_esp32s3::battery::{Smoother, percent};
 use oxymesh_esp32s3::flashstore::FlashStore;
@@ -214,7 +214,7 @@ async fn main(_spawner: Spawner) -> ! {
     let prefs = Prefs::defaults(id.pub_key());
     let dev = DEVICE.take();
     dev.node.reset(id, prefs, 1_793_900_000, mc_now());
-    store.load(&mut dev.node);
+    store.load(dev);
     dev.connected = true; // USB: always connected.
 
     // Radio.
@@ -399,15 +399,11 @@ async fn main(_spawner: Spawner) -> ! {
 
         // User interface.
         while let Some(e) = dev.poll_ui() {
-            if let Event::Advert { key, .. } = e
-                && let Some(c) = dev
-                    .node
-                    .contacts
-                    .find(&key)
-                    .and_then(|s| dev.node.contacts.get(s))
+            if e == UiEvent::Heard
+                && let Some(h) = dev.heard().last()
             {
                 last_heard.clear();
-                let n = mc_node::contacts::name_str(&c.name);
+                let n = mc_node::contacts::name_str(&h.name);
                 let _ = last_heard.push_str(
                     core::str::from_utf8(n.get(..n.len().min(18)).unwrap_or(&[])).unwrap_or("?"),
                 );

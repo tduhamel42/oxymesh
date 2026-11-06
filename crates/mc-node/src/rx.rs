@@ -705,12 +705,20 @@ impl Node {
         }
         let mut path = heapless::Vec::new();
         let _ = path.extend_from_slice(pkt.path());
+        let mut name = [0u8; 32];
+        let n = ad.name.unwrap_or(&[]);
+        let n = n.get(..n.len().min(31)).unwrap_or(&[]);
+        if let Some(dst) = name.get_mut(..n.len()) {
+            dst.copy_from_slice(n);
+        }
         self.emit(Event::AdvertHeard {
             key: *key,
             kind: ad.kind,
             path_len: pkt.path_len.byte(),
             path,
             snr4,
+            name,
+            location: ad.location,
         });
         let epoch = self.rtc.now(now);
         let mut slot = self.contacts.find(key);

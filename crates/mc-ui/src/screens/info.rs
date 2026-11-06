@@ -56,11 +56,12 @@ impl Screen for Messages {
     }
 
     fn draw(&mut self, f: &mut Frame<'_>, body: Rect, ui: &Ui<'_>) {
-        let n = ui.ctx.dev.queued_messages();
-        let text = if n == 0 {
-            String::from("No messages yet.")
-        } else {
-            format!("{n} waiting for the phone app.")
+        let h = ui.ctx.dev.history();
+        let n = h.iter().count();
+        let text = match (n, h.unread()) {
+            (0, _) => String::from("No messages yet."),
+            (n, 0) => format!("{n} messages, all read."),
+            (n, u) => format!("{n} messages, {u} unread."),
         };
         let lines = alloc::vec![
             Line::from(text),

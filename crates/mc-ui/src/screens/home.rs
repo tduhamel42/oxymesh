@@ -24,6 +24,21 @@ const LAUNCHER: [(&str, Dest); 5] = [
     ("Settings", Dest::Settings),
 ];
 
+/// The advertised name, else the contact's, else the short key.
+pub(crate) fn heard_name(ui: &Ui<'_>, n: &mc_node::heard::HeardNode) -> String {
+    let own = name_of(&n.name);
+    if !own.is_empty() {
+        return own;
+    }
+    let contacts = &ui.ctx.dev.node.contacts;
+    contacts
+        .find(&n.key)
+        .and_then(|s| contacts.get(s))
+        .map(|c| name_of(&c.name))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| short_key(&n.key))
+}
+
 #[derive(Debug, Default)]
 pub struct Home {
     state: ListState,
@@ -37,17 +52,18 @@ impl Home {
     fn info(ui: &Ui<'_>) -> Vec<String> {
         let c = ui.ctx;
         let dev = c.dev;
-        let new = dev.queued_messages();
+        let new = dev.history().unread();
         let unread = match new {
             0 => String::from("No new messages"),
             1 => String::from("1 new message"),
             n => format!("{n} new messages"),
         };
-        let heard = match ui.heard {
-            Some((name, t)) => format!(
-                "Heard {name} {} {}",
+        let heard = match dev.heard().last() {
+            Some(n) => format!(
+                "Heard {} {} {}",
+                heard_name(ui, n),
                 ui.sym.dot,
-                clock::stamp(t, c.unix, c.tz_offset_min)
+                clock::stamp(n.at, c.unix, c.tz_offset_min)
             ),
             None => String::from("Nothing heard yet"),
         };
@@ -108,7 +124,7 @@ impl Screen for Home {
         }
         let dev = ui.ctx.dev;
         let channels = dev.node.channels.0.iter().filter(|c| !c.is_empty()).count();
-        let new = dev.queued_messages();
+        let new = dev.history().unread();
         let launcher: Vec<(String, String)> = LAUNCHER
             .iter()
             .map(|(label, d)| {

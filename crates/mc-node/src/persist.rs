@@ -13,8 +13,11 @@ use crate::node::Prefs;
 
 pub const CONTACT_RECORD: usize = 152;
 pub const CHANNEL_RECORD: usize = 68;
-pub const PREFS_RECORD: usize = 128;
-const PREFS_VERSION: u8 = 1;
+/// Prefs record v2: the 128 bytes of v1 (full), then the screen's settings.
+pub const PREFS_RECORD: usize = 160;
+/// v1 records (128 bytes) are still read.
+pub const PREFS_RECORD_V1: usize = 128;
+const PREFS_VERSION: u8 = 2;
 
 /// Write requested from the runner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,7 +127,15 @@ pub fn encode_prefs(p: &Prefs) -> [u8; PREFS_RECORD] {
         w.put_u8(p.path_hash_mode)?;
         w.put(&p.interference_threshold.to_le_bytes())?;
         w.put(&p.default_scope_name)?;
-        w.put(&p.default_scope_key)
+        w.put(&p.default_scope_key)?;
+        // v2.
+        let u = &p.ui;
+        w.put(&u.light_timeout_s.to_le_bytes())?;
+        w.put_u8(
+            u8::from(u.compact) | (u8::from(u.led_unread) << 1) | (u8::from(u.setup_done) << 2),
+        )?;
+        w.put_u8(u.buzzer)?;
+        w.put(&u.tz_offset_min.to_le_bytes())
     })();
     out
 }
@@ -132,7 +143,8 @@ pub fn encode_prefs(p: &Prefs) -> [u8; PREFS_RECORD] {
 /// Reads settings back; `None` if the version is unknown (factory settings are then kept).
 pub fn decode_prefs(b: &[u8], defaults: &Prefs) -> Option<Prefs> {
     let mut r = Reader::new(b);
-    if r.u8().ok()? != PREFS_VERSION {
+    let version = r.u8().ok()?;
+    if version != 1 && version != PREFS_VERSION {
         return None;
     }
     let mut p = defaults.clone();
@@ -174,6 +186,16 @@ pub fn decode_prefs(b: &[u8], defaults: &Prefs) -> Option<Prefs> {
     p.interference_threshold = i8::from_le_bytes([r.u8().ok()?]);
     p.default_scope_name = *r.array::<31>().ok()?;
     p.default_scope_key = *r.array::<16>().ok()?;
+    if version >= 2 {
+        let u = &mut p.ui;
+        u.light_timeout_s = u16::from_le_bytes(*r.array::<2>().ok()?);
+        let f = r.u8().ok()?;
+        u.compact = f & 1 != 0;
+        u.led_unread = f & 2 != 0;
+        u.setup_done = f & 4 != 0;
+        u.buzzer = r.u8().ok()?;
+        u.tz_offset_min = i16::from_le_bytes(*r.array::<2>().ok()?);
+    }
     Some(p)
 }
 
@@ -206,8 +228,20 @@ mod tests {
         q.repeat = true;
         q.radio.cr = 8;
         q.default_scope_key = [3; 16];
+        q.ui.tz_offset_min = -300;
+        q.ui.compact = true;
+        q.ui.setup_done = true;
+        q.ui.light_timeout_s = 30;
         let back = decode_prefs(&encode_prefs(&q), &p).unwrap();
         assert_eq!(encode_prefs(&back), encode_prefs(&q));
+        assert_eq!(back.ui, q.ui);
         assert_eq!(&back.name[..8], b"ABABABAB");
+        // A v1 record (the first 128 bytes, version 1) still loads, with default UI settings.
+        let mut v1 = [0u8; PREFS_RECORD_V1];
+        v1.copy_from_slice(&encode_prefs(&q)[..PREFS_RECORD_V1]);
+        v1[0] = 1;
+        let old = decode_prefs(&v1, &p).unwrap();
+        assert_eq!(old.radio, q.radio);
+        assert_eq!(old.ui, p.ui);
     }
 }

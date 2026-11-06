@@ -9,7 +9,8 @@ use std::collections::BTreeMap;
 
 use mc_air::crypto::LocalIdentity;
 use mc_core::{Duration, Instant};
-use mc_node::device::{Frame, Info};
+use mc_node::device::{Frame, Info, UiEvent};
+use mc_node::history::HISTORY_RECORD;
 use mc_node::persist::{CHANNEL_RECORD, CONTACT_RECORD, PREFS_RECORD};
 use mc_node::{Device, Event, Node, Prefs, Storage};
 use rand_chacha::ChaCha20Rng;
@@ -23,6 +24,8 @@ pub struct MemStorage {
     pub contacts: Vec<Vec<u8>>,
     pub channels: BTreeMap<u8, Vec<u8>>,
     pub blobs: BTreeMap<[u8; 32], Vec<u8>>,
+    pub queued: BTreeMap<u32, Vec<u8>>,
+    pub history: BTreeMap<u16, Vec<u8>>,
 }
 
 impl Storage for MemStorage {
@@ -49,6 +52,20 @@ impl Storage for MemStorage {
     fn remove_blob(&mut self, key: &[u8; 32]) {
         self.blobs.remove(key);
     }
+    fn put_queued(&mut self, seq: u32, entry: &[u8]) {
+        self.queued.insert(seq, entry.to_vec());
+    }
+    fn get_queued(&mut self, seq: u32, out: &mut [u8]) -> Option<usize> {
+        let b = self.queued.get(&seq)?;
+        out.get_mut(..b.len())?.copy_from_slice(b);
+        Some(b.len())
+    }
+    fn remove_queued(&mut self, seq: u32) {
+        self.queued.remove(&seq);
+    }
+    fn save_history(&mut self, slot: u16, rec: &[u8; HISTORY_RECORD]) {
+        self.history.insert(slot, rec.to_vec());
+    }
     fn usage_kb(&self) -> (u32, u32) {
         let used =
             self.blobs.values().map(Vec::len).sum::<usize>() + self.contacts.len() * CONTACT_RECORD;
@@ -72,8 +89,10 @@ pub struct SimNode {
     rng: ChaCha20Rng,
     /// End of the transmission in progress.
     tx_until: Option<Instant>,
-    /// Produced events (copies meant for the UI), kept for the tests.
+    /// Every node event (copies), kept for the tests.
     pub events: Vec<Event>,
+    /// Notifications for the screen.
+    pub ui: Vec<UiEvent>,
     /// Frames sent to the app outside direct responses (notifications, contacts).
     pub app: Vec<Frame>,
 }
@@ -149,6 +168,7 @@ impl World {
             rng: ChaCha20Rng::seed_from_u64(seed),
             tx_until: None,
             events: Vec::new(),
+            ui: Vec::new(),
             app: Vec::new(),
         });
         for row in &mut self.links {
@@ -252,8 +272,11 @@ impl World {
         }
         for sn in &mut self.nodes {
             sn.dev.tick(now, &mut sn.rng, &mut sn.st);
-            while let Some(e) = sn.dev.poll_ui() {
+            while let Some(e) = sn.dev.poll_tap() {
                 sn.events.push(e);
+            }
+            while let Some(e) = sn.dev.poll_ui() {
+                sn.ui.push(e);
             }
             while let Some(f) = sn.dev.poll_app() {
                 sn.app.push(f);
@@ -305,8 +328,11 @@ impl World {
         while let Some(f) = sn.dev.poll_app() {
             out.push(f);
         }
-        while let Some(e) = sn.dev.poll_ui() {
+        while let Some(e) = sn.dev.poll_tap() {
             sn.events.push(e);
+        }
+        while let Some(e) = sn.dev.poll_ui() {
+            sn.ui.push(e);
         }
         out
     }

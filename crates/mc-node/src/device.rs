@@ -11,6 +11,8 @@ use mc_proto::{Command, Response};
 use rand_core::Rng;
 
 use crate::contacts::{Channel, Contact, MAX_CHANNELS, MAX_CONTACTS, PATH_UNKNOWN, Slot, name_str};
+use crate::heard::{Heard, HeardNode, LoggedPacket, PacketLog};
+use crate::history::{HISTORY_RECORD, HISTORY_TEXT, History, Msg, Peer, Status};
 use crate::node::{Event, Node, SendError, Sent};
 use crate::persist::{
     CHANNEL_RECORD, CONTACT_RECORD, PREFS_RECORD, encode_channel, encode_contact, encode_prefs,
@@ -46,7 +48,44 @@ pub trait Storage {
     fn remove_blob(&mut self, key: &[u8; PUB_KEY_LEN]);
     /// (used, total) in KB.
     fn usage_kb(&self) -> (u32, u32);
+    /// Offline queue entry `seq`: the history link (4 bytes) then the frame (deliberate
+    /// deviation 1: the queue lives in flash and survives a reboot).
+    fn put_queued(&mut self, seq: u32, entry: &[u8]);
+    fn get_queued(&mut self, seq: u32, out: &mut [u8]) -> Option<usize>;
+    fn remove_queued(&mut self, seq: u32);
+    /// Slot of the local message history (`docs/spec/ui.md` §9).
+    fn save_history(&mut self, slot: u16, rec: &[u8; HISTORY_RECORD]);
 }
+
+/// Something the screen should look at (`Device::poll_ui`). The details are read from the
+/// device: history, heard nodes, packet log.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiEvent {
+    /// A message was stored in the history (received, or sent from the device).
+    Message {
+        seq: u32,
+        peer: Peer,
+        outgoing: bool,
+    },
+    /// A stored message changed status (read, delivered, failed).
+    Status { seq: u32 },
+    /// An advert was heard.
+    Heard,
+    /// Contacts were added, changed or removed.
+    Contacts,
+}
+
+/// Offline queue index entry; the frame itself is in storage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Queued {
+    seq: u32,
+    channel: bool,
+    /// History message it carries (0: none).
+    hist: u32,
+}
+
+/// Largest stored queue entry: history link and frame.
+pub const QUEUED_MAX: usize = 4 + FRAME_MAX;
 
 /// What the board reports in `DEVICE_INFO`.
 #[derive(Debug, Clone, Copy)]
@@ -95,7 +134,11 @@ pub struct Device {
     pub noise_floor: i16,
     pub mcu_temp_deci: Option<i16>,
     out: heapless::Deque<Frame, 8>,
-    queue: heapless::Deque<Frame, OFFLINE_QUEUE>,
+    queue: heapless::Deque<Queued, OFFLINE_QUEUE>,
+    queue_seq: u32,
+    history: History,
+    heard: Heard,
+    packets: PacketLog,
     iter: Option<Iter>,
     pending_login: u32,
     pending_status: u32,
@@ -105,7 +148,10 @@ pub struct Device {
     advert_paths: heapless::Deque<AdvertPath, 16>,
     contacts_dirty: Option<Instant>,
     actions: heapless::Deque<Action, 4>,
-    ui: heapless::Deque<Event, 8>,
+    ui: heapless::Deque<UiEvent, 32>,
+    /// Copies of every node event, for the simulator's tests.
+    #[cfg(feature = "tap")]
+    tap: heapless::Deque<Event, 64>,
     /// Custom variables (`GET_CUSTOM_VARS`): the `gps` setting.
     pub gps_interval: u32,
 }
@@ -186,6 +232,10 @@ impl Device {
             mcu_temp_deci: None,
             out: heapless::Deque::new(),
             queue: heapless::Deque::new(),
+            queue_seq: 1,
+            history: History::new(),
+            heard: Heard::new(),
+            packets: PacketLog::new(),
             iter: None,
             pending_login: 0,
             pending_status: 0,
@@ -196,6 +246,8 @@ impl Device {
             contacts_dirty: None,
             actions: heapless::Deque::new(),
             ui: heapless::Deque::new(),
+            #[cfg(feature = "tap")]
+            tap: heapless::Deque::new(),
             gps_interval: 0,
         }
     }
@@ -280,9 +332,96 @@ impl Device {
         self.actions.pop_front()
     }
 
-    /// Events for the device UI (copies).
-    pub fn poll_ui(&mut self) -> Option<Event> {
+    /// Notifications for the device's screen.
+    pub fn poll_ui(&mut self) -> Option<UiEvent> {
         self.ui.pop_front()
+    }
+
+    /// Every node event, copied (simulator and tests).
+    #[cfg(feature = "tap")]
+    pub fn poll_tap(&mut self) -> Option<Event> {
+        self.tap.pop_front()
+    }
+
+    fn notify(&mut self, e: UiEvent) {
+        if self.ui.is_full() {
+            let _ = self.ui.pop_front();
+        }
+        let _ = self.ui.push_back(e);
+    }
+
+    pub fn history(&self) -> &History {
+        &self.history
+    }
+
+    pub fn heard(&self) -> &Heard {
+        &self.heard
+    }
+
+    pub fn packets(&self) -> &PacketLog {
+        &self.packets
+    }
+
+    fn save_history_slot(&self, slot: usize, st: &mut impl Storage) {
+        if let Some(rec) = self.history.record(slot) {
+            st.save_history(slot as u16, &rec);
+        }
+    }
+
+    /// The screen opened the conversation: its messages are read.
+    pub fn mark_read(&mut self, peer: Peer, st: &mut impl Storage) {
+        let slots = self.history.mark_read(peer);
+        for slot in slots {
+            self.save_history_slot(slot, st);
+            if let Some(rec) = self.history.record(slot)
+                && let Some(m) = crate::history::decode(&rec)
+            {
+                self.notify(UiEvent::Status { seq: m.seq });
+            }
+        }
+    }
+
+    /// Boot: a history record read back from storage.
+    pub fn restore_history(&mut self, rec: &[u8]) {
+        if let Some(m) = crate::history::decode(rec) {
+            self.history.restore(m);
+        }
+    }
+
+    /// Boot: an offline queue entry that storage shows as deleted afterwards.
+    pub fn forget_queued(&mut self, seq: u32) {
+        if self.queue.iter().any(|q| q.seq == seq) {
+            let mut kept: heapless::Deque<Queued, OFFLINE_QUEUE> = heapless::Deque::new();
+            for q in self.queue.iter().filter(|q| q.seq != seq) {
+                let _ = kept.push_back(*q);
+            }
+            self.queue = kept;
+        }
+    }
+
+    /// Boot: an offline queue entry read back from storage (any order).
+    pub fn restore_queued(&mut self, seq: u32, entry: &[u8]) {
+        let (Some(link), Some(&code)) = (entry.get(..4), entry.get(4)) else {
+            return;
+        };
+        let q = Queued {
+            seq,
+            channel: matches!(code, 8 | 17 | 27),
+            hist: u32::from_le_bytes(fixed(link)),
+        };
+        if self.queue.iter().any(|x| x.seq == seq) {
+            return;
+        }
+        let mut sorted: heapless::Vec<Queued, OFFLINE_QUEUE> = self.queue.iter().copied().collect();
+        if sorted.push(q).is_err() {
+            return;
+        }
+        sorted.sort_unstable_by_key(|x| x.seq);
+        self.queue.clear();
+        for x in sorted {
+            let _ = self.queue.push_back(x);
+        }
+        self.queue_seq = self.queue_seq.max(seq.wrapping_add(1));
     }
 
     pub fn queued_messages(&self) -> usize {
@@ -327,24 +466,93 @@ impl Device {
     }
 
     /// Queues a message (`addToOfflineQueue`): when full, the oldest channel message is dropped;
-    /// if there is none, the new one is lost. `MSG_WAITING` is sent in every case.
-    fn enqueue(&mut self, f: Frame) {
-        if self.queue.is_full() {
-            let is_channel = |f: &Frame| matches!(f.first(), Some(8 | 17 | 27));
-            if let Some(pos) = self.queue.iter().position(is_channel) {
-                let mut kept: heapless::Deque<Frame, OFFLINE_QUEUE> = heapless::Deque::new();
-                for (i, x) in self.queue.iter().enumerate() {
-                    if i != pos {
-                        let _ = kept.push_back(x.clone());
-                    }
+    /// if there is none, the new one is lost. `MSG_WAITING` is sent in every case. The frame
+    /// goes to storage, the index stays here; `hist` links it to the history.
+    fn enqueue(&mut self, f: Frame, hist: u32, st: &mut impl Storage) {
+        if self.queue.is_full()
+            && let Some(pos) = self.queue.iter().position(|q| q.channel)
+        {
+            let mut kept: heapless::Deque<Queued, OFFLINE_QUEUE> = heapless::Deque::new();
+            for (i, x) in self.queue.iter().enumerate() {
+                if i == pos {
+                    st.remove_queued(x.seq);
+                } else {
+                    let _ = kept.push_back(*x);
                 }
-                let _ = kept.push_back(f);
-                self.queue = kept;
             }
-        } else {
-            let _ = self.queue.push_back(f);
+            self.queue = kept;
+        }
+        if !self.queue.is_full() {
+            let seq = self.queue_seq;
+            self.queue_seq = self.queue_seq.wrapping_add(1).max(1);
+            let mut entry: heapless::Vec<u8, QUEUED_MAX> = heapless::Vec::new();
+            let _ = entry.extend_from_slice(&hist.to_le_bytes());
+            let _ = entry.extend_from_slice(&f);
+            st.put_queued(seq, &entry);
+            let _ = self.queue.push_back(Queued {
+                seq,
+                channel: matches!(f.first(), Some(8 | 17 | 27)),
+                hist,
+            });
         }
         self.push(&Response::MsgWaiting);
+    }
+
+    /// `SYNC_NEXT_MESSAGE`: the oldest queued frame, read back from storage. A message fetched
+    /// by the app is read on the screen too.
+    fn sync_next(&mut self, st: &mut impl Storage) {
+        while let Some(q) = self.queue.pop_front() {
+            let mut buf = [0u8; QUEUED_MAX];
+            let got = st.get_queued(q.seq, &mut buf);
+            st.remove_queued(q.seq);
+            if q.hist != 0
+                && let Some(slot) = self.history.set_status(q.hist, Status::Read)
+            {
+                self.save_history_slot(slot, st);
+                self.notify(UiEvent::Status { seq: q.hist });
+            }
+            if let Some(n) = got
+                && let Some(frame) = buf.get(4..n)
+                && let Ok(f) = Frame::from_slice(frame)
+            {
+                let _ = self.out.push_back(f);
+                return;
+            }
+        }
+        self.reply(&Response::NoMoreMessages);
+    }
+
+    /// Stores a received message in the history; returns its sequence number.
+    #[allow(clippy::too_many_arguments)]
+    fn remember(
+        &mut self,
+        now: Instant,
+        peer: Peer,
+        ts: u32,
+        path_len: u8,
+        snr4: i8,
+        text: &[u8],
+        st: &mut impl Storage,
+    ) -> u32 {
+        let text = text.get(..text.len().min(HISTORY_TEXT)).unwrap_or(&[]);
+        let (seq, slot) = self.history.push(Msg {
+            seq: 0,
+            peer,
+            outgoing: false,
+            ts,
+            at: self.node.time(now),
+            status: Status::Unread,
+            path_len,
+            snr4,
+            text: heapless::Vec::from_slice(text).unwrap_or_default(),
+        });
+        self.save_history_slot(slot, st);
+        self.notify(UiEvent::Message {
+            seq,
+            peer,
+            outgoing: false,
+        });
+        seq
     }
 
     // ------------------------------------------------------------------ node events
@@ -352,11 +560,12 @@ impl Device {
     fn pump(&mut self, now: Instant, rng: &mut impl Rng, st: &mut impl Storage) {
         while let Some(e) = self.node.poll_event() {
             self.on_event(now, &e, rng, st);
+            #[cfg(feature = "tap")]
             if !matches!(e, Event::RxLog { .. }) {
-                if self.ui.is_full() {
-                    let _ = self.ui.pop_front();
+                if self.tap.is_full() {
+                    let _ = self.tap.pop_front();
                 }
-                let _ = self.ui.push_back(e);
+                let _ = self.tap.push_back(e);
             }
         }
     }
@@ -364,6 +573,8 @@ impl Device {
     fn on_event(&mut self, now: Instant, e: &Event, rng: &mut impl Rng, st: &mut impl Storage) {
         match e {
             Event::RxLog { snr4, rssi, raw } => {
+                let at = self.node.time(now);
+                self.packets.push(LoggedPacket::of(raw, at, *snr4, *rssi));
                 if raw.len() + 3 <= FRAME_MAX {
                     self.push(&Response::LogRxData {
                         snr4: *snr4,
@@ -381,6 +592,20 @@ impl Device {
                 author,
                 text,
             } => {
+                // Plain and signed texts go to the screen's history; CLI data (type 1) does not.
+                let hist = if *txt_type == 1 {
+                    0
+                } else {
+                    self.remember(
+                        now,
+                        Peer::Contact(prefix6(key)),
+                        *ts,
+                        *path_len,
+                        *snr4,
+                        text,
+                        st,
+                    )
+                };
                 let mut body: heapless::Vec<u8, FRAME_MAX> = heapless::Vec::new();
                 if let Some(a) = author {
                     let _ = body.extend_from_slice(a);
@@ -408,7 +633,7 @@ impl Device {
                     }
                 };
                 if let Some(f) = frame_of(&r) {
-                    self.enqueue(f);
+                    self.enqueue(f, hist, st);
                 }
             }
             Event::ChannelMsg {
@@ -419,6 +644,7 @@ impl Device {
                 ts,
                 text,
             } => {
+                let hist = self.remember(now, Peer::Channel(*idx), *ts, *path_len, *snr4, text, st);
                 let room = FRAME_MAX - if self.app_target_ver >= 3 { 11 } else { 8 };
                 let body = text.get(..text.len().min(room)).unwrap_or(&[]);
                 let r = if self.app_target_ver >= 3 {
@@ -441,7 +667,7 @@ impl Device {
                     }
                 };
                 if let Some(f) = frame_of(&r) {
-                    self.enqueue(f);
+                    self.enqueue(f, hist, st);
                 }
             }
             Event::ChannelData {
@@ -460,28 +686,44 @@ impl Device {
                     data,
                 };
                 if let Some(f) = frame_of(&r) {
-                    self.enqueue(f);
+                    self.enqueue(f, 0, st);
                 }
             }
             Event::Advert { key, raw } => {
                 st.put_blob(key, raw);
                 self.mark_contacts(now);
                 self.push(&Response::Advert { key: *key });
+                self.notify(UiEvent::Contacts);
             }
             Event::NewAdvert { contact } => self.push(&Response::NewAdvert(rcontact(contact))),
             Event::ContactOverwritten { key } => {
                 st.remove_blob(key);
                 self.push(&Response::ContactDeleted { key: *key });
+                self.notify(UiEvent::Contacts);
             }
             Event::ContactsFull => self.push(&Response::ContactsFull),
             Event::AdvertHeard {
                 key,
+                kind,
                 path_len,
                 path,
-                ..
+                snr4,
+                name,
+                location,
             } => {
                 let prefix: [u8; 7] = fixed(key);
                 let recv_ts = self.node.time(now);
+                self.heard.note(HeardNode {
+                    key: *key,
+                    name: *name,
+                    kind: *kind,
+                    hops: PathLen::from_byte(*path_len).map(|p| p.hops()).unwrap_or(0),
+                    snr4: *snr4,
+                    at: recv_ts,
+                    location: *location,
+                    count: 0,
+                });
+                self.notify(UiEvent::Heard);
                 let entry = AdvertPath {
                     prefix,
                     recv_ts,
@@ -934,12 +1176,7 @@ impl Device {
                 self.mark_contacts(now);
                 self.ok();
             }
-            Command::SyncNextMessage => match self.queue.pop_front() {
-                Some(f) => {
-                    let _ = self.out.push_back(f);
-                }
-                None => self.reply(&Response::NoMoreMessages),
-            },
+            Command::SyncNextMessage => self.sync_next(st),
             Command::SetRadioParams {
                 freq_khz,
                 bw_hz,

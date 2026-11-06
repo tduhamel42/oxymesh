@@ -105,7 +105,7 @@ fn render_tour(dir: &Path) -> Result<(), String> {
     for grid in [LARGE, COMPACT] {
         for (name, gestures) in mc_ui::tour::TOUR {
             let mut app = App::new(grid, true);
-            for e in &w.nodes[ME].events {
+            for e in &w.nodes[ME].ui {
                 app.event(e, &c);
             }
             for g in *gestures {
@@ -182,7 +182,7 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
                 *at += 120_000;
             }
         }
-        let events = w.take_events(ME);
+        let events = std::mem::take(&mut w.nodes[ME].ui);
         {
             let c = ctx(&w, light);
             for e in &events {

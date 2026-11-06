@@ -497,12 +497,70 @@ fn pings(from: &mut Peer, to: &mut Peer, n: u32) -> Result<String, String> {
     }
 }
 
+/// B writes to A, A reboots before the app fetches it, and must still deliver it: the offline
+/// queue lives in flash (deliberate deviation 1).
+fn reboot_keeps(a: &mut Peer, b: &mut Peer) -> Result<String, String> {
+    let ts = now_unix();
+    let text = format!("oxymesh duo {ts} — kept across a reboot");
+    let sent = b.port.ask(&Command::SendTxtMsg {
+        txt_type: 0,
+        attempt: 0,
+        timestamp: ts,
+        prefix: a.prefix(),
+        text: text.as_bytes(),
+    })?;
+    if !matches!(Response::decode(&sent), Ok(Response::Sent { .. })) {
+        return Err(format!("SEND_TXT_MSG: {:?}", Response::decode(&sent)));
+    }
+    a.port
+        .wait(15, |r| matches!(r, Response::MsgWaiting).then_some(()))?;
+    std::thread::sleep(Duration::from_millis(500));
+    a.port.send(&Command::Reboot)?;
+    std::thread::sleep(Duration::from_secs(3));
+    let t0 = Instant::now();
+    // The USB bridge stays open through the ESP32's reset: same port, new session.
+    let _ = a.port.drain();
+    let mut back = false;
+    for _ in 0..5 {
+        if a.port
+            .ask(&Command::DeviceQuery { app_ver: APP_VER })
+            .is_ok()
+        {
+            back = true;
+            break;
+        }
+    }
+    if !back {
+        return Err("A did not come back after the reboot".into());
+    }
+    let _ = a.port.ask(&Command::AppStart {
+        reserved: [0; 7],
+        app_name: b"oxymesh",
+    });
+    let prefix = b.prefix();
+    fetch(&mut a.port, 5, |r| match r {
+        Response::ContactMsg {
+            prefix: p,
+            text: t,
+            timestamp,
+            ..
+        } if *p == prefix && *timestamp == ts => Some(if *t == text.as_bytes() {
+            Ok(format!("back after {} ms", t0.elapsed().as_millis()))
+        } else {
+            Err(format!("\"{}\"", String::from_utf8_lossy(t)))
+        }),
+        _ => None,
+    })
+    .and_then(|x| x)
+}
+
 fn checks(
     a: &mut Peer,
     b: &mut Peer,
     rep: &mut Report,
     flood: bool,
     n_pings: u32,
+    reboot: bool,
 ) -> Result<(), String> {
     // 1. Zero-hop adverts both ways.
     rep.check("A advert heard by B", advert(a, b));
@@ -580,6 +638,14 @@ fn checks(
     } else {
         println!("  (channel text and flood routing skipped: they need --flood)");
     }
+
+    // 6. The offline queue survives a reboot (only on an oxymesh A: it rebooted the device).
+    if reboot {
+        rep.check(
+            "A keeps an unfetched DM across a reboot",
+            reboot_keeps(a, b),
+        );
+    }
     Ok(())
 }
 
@@ -612,6 +678,7 @@ pub fn run(
     b_path: &str,
     flood: bool,
     n_pings: u32,
+    reboot: bool,
     verbose: bool,
 ) -> Result<(), String> {
     let mut a = open(a_path, "A", verbose)?;
@@ -623,7 +690,7 @@ pub fn run(
     b.before = get_contact(&mut b.port, &a.key)?;
     println!();
     let mut rep = Report { ok: 0, failed: 0 };
-    let res = checks(&mut a, &mut b, &mut rep, flood, n_pings);
+    let res = checks(&mut a, &mut b, &mut rep, flood, n_pings, reboot);
     restore(&mut a, &mut b);
     res?;
     println!("\n{} passed, {} failed", rep.ok, rep.failed);

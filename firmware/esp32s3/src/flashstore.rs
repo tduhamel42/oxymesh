@@ -2,14 +2,17 @@
 //! (power-loss tolerant). Implements the `Storage` trait of `mc-node`.
 //!
 //! Keys (u32): 1 identity (96 B), 2 prefs, 3 contact count, `0x0001_0000 + i` contact i
-//! (C++ `/contacts3` record), `0x0002_0000 + i` channel i, `0x8000_0000 | key prefix` stored
-//! advert (preceded by the full key, checked on read).
+//! (C++ `/contacts3` record), `0x0002_0000 + i` channel i, `0x0003_0000 + i` history slot i,
+//! `0x1000_0000 | seq` offline queue entry, `0x8000_0000 | key prefix` stored advert (preceded
+//! by the full key, checked on read). Deleted entries are empty values (tombstones).
 
 use embassy_futures::block_on;
 use embedded_storage_async::nor_flash::NorFlash;
-use mc_node::Node;
+use mc_node::Device;
+use mc_node::history::HISTORY_RECORD;
 use mc_node::persist::{
-    CHANNEL_RECORD, CONTACT_RECORD, PREFS_RECORD, decode_channel, decode_contact, decode_prefs,
+    CHANNEL_RECORD, CONTACT_RECORD, PREFS_RECORD, PREFS_RECORD_V1, decode_channel,
+    decode_contact, decode_prefs,
 };
 use sequential_storage::cache::{Cache, Uncached};
 use sequential_storage::map::{MapConfig, MapStorage};
@@ -19,6 +22,9 @@ const KEY_PREFS: u32 = 2;
 const KEY_COUNT: u32 = 3;
 const CONTACT_BASE: u32 = 0x0001_0000;
 const CHANNEL_BASE: u32 = 0x0002_0000;
+const HISTORY_BASE: u32 = 0x0003_0000;
+const QUEUE_BASE: u32 = 0x1000_0000;
+const QUEUE_MASK: u32 = 0x0FFF_FFFF;
 const BLOB_BASE: u32 = 0x8000_0000;
 const BUF: usize = 512;
 
@@ -95,11 +101,14 @@ impl<S: NorFlash> FlashStore<S> {
         })
     }
 
-    /// Reloads prefs, contacts (in index order) and channels into `node`.
-    pub fn load(&mut self, node: &mut Node) {
+    /// Reloads prefs, contacts (in index order), channels, then in one pass over the storage
+    /// the screen's history and the offline queue.
+    pub fn load(&mut self, dev: &mut Device) {
+        let node = &mut dev.node;
         let mut b = [0u8; PREFS_RECORD];
-        if self.get(KEY_PREFS, &mut b) == Some(PREFS_RECORD)
-            && let Some(p) = decode_prefs(&b, &node.prefs)
+        if let Some(n) = self.get(KEY_PREFS, &mut b)
+            && n >= PREFS_RECORD_V1
+            && let Some(p) = decode_prefs(&b[..n], &node.prefs)
         {
             node.prefs = p;
         }
@@ -127,6 +136,39 @@ impl<S: NorFlash> FlashStore<S> {
                 && let Some(slot) = node.channels.0.get_mut(i)
             {
                 *slot = c;
+            }
+        }
+        self.scan(dev);
+    }
+
+    /// History and queue: items come out oldest first, so a later version or a tombstone
+    /// overrides what came before.
+    fn scan(&mut self, dev: &mut Device) {
+        let mut buf = [0u8; BUF];
+        let Ok(mut it) = block_on(self.map.fetch_all_items(&mut buf)) else {
+            self.errors += 1;
+            return;
+        };
+        loop {
+            match block_on(it.next::<&[u8]>(&mut buf)) {
+                Ok(Some((key, value))) => {
+                    if (HISTORY_BASE..HISTORY_BASE + 0x1_0000).contains(&key) {
+                        if value.len() == HISTORY_RECORD {
+                            dev.restore_history(value);
+                        }
+                    } else if key & !QUEUE_MASK == QUEUE_BASE {
+                        if value.is_empty() {
+                            dev.forget_queued(key & QUEUE_MASK);
+                        } else {
+                            dev.restore_queued(key & QUEUE_MASK, value);
+                        }
+                    }
+                }
+                Ok(None) => break,
+                Err(_) => {
+                    self.errors += 1;
+                    break;
+                }
             }
         }
     }
@@ -202,6 +244,23 @@ impl<S: NorFlash> mc_node::Storage for FlashStore<S> {
 
     fn remove_blob(&mut self, key: &[u8; 32]) {
         self.remove(blob_key(key));
+    }
+
+    fn put_queued(&mut self, seq: u32, entry: &[u8]) {
+        self.put(QUEUE_BASE | (seq & QUEUE_MASK), entry);
+    }
+
+    fn get_queued(&mut self, seq: u32, out: &mut [u8]) -> Option<usize> {
+        self.get(QUEUE_BASE | (seq & QUEUE_MASK), out)
+            .filter(|&n| n > 0)
+    }
+
+    fn remove_queued(&mut self, seq: u32) {
+        self.remove(QUEUE_BASE | (seq & QUEUE_MASK));
+    }
+
+    fn save_history(&mut self, slot: u16, rec: &[u8; HISTORY_RECORD]) {
+        self.put(HISTORY_BASE + u32::from(slot), rec);
     }
 
     fn usage_kb(&self) -> (u32, u32) {

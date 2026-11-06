@@ -44,6 +44,36 @@ pub struct Prefs {
     pub cad_enabled: bool,
     pub gps_enabled: bool,
     pub buzzer_quiet: bool,
+    /// The device's own screen (prefs record v2, `docs/spec/ui.md`).
+    pub ui: UiPrefs,
+}
+
+/// Settings of the on-device interface; the app never sees them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UiPrefs {
+    /// Backlight auto-off, seconds; 0 = never.
+    pub light_timeout_s: u16,
+    /// Compact text (33×20) instead of large (25×15).
+    pub compact: bool,
+    /// Buzzer: 0 off, 1 quiet, 2 on.
+    pub buzzer: u8,
+    /// Blue LED blinks while something is unread.
+    pub led_unread: bool,
+    /// Local time offset from UTC, minutes.
+    pub tz_offset_min: i16,
+    /// The first-boot setup has been done or skipped.
+    pub setup_done: bool,
+}
+
+impl UiPrefs {
+    pub const DEFAULT: Self = Self {
+        light_timeout_s: 120,
+        compact: false,
+        buzzer: 2,
+        led_unread: true,
+        tz_offset_min: 0,
+        setup_done: false,
+    };
 }
 
 impl Prefs {
@@ -80,6 +110,7 @@ impl Prefs {
         cad_enabled: false,
         gps_enabled: false,
         buzzer_quiet: false,
+        ui: UiPrefs::DEFAULT,
     };
 
     /// Factory settings of the M5 build (`MyMesh.cpp:916-1007`): name = first 4 bytes of the key
@@ -128,6 +159,7 @@ impl Prefs {
             cad_enabled: false,
             gps_enabled: false,
             buzzer_quiet: false,
+            ui: UiPrefs::DEFAULT,
         }
     }
 
@@ -195,6 +227,10 @@ pub enum Event {
         path_len: u8,
         path: heapless::Vec<u8, PATH_MAX>,
         snr4: i8,
+        /// Advertised name, 0x00-padded (cut to 31 bytes).
+        name: [u8; 32],
+        /// Degrees × 1e6.
+        location: Option<(i32, i32)>,
     },
     PathUpdated {
         key: [u8; PUB_KEY_LEN],

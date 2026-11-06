@@ -99,7 +99,7 @@ pub fn spread(left: &str, right: &str, width: usize) -> String {
 pub fn status(ui: &Ui<'_>, time: bool) -> String {
     let c = ui.ctx;
     let mut parts: Vec<String> = Vec::new();
-    let unread = c.dev.queued_messages();
+    let unread = c.dev.history().unread();
     if unread > 0 {
         parts.push(format!("{}{unread}", ui.sym.unread));
     }

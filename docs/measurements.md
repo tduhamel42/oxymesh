@@ -58,6 +58,13 @@ Findings:
   - With 100 to 300 ms before each ping: 0 lost in 2 runs. With 3 s between the prefs change and the first ping: 0 lost in 5 runs (100 pings). `mc duo` now waits 3 s.
   - Not reproduced between two oxymesh nodes in mc-sim. Cause unknown; next step is a run with the C++ firmware on both ends.
 
+## 2026-11-06 — offline queue in flash, screen history (U2)
+
+- Firmware with the offline queue and the 200-message history in the `mcdata` partition (index in RAM), prefs record v2. The M5's v1 prefs record (128 bytes) was read back: same name, key and radio after flashing.
+- `mc duo --a /dev/cu.wchusbserial210 --b /dev/cu.usbmodem1101 --pings 3`: 12/12, every DM and sync now going through flash.
+- `mc duo … --pings 0 --reboot`: Bob writes to the M5, the M5 reboots before the app fetches it, and the DM is still delivered after the reboot (11/11).
+- `Device`: 146,232 bytes (147,240 before): the 40 KB history, the heard-nodes ring (2.8 KB) and the packet log (1 KB) cost less than the 47 KB queue that moved to flash.
+
 ## 2026-11-06 — U0: Ratatui on the M5's e-paper (ADR-0008)
 
 - Setup: ThinkNode M5 running `ui-spike` (`firmware/esp32s3/src/bin/ui-spike.rs`): `mc_ui::demo` (header, list with a reversed selection, wrapped paragraph, sparkline, footer) drawn by Ratatui through mousefood into the panel frame, `esp-alloc` heap of 96 KB with `internal-heap-stats`. A frame every 4 s, grid switch every 6 frames. Logs `local/ui-spike-*.log`.

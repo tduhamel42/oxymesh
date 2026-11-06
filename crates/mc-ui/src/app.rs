@@ -7,7 +7,8 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use mc_node::{Device, Event};
+use mc_node::Device;
+use mc_node::device::UiEvent;
 use ratatui_core::buffer::CellDiffOption;
 use ratatui_core::layout::Rect;
 use ratatui_core::terminal::Frame;
@@ -43,8 +44,6 @@ pub struct Ui<'a> {
     pub ctx: &'a Ctx<'a>,
     pub sym: &'static Symbols,
     pub grid: Grid,
-    /// Last advert heard: name and time.
-    pub heard: Option<(&'a str, u32)>,
 }
 
 /// Something only the runner can do.
@@ -145,7 +144,6 @@ pub struct App {
     overlays: Vec<Overlay>,
     dirty: bool,
     screen_changed: bool,
-    last_heard: Option<(String, u32)>,
 }
 
 impl App {
@@ -159,7 +157,6 @@ impl App {
             overlays: Vec::new(),
             dirty: true,
             screen_changed: true,
-            last_heard: None,
         }
     }
 
@@ -192,10 +189,6 @@ impl App {
         core::mem::take(&mut self.screen_changed)
     }
 
-    pub fn last_heard(&self) -> Option<(&str, u32)> {
-        self.last_heard.as_ref().map(|(n, t)| (n.as_str(), *t))
-    }
-
     pub fn toast(&mut self, text: &str, now_ms: u64) {
         self.toast = Some((String::from(text), now_ms + TOAST_MS));
         self.dirty = true;
@@ -213,20 +206,10 @@ impl App {
         }
     }
 
-    /// A node event (`Device::poll_ui`).
-    pub fn event(&mut self, e: &Event, ctx: &Ctx<'_>) {
-        if let Event::AdvertHeard { key, .. } = e {
-            let name = ctx
-                .dev
-                .node
-                .contacts
-                .find(key)
-                .and_then(|s| ctx.dev.node.contacts.get(s))
-                .map(|c| String::from_utf8_lossy(mc_node::contacts::name_str(&c.name)).into_owned())
-                .unwrap_or_else(|| format!("{}", mc_core::Hex(&key[..4])));
-            self.last_heard = Some((name, ctx.unix));
-            self.dirty = true;
-        }
+    /// A notification from the device (`Device::poll_ui`): something on screen may change.
+    pub fn event(&mut self, e: &UiEvent, _ctx: &Ctx<'_>) {
+        let _ = e;
+        self.dirty = true;
     }
 
     /// A gesture; returns what the runner must do, if anything.
@@ -281,7 +264,7 @@ impl App {
             }),
             _ => return None,
         };
-        let ui = make_ui(self.grid, &self.last_heard, ctx);
+        let ui = make_ui(self.grid, ctx);
         let nav = match self.stack.last_mut() {
             Some(s) => s.input(input, &ui),
             None => Nav::Stay,
@@ -330,7 +313,7 @@ impl App {
     /// Draws into `area` only (the emulator frames the device inside a larger terminal).
     /// Overlay pixels are relative to `area`'s top-left cell.
     pub fn draw_in(&mut self, f: &mut Frame<'_>, area: Rect, ctx: &Ctx<'_>) {
-        let ui = make_ui(self.grid, &self.last_heard, ctx);
+        let ui = make_ui(self.grid, ctx);
         let areas = chrome::areas(area);
         let Some(top) = self.stack.last_mut() else {
             return;
@@ -389,12 +372,11 @@ impl App {
     }
 }
 
-fn make_ui<'a>(grid: Grid, heard: &'a Option<(String, u32)>, ctx: &'a Ctx<'a>) -> Ui<'a> {
+fn make_ui<'a>(grid: Grid, ctx: &'a Ctx<'a>) -> Ui<'a> {
     Ui {
         ctx,
         sym: theme::symbols(grid),
         grid,
-        heard: heard.as_ref().map(|(n, t)| (n.as_str(), *t)),
     }
 }
 

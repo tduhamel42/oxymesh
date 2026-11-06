@@ -14,6 +14,10 @@ mc-proto.workspace = true
 heapless.workspace = true
 rand_core.workspace = true
 
+[features]
+# Copies of every node event for the simulator's tests (`Device::poll_tap`); off on devices.
+tap = []
+
 [dev-dependencies]
 proptest.workspace = true
 rand_chacha.workspace = true

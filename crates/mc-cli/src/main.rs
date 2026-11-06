@@ -73,6 +73,9 @@ enum Cmd {
         /// Telemetry pings in each direction.
         #[arg(long, default_value_t = 3)]
         pings: u32,
+        /// Also reboot A with a DM waiting and check it is still there (oxymesh on A).
+        #[arg(long)]
+        reboot: bool,
         #[arg(short, long)]
         verbose: bool,
     },
@@ -99,8 +102,9 @@ fn main() {
             b,
             flood,
             pings,
+            reboot,
             verbose,
-        } => duo::run(&a, &b, flood, pings, verbose),
+        } => duo::run(&a, &b, flood, pings, reboot, verbose),
     };
     if let Err(e) = res {
         eprintln!("error: {e}");
