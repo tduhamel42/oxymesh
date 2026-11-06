@@ -17,4 +17,4 @@ The firmware reimplements MeshCore and relies on what other projects know about 
 
 ## Consequences
 
-- trouble-host's fix for the fixed PIN lives in `firmware/esp32s3/vendor/` until Tanguy decides on a PR.
+- trouble-host's fixed PIN lives in `firmware/esp32s3/vendor/`: trouble-host 0.7.0 with `set_passkey` backported from 0.8.0, which already has it upstream (no PR needed). It goes away once esp-radio supports bt-hci 0.10 (`firmware/esp32s3/vendor/README.md`).

@@ -35,6 +35,7 @@ fn ctx(w: &World) -> Ctx<'_> {
         battery_percent: Some(80),
         charging: false,
         light: false,
+        ble: mc_ui::Ble::default(),
         gps: Some(GpsFix {
             lat: 45_923_700,
             lon: 6_869_400,

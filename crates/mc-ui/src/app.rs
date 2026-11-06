@@ -12,7 +12,7 @@ use mc_node::Device;
 use mc_node::device::UiEvent;
 use mc_node::history::Peer;
 use ratatui_core::buffer::CellDiffOption;
-use ratatui_core::layout::Rect;
+use ratatui_core::layout::{Alignment, Rect};
 use ratatui_core::terminal::Frame;
 use ratatui_core::text::Line;
 use ratatui_widgets::block::Block;
@@ -42,6 +42,30 @@ pub struct Ctx<'a> {
     pub light: bool,
     /// The GPS, when it has a fix.
     pub gps: Option<GpsFix>,
+    pub ble: Ble,
+}
+
+/// Bluetooth, as the runner reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Ble {
+    pub state: BleState,
+    /// The PIN pairing asks for: the fixed one, or the one drawn at boot.
+    pub pin: u32,
+    /// Devices paired with this one.
+    pub paired: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BleState {
+    /// No Bluetooth here (the emulator before it simulates a phone).
+    #[default]
+    Off,
+    /// Waiting for a phone.
+    Advertising,
+    /// A phone is pairing and asks for the PIN.
+    Pairing,
+    /// A phone is connected, paired or bonded.
+    Connected,
 }
 
 /// A GPS position fix.
@@ -537,6 +561,28 @@ impl App {
         } else if let Some(seq) = self.banner {
             draw_banner(f, areas.body, seq, &ui);
         }
+        // A phone pairing covers everything: its PIN is the one thing to read.
+        if ctx.ble.state == BleState::Pairing {
+            self.overlays.clear();
+            let cells = draw_pairing(f, areas.body, ctx.ble.pin);
+            if self.panel && cells.height > 0 {
+                let (cw, ch) = cell_px(self.grid);
+                for y in cells.top()..cells.bottom() {
+                    for x in cells.left()..cells.right() {
+                        f.buffer_mut()[(x, y)].set_diff_option(CellDiffOption::Skip);
+                    }
+                }
+                self.overlays.push(Overlay::Pin {
+                    at: PixelRect {
+                        x: i32::from(cells.x - area.x) * cw as i32,
+                        y: i32::from(cells.y - area.y) * ch as i32,
+                        w: u32::from(cells.width) * cw,
+                        h: u32::from(cells.height) * ch,
+                    },
+                    pin: ctx.ble.pin,
+                });
+            }
+        }
     }
 
     /// Pixel overlays of the last draw, to paint over the panel frame.
@@ -563,6 +609,45 @@ fn make_ui<'a>(grid: Grid, ctx: &'a Ctx<'a>) -> Ui<'a> {
 /// Size of a cell in pixels.
 pub fn cell_px(grid: Grid) -> (u32, u32) {
     if grid == COMPACT { (6, 10) } else { (8, 13) }
+}
+
+/// A phone is pairing: the PIN over the whole body. Returns the cells meant for the big
+/// digits; they hold the PIN as text too, for the terminal.
+fn draw_pairing(f: &mut Frame<'_>, body: Rect, pin: u32) -> Rect {
+    f.render_widget(Clear, body);
+    let block = Block::bordered().title(Line::from("Bluetooth pairing"));
+    let inner = block.inner(body);
+    f.render_widget(block, body);
+    let w = usize::from(inner.width);
+    let text = alloc::vec![
+        Line::from(chrome::fit("A phone wants to pair.", w)),
+        Line::from(chrome::fit("Type this PIN on it:", w)),
+    ];
+    f.render_widget(
+        Paragraph::new(text),
+        Rect {
+            height: 2.min(inner.height),
+            ..inner
+        },
+    );
+    let top = (inner.y + 3).min(inner.bottom());
+    let digits = Rect {
+        y: top,
+        height: inner.bottom().saturating_sub(top).saturating_sub(1).min(5),
+        ..inner
+    };
+    if digits.height > 0 {
+        let s = format!("{:03} {:03}", pin / 1000 % 1000, pin % 1000);
+        f.render_widget(
+            Paragraph::new(Line::from(s)).alignment(Alignment::Center),
+            Rect {
+                y: digits.y + digits.height / 2,
+                height: 1,
+                ..digits
+            },
+        );
+    }
+    digits
 }
 
 /// New direct message: sender and the start of the text, over the top of the body.

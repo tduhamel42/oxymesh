@@ -1,4 +1,5 @@
-//! A MeshCore companion connected over USB serial (`docs/spec/companion.md` §1.2).
+//! A MeshCore companion connected over USB serial (`docs/spec/companion.md` §1.2), or over
+//! Bluetooth LE when the path is `ble:<name>` (§1.1, `crate::ble`).
 
 use std::io::{Read, Write};
 use std::time::{Duration, Instant};
@@ -7,10 +8,17 @@ use mc_proto::{
     Command, FRAME_MAX, FROM_DEVICE, Response, TO_DEVICE, USB_MAX, UsbDeframer, usb_frame,
 };
 
+enum Link {
+    Serial {
+        port: Box<dyn serialport::SerialPort>,
+        deframer: UsbDeframer,
+    },
+    Ble(crate::ble::Client),
+}
+
 pub struct Port {
     pub name: String,
-    port: Box<dyn serialport::SerialPort>,
-    deframer: UsbDeframer,
+    link: Link,
     /// Frames received but not yet consumed.
     pending: Vec<Vec<u8>>,
     pub verbose: bool,
@@ -20,6 +28,15 @@ impl Port {
     /// Opens the port. Opening may reset the board (USB-serial bridge): let it boot, then flush
     /// what it wrote.
     pub fn open(path: &str, name: &str) -> Result<Self, String> {
+        if let Some(want) = path.strip_prefix("ble:") {
+            let c = crate::ble::Client::connect(want, Duration::from_secs(20))?;
+            return Ok(Self {
+                name: name.into(),
+                link: Link::Ble(c),
+                pending: Vec::new(),
+                verbose: false,
+            });
+        }
         let port = serialport::new(path, 115_200)
             .timeout(Duration::from_secs(2))
             .open()
@@ -28,8 +45,10 @@ impl Port {
         let _ = port.clear(serialport::ClearBuffer::Input);
         Ok(Self {
             name: name.into(),
-            port,
-            deframer: UsbDeframer::new(FROM_DEVICE),
+            link: Link::Serial {
+                port,
+                deframer: UsbDeframer::new(FROM_DEVICE),
+            },
             pending: Vec::new(),
             verbose: false,
         })
@@ -41,23 +60,34 @@ impl Port {
         if self.verbose {
             println!("  {} → {cmd}", self.name);
         }
-        let mut buf = [0u8; USB_MAX];
-        let m = usb_frame(TO_DEVICE, &frame[..n], &mut buf).map_err(|_| "frame too long")?;
-        self.port.write_all(&buf[..m]).map_err(|e| e.to_string())
+        match &mut self.link {
+            Link::Serial { port, .. } => {
+                let mut buf = [0u8; USB_MAX];
+                let m =
+                    usb_frame(TO_DEVICE, &frame[..n], &mut buf).map_err(|_| "frame too long")?;
+                port.write_all(&buf[..m]).map_err(|e| e.to_string())
+            }
+            Link::Ble(c) => c.write(&frame[..n]),
+        }
     }
 
     /// Reads whatever has arrived, without waiting.
     pub fn poll(&mut self) -> Result<(), String> {
-        let n = self.port.bytes_to_read().map_err(|e| e.to_string())? as usize;
-        if n == 0 {
-            return Ok(());
-        }
-        let mut buf = vec![0u8; n];
-        self.port.read_exact(&mut buf).map_err(|e| e.to_string())?;
-        for b in buf {
-            if let Some(f) = self.deframer.push(b) {
-                self.pending.push(f.to_vec());
+        match &mut self.link {
+            Link::Serial { port, deframer } => {
+                let n = port.bytes_to_read().map_err(|e| e.to_string())? as usize;
+                if n == 0 {
+                    return Ok(());
+                }
+                let mut buf = vec![0u8; n];
+                port.read_exact(&mut buf).map_err(|e| e.to_string())?;
+                for b in buf {
+                    if let Some(f) = deframer.push(b) {
+                        self.pending.push(f.to_vec());
+                    }
+                }
             }
+            Link::Ble(c) => self.pending.extend(c.drain()?),
         }
         Ok(())
     }

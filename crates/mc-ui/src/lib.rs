@@ -27,4 +27,4 @@ pub mod theme;
 pub mod tour;
 
 pub use act::{Intent, Outcome, perform};
-pub use app::{App, Ctx};
+pub use app::{App, Ble, BleState, Ctx};

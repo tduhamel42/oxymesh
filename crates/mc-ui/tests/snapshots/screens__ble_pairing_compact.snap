@@ -1,0 +1,24 @@
+---
+source: crates/mc-ui/tests/screens.rs
+expression: t
+---
+|Tanguy                     ●2 87%|
+|┌Bluetooth pairing──────────────┐|
+|│A phone wants to pair.         │|
+|│Type this PIN on it:           │|
+|│                               │|
+|│                               │|
+|│                               │|
+|│            048 213            │|
+|│                               │|
+|│                               │|
+|│                               │|
+|│                               │|
+|│                               │|
+|│                               │|
+|│                               │|
+|│                               │|
+|│                               │|
+|│                               │|
+|└───────────────────────────────┘|
+|A►next hold►open               B☀|

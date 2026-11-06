@@ -25,6 +25,8 @@ mc-proto.workspace = true
 rand_chacha.workspace = true
 mc-sim.workspace = true
 insta = "1.49"
+# Heap high-water of the screens (tests/heap.rs), without unsafe code of our own.
+cap = { version = "0.1.2", features = ["stats"] }
 
 [lints]
 workspace = true

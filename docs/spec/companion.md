@@ -40,9 +40,10 @@ Abbreviations: `M` = `examples/companion_radio/MyMesh.cpp`, `M.h` = `MyMesh.h`, 
 ### 1.1 Bluetooth (BLE)
 
 - Nordic UART service `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`; RX `…0002…` (write, encryption + MITM required); TX `…0003…` (read and notify, encryption + MITM) (BLE:7-9, 45-51). The service UUID is advertised (BLE:53).
+- Advertising (Arduino-ESP32 `BLEAdvertising` defaults): flags and the 128-bit service UUID in the advertisement, the name in the scan response. A name longer than the scan response allows (29 bytes) goes out shortened (AD type 0x08). The GAP device name keeps it whole in the C++; ours keeps the first 22 bytes (deviation 11).
 - Name: `"MeshCore-" + node name`, set at boot (a name change takes effect on reboot). A `"@@MAC"` name is replaced by the 12 hex digits of the MAC address (BLE:16-24).
 - Security: LE Secure Connections + MITM + bonding, passkey displayed by the device (the user types it on the phone) (BLE:31-33, 58-75). Bonds are in NVS, erased by `FACTORY_RESET`.
-- PIN (`examples/companion_radio/main.cpp:188-202`): `prefs.ble_pin` if non-zero; otherwise, with a screen and the build PIN 123456, a **random 6-digit PIN** shown on screen (the M5's case); otherwise the build PIN.
+- PIN (`examples/companion_radio/main.cpp:188-202`): `prefs.ble_pin` if non-zero; otherwise, with a screen and the build PIN 123456, a **random PIN in 100000..999999 drawn at each boot** and shown on screen (the M5's case); otherwise the build PIN. The same PIN serves every pairing until the next boot. `DEVICE_INFO` reports `prefs.ble_pin` (0 in random mode), not the active PIN (M:1064). `SET_DEVICE_PIN` only saves the setting (M:1847): the C++ applies it at the next boot; we apply it at once (deviation 9).
 - "Connected" means **authenticated**: outgoing frames are dropped until pairing has succeeded; on failure, disconnect and restart advertising after 1 s (BLE:77-88, 174).
 - One write = one frame; one notification = one frame. No extra framing.
 - Input: queue of 4 frames; a frame > 176 bytes or a full queue → frame dropped (BLE:114-129).
@@ -266,10 +267,13 @@ SPIFFS (`SPIFFS.begin(true)`), default arduino-esp32 table: `spiffs` at 0x290000
 2. Exact frequency in SELF_INFO (identical to the C++ in 433-435, 863-870 and 902-928 MHz, checked for every kHz; 1 kHz less on the C++ side for about 1 % of frequencies elsewhere).
 3. Channel name zero-padded in CHANNEL_INFO.
 4. No truncation of 174-176-byte frames over Bluetooth (MTU ≥ 179).
-5. Random PIN drawn on each pairing.
+5. *(Withdrawn in MC5: the PIN is drawn at boot as in the C++, now that the Bluetooth host takes a fixed passkey.)*
 6. Automatic retries for messages sent from the screen.
 7. SEND_CHANNEL_TXT_MSG shorter than 7 bytes: ERR 1. The C++ does not check the length there and passes a negative text length to `memcpy` (M:1178-1197, BCM:528): likely crash, except for type ≠ 0 (ERR 1) or an invalid channel (ERR 2).
 8. Bytes read beyond the frame (§10): zeros. The C++ reads the rest of `cmd_frame` (M.h:267), a buffer of the global object `the_mesh` (`main.cpp:117`, hence zero at boot) that keeps the bytes of previous frames (only `cmd_frame[len]` is sometimes reset to 0): it reads zeros as long as no longer frame has gone through since boot. No known app sends such frames.
+9. A new PIN (`SET_DEVICE_PIN`, or from the screen) applies at once instead of at the next boot; back to 0 draws a new random PIN. The app does not see the active PIN either way.
+10. USB stays a companion interface next to Bluetooth (the M5's C++ BLE build has Bluetooth only). As in §1.3, every frame goes out on both and either can send commands. With nothing on the USB port this is invisible.
+11. The GAP device name (read after connecting) holds at most 22 bytes, the `trouble-host` limit: `MeshCore-` and the first 13 bytes of the node name. The advertised name, which apps show while scanning, is whole up to 29 bytes as in the C++.
 
 ## 10. Device-side decoding (ADR-0002)
 

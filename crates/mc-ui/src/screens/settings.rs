@@ -15,7 +15,7 @@ use super::chat::{Compose, Target};
 use super::menu::{Action, Item, Menu};
 use super::{Dest, draw_list, step};
 use crate::act::{Intent, Outcome};
-use crate::app::{Confirm, Input, Nav, Screen, Ui};
+use crate::app::{BleState, Confirm, Input, Nav, Screen, Ui};
 use crate::{clock, regions};
 
 fn prefs<'a>(ui: &Ui<'a>) -> &'a Prefs {
@@ -377,20 +377,38 @@ pub fn bluetooth() -> Menu {
         "Bluetooth",
         &[
             Item::with(
+                "Status",
+                |ui| {
+                    String::from(match ui.ctx.ble.state {
+                        BleState::Off => "off",
+                        BleState::Advertising => "waiting",
+                        BleState::Pairing => "pairing",
+                        BleState::Connected => "connected",
+                    })
+                },
+                Action::Run(|_| Nav::Stay),
+            ),
+            Item::with(
                 "PIN",
-                |ui| match prefs(ui).ble_pin {
-                    0 => String::from("random"),
-                    p => format!("{p:06}"),
+                |ui| match (prefs(ui).ble_pin, ui.ctx.ble.pin) {
+                    (0, 0) => String::from("random"),
+                    (0, p) => format!("{p:06} random"),
+                    (p, _) => format!("{p:06}"),
                 },
                 Action::Build(pin_entry),
             ),
             Item::plain(
-                "Random PIN",
-                Action::Run(|_| Nav::IntentToast(Intent::SetPin(0), "PIN: random at pairing")),
+                "New random PIN",
+                Action::Run(|_| Nav::IntentToast(Intent::SetPin(0), "New random PIN")),
             ),
-            Item::plain(
-                "Paired devices",
-                Action::Soon("Bluetooth arrives in MC5: pairing, paired devices, forget."),
+            Item::with(
+                "Paired phones",
+                |ui| format!("{}", ui.ctx.ble.paired),
+                Action::Confirm {
+                    text: "Forget every paired phone? Each will have to pair again.",
+                    intent: Intent::ForgetPaired,
+                    toast: "Paired phones forgotten",
+                },
             ),
         ],
     )

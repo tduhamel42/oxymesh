@@ -66,6 +66,7 @@ fn ctx(w: &mc_sim::World) -> Ctx<'_> {
         battery_percent: Some(87),
         charging: false,
         light: false,
+        ble: mc_ui::Ble::default(),
         gps: None,
     }
 }
@@ -255,4 +256,82 @@ fn contact_link_matches_the_app_format() {
             "ab".repeat(32)
         )
     );
+}
+
+fn ble(state: mc_ui::BleState) -> mc_ui::Ble {
+    mc_ui::Ble {
+        state,
+        pin: 48_213,
+        paired: 2,
+    }
+}
+
+#[test]
+fn pairing_covers_the_screen_with_the_pin() {
+    let w = world();
+    let mut c = ctx(&w);
+    c.ble = ble(mc_ui::BleState::Pairing);
+    for grid in [LARGE, COMPACT] {
+        let size = if grid == LARGE { "large" } else { "compact" };
+        let mut app = App::new(grid, false);
+        let t = text(&mut app, grid, &c);
+        assert!(t.contains("048 213"), "{t}");
+        insta::assert_snapshot!(format!("ble_pairing_{size}"), t);
+        // On the panel, big digits over those cells and nothing else painted.
+        let mut app = App::new(grid, true);
+        let mut frame = Frame::new();
+        let mut term = Terminal::new(panel::backend(&mut frame, grid)).unwrap();
+        term.draw(|f| app.draw(f, &c)).unwrap();
+        assert!(
+            matches!(app.overlays(), [overlay::Overlay::Pin { pin: 48_213, .. }]),
+            "{:?}",
+            app.overlays()
+        );
+    }
+}
+
+#[test]
+fn header_says_bt_while_a_phone_is_connected() {
+    let w = world();
+    let mut c = ctx(&w);
+    let mut app = App::new(LARGE, false);
+    press(&mut app, &c, &[Click(A), Long(A)]); // Contacts: a header with room
+    c.ble = ble(mc_ui::BleState::Advertising);
+    let first =
+        |app: &mut App, c: &Ctx<'_>| text(app, LARGE, c).lines().next().unwrap().to_string();
+    assert!(!first(&mut app, &c).contains("BT"));
+    c.ble = ble(mc_ui::BleState::Connected);
+    assert!(
+        first(&mut app, &c).contains("BT"),
+        "{}",
+        first(&mut app, &c)
+    );
+}
+
+#[test]
+fn forgetting_paired_phones_needs_a_hold() {
+    let w = world();
+    let mut c = ctx(&w);
+    c.ble = ble(mc_ui::BleState::Connected);
+    let mut app = App::new(LARGE, false);
+    // Home → Settings → Bluetooth (third) → Paired phones (fourth).
+    let intents = press(
+        &mut app,
+        &c,
+        &[
+            Double(A),
+            Long(A),
+            Click(A),
+            Click(A),
+            Long(A),
+            Click(A),
+            Click(A),
+            Click(A),
+            Long(A),
+        ],
+    );
+    assert!(intents.is_empty());
+    assert!(app.popup().is_some(), "{}", text(&mut app, LARGE, &c));
+    let intents = press(&mut app, &c, &[Held(A, 1000), Held(A, CONFIRM_MS)]);
+    assert_eq!(intents, vec![Intent::ForgetPaired]);
 }

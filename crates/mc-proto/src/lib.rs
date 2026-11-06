@@ -1,5 +1,6 @@
-//! MeshCore companion protocol (`docs/spec/companion.md`): app and device frames, and USB
-//! framing. Base taken from `ln-meshcore` (loranet, app side), extended on the device side.
+//! MeshCore companion protocol (`docs/spec/companion.md`): app and device frames, USB
+//! framing and the Bluetooth link's queues. Base taken from `ln-meshcore` (loranet, app
+//! side), extended on the device side.
 //!
 //! `no_std`, no allocation; zero-copy decoding. Two modes for commands (ADR-0002):
 //! [`Command::decode`], strict and canonical, and [`Command::decode_device`], like the C++
@@ -16,6 +17,7 @@
     )
 )]
 
+pub mod ble;
 pub mod codec;
 pub mod command;
 pub mod response;

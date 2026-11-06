@@ -1,6 +1,7 @@
 //! `mc`: tools around a MeshCore companion connected over USB.
 
 mod airtest;
+mod ble;
 mod describe;
 mod duo;
 mod png;
@@ -22,10 +23,20 @@ struct Cli {
     cmd: Cmd,
 }
 
+/// Every `port` is a serial path, or `ble:<name>` for a companion over Bluetooth (the name with
+/// or without its `MeshCore-` prefix; `ble:` alone takes the first one found).
 #[derive(Subcommand)]
 enum Cmd {
     /// Query the device: version, settings, scope.
     Info { port: String },
+    /// Companions advertising over Bluetooth nearby.
+    BleScan {
+        #[arg(long, default_value_t = 5)]
+        secs: u64,
+        /// Every device heard, not only companions.
+        #[arg(long)]
+        all: bool,
+    },
     /// Print, decoded, the frames the device hears (LOG_RX_DATA).
     Sniff {
         port: String,
@@ -119,6 +130,15 @@ fn main() {
     let cli = Cli::parse();
     let res = match cli.cmd {
         Cmd::Info { port } => info(&port),
+        Cmd::BleScan { secs, all } => ble::scan(secs, all).map(|found| {
+            for f in &found {
+                match f.rssi {
+                    Some(r) => println!("{}  {r} dBm", f.name),
+                    None => println!("{}", f.name),
+                }
+            }
+            println!("{} companion(s)", found.len());
+        }),
         Cmd::Sniff {
             port,
             secs,

@@ -37,7 +37,7 @@ Source of truth for `mc-ui`. On-screen text **in English**. 200×200 black and w
 
 ## 4. Screen layout
 
-- **Header** (row 0, reversed): the screen's title on the left (bold); on the right, in order: unread (`●3`), backlight (`☀` while on), Bluetooth (from MC5), time `HH:MM` (not on Home, which has the big clock), battery `87%` (`87%+` while charging).
+- **Header** (row 0, reversed): the screen's title on the left (bold); on the right, in order: unread (`●3`), backlight (`☀` while on), `BT` while a phone is connected, time `HH:MM` (not on Home, which has the big clock), battery `87%` (`87%+` while charging).
 - **Body**: rows 1 to the last but one.
 - **Footer** (last row): the current meaning of the buttons, A on the left, B on the right: `A▸next hold▸open  B◂back` (compact grid: ► ◄). On Home, where B only toggles the light: `B☀`. "hold" is a word: the 8×13 font's ⏎ reads as a music note on the panel.
 - **Toasts**: short results ("Sent", "Delivered", "Failed"), shown in place of the footer for 3 s, from the next refresh.
@@ -92,12 +92,12 @@ Home (always-on face)
 - **Settings** (U5): every value goes through the device's settings API, so the app sees it at once (`SELF_INFO`, `DEVICE_INFO`, the scope and auto-add getters).
   - A value is picked on a list where the current one is marked `●`; lists longer than 8 put it first. Toggles flip on a long A with a toast.
   - Radio: region (presets from `config/regions.toml`), frequency (typed in kHz), bandwidth, spreading factor, coding rate (all four hold-to-confirm: every node you talk to must match), power, path hash size, flood scope (none, or a region's scope).
-  - Identity: my card, name, share location in adverts, adverts. Bluetooth: fixed (six digits) or random PIN; pairing and paired devices come with MC5.
+  - Identity: my card, name, share location in adverts, adverts. Bluetooth: status (off, waiting, pairing, connected); the PIN, fixed (six digits) or random (drawn at boot, a new one on demand), shown with its value; paired phones, with a count, forgotten all at once behind a hold-to-confirm.
   - Contacts: add every node heard or only chosen types (chat, repeater, room, sensor), replace the oldest when full, max hops.
   - Display: text size (the grid changes at once), light timeout (30 s, 2 min, 10 min, never), invert, rotate 180° (applied on the panel in U6). Notifications: buzzer off / quiet / on, LED on unread.
   - Telemetry: who may read the battery, the location, the sensors (nobody, favourites, everyone). Power: GPS on/off, hibernate (hold-to-confirm). Time: time zone (UTC−12 to UTC+14 in 30-minute steps), clock.
 - **My card**: full-screen QR overlay of `meshcore://contact/add?name=<name>&public_key=<64 hex>&type=1`, scannable by the official app, with the name and short key below.
-- **Pairing**: full-screen PIN in big digits as soon as pairing starts; gone when it ends.
+- **Pairing**: as soon as a phone starts pairing, a panel covers the body: "A phone wants to pair. Type this PIN on it:" and the PIN in seven-segment digits (`482 913`, overlay); in the terminal, the PIN as text. Gone when pairing ends, either way.
 - **Hibernate**: leaves a badge on the panel (name, my-card QR, "off — press B") and wakes on B.
 - **Timestamps are fixed** ("14:02", "yesterday"), never "x s ago", so the clock alone never forces a redraw beyond its minute tick.
 - **First boot**: a setup flow (region, name, time from GPS or the app). It can be skipped, and it comes back from Settings → System.
@@ -135,7 +135,7 @@ Home (always-on face)
 
 ## 11. Emulator and verification
 
-- `mc ui` runs the real `mc-ui` App in a terminal at the device's grid size, hosted by `mc-sim`: Alice (an echo bot who writes first), Bob (posts on Public, answers pings) and a relay that forwards and answers like a MeshCore repeater (admin password `secret`). The emulator shows a fixed GPS fix. Keys: `j`/↓ = A click, `k`/↑ = A double click, Enter = A long, Space (held) = A hold, Esc/Backspace = B click, `h` = B double click, `l` = B long, `g` = switch grid, `q` = quit.
+- `mc ui` runs the real `mc-ui` App in a terminal at the device's grid size, hosted by `mc-sim`: Alice (an echo bot who writes first), Bob (posts on Public, answers pings) and a relay that forwards and answers like a MeshCore repeater (admin password `secret`). The emulator shows a fixed GPS fix. Keys: `j`/↓ = A click, `k`/↑ = A double click, Enter = A long, Space (held) = A hold, Esc/Backspace = B click, `h` = B double click, `l` = B long, `g` = switch grid, `p` = a simulated phone pairs, then connects, then leaves, `q` = quit. The simulated phone has paired once (PIN `482913`).
 - `mc ui --png <dir>` renders every screen through mousefood into PNG files: the exact panel pixels, overlays included.
 - Snapshot tests (`insta`) of every screen and state at both grid sizes.
 - On the device (U6): navigation with the two buttons, a message composed and delivered with its tick, tools on real traffic, backlight and potentiometer, no packet lost during a refresh (M5 log compared with the Heltec's).

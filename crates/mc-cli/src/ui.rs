@@ -14,7 +14,7 @@ use mc_sim::World;
 use mc_ui::app::{App, Ctx, GpsFix};
 use mc_ui::input::{Button, Gesture};
 use mc_ui::panel::{self, COMPACT, Frame, Grid, LARGE};
-use mc_ui::{Outcome, perform};
+use mc_ui::{Ble, BleState, Intent, Outcome, perform};
 use ratatui_core::layout::Rect;
 use ratatui_core::terminal::Terminal;
 use ratatui_core::text::Line;
@@ -71,7 +71,14 @@ fn ms(t: Instant) -> u64 {
     t.saturating_duration_since(Instant::ZERO).as_millis()
 }
 
-fn ctx(w: &World, light: bool) -> Ctx<'_> {
+/// A phone that has paired once and is in range: `p` makes it pair, connect, leave.
+const PHONE: Ble = Ble {
+    state: BleState::Advertising,
+    pin: 482_913,
+    paired: 1,
+};
+
+fn ctx(w: &World, light: bool, ble: Ble) -> Ctx<'_> {
     let dev = &w.nodes[ME].dev;
     Ctx {
         dev,
@@ -81,6 +88,7 @@ fn ctx(w: &World, light: bool) -> Ctx<'_> {
         battery_percent: Some(87),
         charging: false,
         light,
+        ble,
         // A fixed fix near Chamonix, for the GPS and Map tools.
         gps: Some(GpsFix {
             lat: 45_923_700,
@@ -148,18 +156,31 @@ fn render_tour(dir: &Path) -> Result<(), String> {
     w.run(Duration::from_secs(5));
     say(&mut w, 2, "Coffee at the refuge around 4?");
     w.run(Duration::from_secs(5));
-    let c = ctx(&w, false);
+    let c = ctx(&w, false, PHONE);
+    let pairing = ctx(
+        &w,
+        false,
+        Ble {
+            state: BleState::Pairing,
+            ..PHONE
+        },
+    );
+    let shots = mc_ui::tour::TOUR.iter().map(|(n, g)| (*n, *g, &c)).chain([(
+        "ble_pairing",
+        &[][..],
+        &pairing,
+    )]);
     for grid in [LARGE, COMPACT] {
-        for (name, gestures) in mc_ui::tour::TOUR {
+        for (name, gestures, c) in shots.clone() {
             let mut app = App::new(grid, true);
-            for g in *gestures {
-                app.gesture(*g, &c);
+            for g in gestures {
+                app.gesture(*g, c);
             }
             let mut frame = Frame::new();
             {
                 let mut t = Terminal::new(panel::backend(&mut frame, grid))
                     .map_err(|e| format!("{e:?}"))?;
-                t.draw(|f| app.draw(f, &c)).map_err(|e| format!("{e:?}"))?;
+                t.draw(|f| app.draw(f, c)).map_err(|e| format!("{e:?}"))?;
                 for o in app.overlays() {
                     let _ = mc_ui::overlay::draw(o, t.backend_mut().display_mut());
                 }
@@ -173,7 +194,7 @@ fn render_tour(dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-const HELP: [&str; 10] = [
+const HELP: [&str; 11] = [
     "j ↓   A click: next",
     "k ↑   A double: previous",
     "Enter A long: open",
@@ -182,6 +203,7 @@ const HELP: [&str; 10] = [
     "h     B double: Home",
     "l     B long: light",
     "g     text size",
+    "p     phone: pair, connect, leave",
     "q     quit",
     "",
 ];
@@ -210,13 +232,14 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
     w.nodes[ME].dev.node.prefs.ui.compact = *grid == COMPACT;
     let mut app = App::new(*grid, false);
     {
-        let c = ctx(&w, false);
+        let c = ctx(&w, false, PHONE);
         app.start(&c);
     }
     let mut rng = rand_chacha::ChaCha20Rng::seed_from_u64(1);
     let me_key = *w.nodes[ME].dev.node.id.pub_key();
     let start = StdInstant::now();
     let mut light = false;
+    let mut ble = PHONE;
     let mut hold_since: Option<StdInstant> = None;
     let mut ticks_sent = 0u32;
     let mut log: Vec<String> = Vec::new();
@@ -264,7 +287,7 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
         w.nodes[3].events.clear();
         let events = std::mem::take(&mut w.nodes[ME].ui);
         {
-            let c = ctx(&w, light);
+            let c = ctx(&w, light, ble);
             for e in &events {
                 app.event(e, &c);
             }
@@ -309,6 +332,17 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
                         None
                     }
                 }
+                KeyCode::Char('p') => {
+                    ble.state = match ble.state {
+                        BleState::Off | BleState::Advertising => BleState::Pairing,
+                        BleState::Pairing => {
+                            ble.paired = ble.paired.max(1);
+                            BleState::Connected
+                        }
+                        BleState::Connected => BleState::Advertising,
+                    };
+                    None
+                }
                 KeyCode::Char('g') => {
                     *grid = if *grid == LARGE { COMPACT } else { LARGE };
                     w.nodes[ME].dev.node.prefs.ui.compact = *grid == COMPACT;
@@ -321,7 +355,7 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
             gestures.extend(g);
         }
         for g in gestures {
-            let c = ctx(&w, light);
+            let c = ctx(&w, light, ble);
             app.gesture(g, &c);
             log.push(format!("{g:?}"));
         }
@@ -330,14 +364,27 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
             let sn = &mut w.nodes[ME];
             let o = perform(&i, &mut sn.dev, now, &mut rng, &mut sn.st);
             log.push(format!("  → {i:?}: {o:?}"));
+            if let Intent::SetPin(p) = i
+                && o == Outcome::Ok
+            {
+                ble.pin = if p == 0 {
+                    100_000 + rand_core::Rng::next_u32(&mut rng) % 900_000
+                } else {
+                    p
+                };
+            }
             match o {
                 Outcome::Light => light = !light,
+                Outcome::ForgetPaired => {
+                    ble.paired = 0;
+                    ble.state = BleState::Advertising;
+                }
                 Outcome::Reboot | Outcome::FactoryReset | Outcome::Hibernate => {
                     app.toast("Ignored by the emulator", ms(w.now));
                 }
                 _ => {}
             }
-            let c = ctx(&w, light);
+            let c = ctx(&w, light, ble);
             app.done(&i, &o, &c);
             if app.sync(&c) {
                 *grid = app.grid();
@@ -347,7 +394,7 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
         if log.len() > 12 {
             log.drain(..log.len() - 12);
         }
-        let c = ctx(&w, light);
+        let c = ctx(&w, light, ble);
         term.draw(|f| {
             let area = f.area();
             let dev = Rect {

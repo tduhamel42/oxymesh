@@ -1,0 +1,201 @@
+diff -ru a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs	2006-07-24 03:21:28
++++ b/src/lib.rs	2026-11-06 19:12:33
+@@ -803,6 +803,17 @@
+         self
+     }
+ 
++    /// Set a fixed passkey to use for PassKey Entry pairing (DisplayOnly).
++    ///
++    /// When set, this passkey will be displayed to the user instead of a randomly generated one.
++    ///
++    /// Set to `None` to return to random passkey generation (the default).
++    #[cfg(feature = "security")]
++    pub fn set_passkey(mut self, passkey: Option<u32>) -> Self {
++        self.host().connections.security_manager.set_passkey(passkey);
++        self
++    }
++
+     /// Enable or disable secure connections only mode.
+     ///
+     /// When enabled, legacy pairing is rejected even if the `legacy-pairing` feature is compiled in.
+@@ -871,6 +882,16 @@
+             .connections
+             .security_manager
+             .set_io_capabilities(io_capabilities);
++    }
++
++    /// Set a fixed passkey to use for PassKey Entry pairing (DisplayOnly).
++    ///
++    /// When set, this passkey will be displayed to the user instead of a randomly generated one.
++    ///
++    /// Set to `None` to return to random passkey generation (the default).
++    #[cfg(feature = "security")]
++    pub fn set_passkey(&self, passkey: Option<u32>) {
++        self.host.connections.security_manager.set_passkey(passkey);
+     }
+ 
+     /// Enable or disable secure connections only mode.
+diff -ru a/src/security_manager/mod.rs b/src/security_manager/mod.rs
+--- a/src/security_manager/mod.rs	2006-07-24 03:21:28
++++ b/src/security_manager/mod.rs	2026-11-06 19:12:33
+@@ -198,6 +198,9 @@
+     finished_waker: WakerRegistration,
+     /// Io capabilities
+     io_capabilities: IoCapabilities,
++    /// Optional fixed passkey to use for PassKey Entry pairing (DisplayOnly).
++    /// When None, a random passkey is generated.
++    passkey: Option<u32>,
+     /// When true, reject legacy pairing even if the feature is compiled in
+     #[cfg(feature = "legacy-pairing")]
+     secure_connections_only: bool,
+@@ -341,6 +344,7 @@
+             storage,
+             peer_identity,
+             state: &self.state,
++            passkey: self.passkey,
+         };
+         self.pairing_sm
+             .as_mut()
+@@ -416,6 +420,7 @@
+             storage,
+             peer_identity,
+             state: &self.state,
++            passkey: self.passkey,
+         };
+         self.pairing_sm
+             .as_mut()
+@@ -442,6 +447,7 @@
+                 connections,
+                 storage,
+                 state: &self.state,
++                passkey: self.passkey,
+             };
+             let res = sm.handle_event(pairing_event, &mut ops, &mut self.rng);
+             if res.is_ok() {
+@@ -473,6 +479,7 @@
+                 storage,
+                 conn_handle: storage.handle.ok_or(Error::InvalidValue)?,
+                 state: &self.state,
++                passkey: self.passkey,
+             };
+             let res = sm.handle_event(pairing::Event::LinkEncryptedResult(encrypted), &mut ops, &mut self.rng);
+             if res.is_ok() {
+@@ -553,6 +560,7 @@
+                     storage,
+                     conn_handle: storage.handle.unwrap_or(ConnHandle::new(0)),
+                     state: &self.state,
++                    passkey: self.passkey,
+                 },
+                 &mut self.rng,
+             );
+@@ -605,6 +613,7 @@
+             storage,
+             peer_identity,
+             state: &self.state,
++            passkey: self.passkey,
+         };
+         if role == LeConnRole::Peripheral {
+             self.pairing_sm = Some(Pairing::initiate_peripheral(
+@@ -652,6 +661,7 @@
+                 pairing_sm: None,
+                 finished_waker: WakerRegistration::new(),
+                 io_capabilities: IoCapabilities::NoInputNoOutput,
++                passkey: None,
+                 #[cfg(feature = "legacy-pairing")]
+                 secure_connections_only: false,
+             }),
+@@ -665,6 +675,14 @@
+         self.inner.borrow_mut().io_capabilities = io_capabilities;
+     }
+ 
++    /// Set a fixed passkey to use for PassKey Entry pairing (DisplayOnly).
++    ///
++    /// When set, this passkey will be displayed/used instead of a randomly generated one.
++    /// Set to `None` to return to random passkey generation (the default).
++    pub(crate) fn set_passkey(&self, passkey: Option<u32>) {
++        self.inner.borrow_mut().passkey = passkey;
++    }
++
+     /// Enable or disable secure connections only mode.
+     /// When enabled, legacy pairing is rejected even if the feature is compiled in.
+     #[cfg(feature = "legacy-pairing")]
+@@ -1177,6 +1195,7 @@
+     conn_handle: ConnHandle,
+     peer_identity: Identity,
+     state: &'sm SecurityManagerData,
++    passkey: Option<u32>,
+ }
+ 
+ impl<'sm, 'cm, 'cm2, 'cs, P: PacketPool> PairingOps<P> for PairingOpsImpl<'sm, 'cm, 'cm2, 'cs, P> {
+@@ -1290,5 +1309,9 @@
+ 
+     fn local_identity_address(&self) -> Result<Address, Error> {
+         self.state.local_address.ok_or(Error::InvalidValue)
++    }
++
++    fn passkey(&self) -> Option<u32> {
++        self.passkey
+     }
+ }
+diff -ru a/src/security_manager/pairing/mod.rs b/src/security_manager/pairing/mod.rs
+--- a/src/security_manager/pairing/mod.rs	2006-07-24 03:21:28
++++ b/src/security_manager/pairing/mod.rs	2026-11-06 19:12:33
+@@ -89,6 +89,9 @@
+     /// The local identity address (public or static random), used for Identity Address Information.
+     /// This is distinct from the address used for pairing calculations, which may be an RPA.
+     fn local_identity_address(&self) -> Result<Address, Error>;
++    /// Get the configured passkey, if any.
++    /// When Some, this passkey should be used for PassKey Entry pairing instead of generating a random one.
++    fn passkey(&self) -> Option<u32>;
+ }
+ 
+ #[derive(Debug)]
+@@ -422,6 +425,7 @@
+         pub(crate) oob_available: bool,
+         pub(crate) secret_key: crate::security_manager::crypto::SecretKey,
+         pub(crate) public_key: crate::security_manager::crypto::PublicKey,
++        pub(crate) passkey: Option<u32>,
+     }
+ 
+     impl<const N: usize> TestOps<N> {
+@@ -438,6 +442,7 @@
+                 oob_available: false,
+                 secret_key,
+                 public_key,
++                passkey: None,
+             }
+         }
+     }
+@@ -523,6 +528,10 @@
+ 
+         fn local_identity_address(&self) -> Result<Address, Error> {
+             Ok(Address::random([0xff, 0x8f, 0x08, 0x05, 0xe4, 0xff]))
++        }
++
++        fn passkey(&self) -> Option<u32> {
++            self.passkey
+         }
+     }
+ 
+diff -ru a/src/security_manager/pairing/peripheral.rs b/src/security_manager/pairing/peripheral.rs
+--- a/src/security_manager/pairing/peripheral.rs	2006-07-24 03:21:28
++++ b/src/security_manager/pairing/peripheral.rs	2026-11-06 19:12:33
+@@ -306,11 +306,13 @@
+             }
+             PairingMethod::PassKeyEntry { peripheral, .. } => {
+                 if peripheral == PassKeyEntryAction::Display {
+-                    phase_data.local_secret_rb = rng.sample(rand::distributions::Uniform::new_inclusive(0, 999999));
++                    // Use configured passkey if available, otherwise generate a random one
++                    let passkey = ops
++                        .passkey()
++                        .unwrap_or_else(|| rng.sample(rand::distributions::Uniform::new_inclusive(0, 999999)));
++                    phase_data.local_secret_rb = passkey as u128;
+                     phase_data.peer_secret_ra = phase_data.local_secret_rb;
+-                    ops.try_send_connection_event(ConnectionEvent::PassKeyDisplay(PassKey(
+-                        phase_data.local_secret_rb as u32,
+-                    )))?;
++                    ops.try_send_connection_event(ConnectionEvent::PassKeyDisplay(PassKey(passkey)))?;
+                     Ok(Self::WaitingPassKeyEntryConfirm { phase_data, round: 0 })
+                 } else {
+                     ops.try_send_connection_event(ConnectionEvent::PassKeyInput)?;

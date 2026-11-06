@@ -11,4 +11,9 @@ Hardware facts about the ThinkNode M5 (pinout, battery curve) also come from Mes
 ELECROW-ThinkNode-M5 variant (GPL-3.0, commit 9bcf0f7); no code is taken from it.
 The SSD1681 display driver is written from the datasheet, without reusing GxEPD2 (GPL-3.0).
 
+The firmware embeds a modified copy of trouble-host 0.7.0 (firmware/esp32s3/vendor/trouble-host):
+  trouble — https://github.com/embassy-rs/trouble
+  Copyright the Embassy project contributors. Apache-2.0 OR MIT.
+  Change: set_passkey backported from trouble-host 0.8.0 (vendor/trouble-host-passkey.patch).
+
 "MeshCore" is the name of the original project; this repository is not part of it and is not endorsed by it.

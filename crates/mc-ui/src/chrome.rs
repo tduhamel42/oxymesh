@@ -138,6 +138,9 @@ pub fn status(ui: &Ui<'_>, time: bool) -> String {
     if c.light {
         parts.push(String::from(ui.sym.light));
     }
+    if c.ble.state == crate::app::BleState::Connected {
+        parts.push(String::from("BT"));
+    }
     if time {
         parts.push(clock::hhmm(clock::local(c.unix, c.tz_offset_min)));
     }

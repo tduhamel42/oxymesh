@@ -25,6 +25,11 @@ rand_chacha.workspace = true
 ratatui-core = { version = "0.1", default-features = false }
 ratatui-widgets = { version = "0.3", default-features = false }
 ratatui-crossterm = "0.1"
+# Companions over Bluetooth LE (`ble:<name>` ports, `mc ble`).
+btleplug = "0.13"
+tokio = { version = "1", features = ["rt", "time", "sync", "macros"] }
+futures = "0.3"
+uuid = "1"
 
 [lints]
 workspace = true

@@ -3,10 +3,10 @@ source: crates/mc-ui/tests/settings.rs
 expression: r.draw()
 ---
 |Bluetooth       17:33 80%|
-|▸ PIN              random|
-|  Random PIN             |
-|  Paired devices         |
-|                         |
+|▸ Status              off|
+|  PIN              random|
+|  New random PIN         |
+|  Paired phones         0|
 |                         |
 |                         |
 |                         |

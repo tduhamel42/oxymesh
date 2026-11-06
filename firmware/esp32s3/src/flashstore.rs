@@ -1,7 +1,7 @@
 //! Device storage in the `mcdata` partition (ADR-0006), using `sequential-storage`
 //! (power-loss tolerant). Implements the `Storage` trait of `mc-node`.
 //!
-//! Keys (u32): 1 identity (96 B), 2 prefs, 3 contact count, `0x0001_0000 + i` contact i
+//! Keys (u32): 1 identity (96 B), 2 prefs, 3 contact count, 4 Bluetooth bonds, `0x0001_0000 + i` contact i
 //! (C++ `/contacts3` record), `0x0002_0000 + i` channel i, `0x0003_0000 + i` history slot i,
 //! `0x1000_0000 | seq` offline queue entry, `0x8000_0000 | key prefix` stored advert (preceded
 //! by the full key, checked on read). Deleted entries are empty values (tombstones).
@@ -16,10 +16,15 @@ use mc_node::persist::{
 };
 use sequential_storage::cache::{Cache, Uncached};
 use sequential_storage::map::{MapConfig, MapStorage};
+use trouble_host::prelude::{
+    AddrKind, Address, BdAddr, BondInformation, Identity, IdentityResolvingKey, LongTermKey,
+    SecurityLevel,
+};
 
 const KEY_IDENTITY: u32 = 1;
 const KEY_PREFS: u32 = 2;
 const KEY_COUNT: u32 = 3;
+const KEY_BONDS: u32 = 4;
 const CONTACT_BASE: u32 = 0x0001_0000;
 const CHANNEL_BASE: u32 = 0x0002_0000;
 const HISTORY_BASE: u32 = 0x0003_0000;
@@ -42,6 +47,71 @@ fn crc32(data: &[u8]) -> u32 {
         }
     }
     !c
+}
+
+/// Paired phones kept; beyond that the oldest is forgotten.
+pub const BONDS_MAX: usize = 8;
+/// One bond record.
+pub const BOND_LEN: usize = 42;
+
+/// Bond record (from loranet): `kind ‖ addr[6] ‖ ltk[16] ‖ irk_present ‖ irk[16] ‖ level ‖
+/// bonded`.
+pub fn encode_bond(b: &BondInformation) -> [u8; BOND_LEN] {
+    let mut out = [0u8; BOND_LEN];
+    out[0] = b.identity.addr.kind.as_raw();
+    for (d, s) in out[1..7].iter_mut().zip(b.identity.addr.addr.raw()) {
+        *d = *s;
+    }
+    out[7..23].copy_from_slice(&b.ltk.0.to_le_bytes());
+    if let Some(irk) = b.identity.irk {
+        out[23] = 1;
+        out[24..40].copy_from_slice(&irk.0.get().to_le_bytes());
+    }
+    out[40] = match b.security_level {
+        SecurityLevel::NoEncryption => 0,
+        SecurityLevel::Encrypted => 1,
+        SecurityLevel::EncryptedAuthenticated => 2,
+    };
+    out[41] = u8::from(b.is_bonded);
+    out
+}
+
+/// Reads a bond record back. `None` if a field is out of range.
+pub fn decode_bond(b: &[u8; BOND_LEN]) -> Option<BondInformation> {
+    let mut addr = [0u8; 6];
+    addr.copy_from_slice(&b[1..7]);
+    let mut ltk = [0u8; 16];
+    ltk.copy_from_slice(&b[7..23]);
+    let mut irk = [0u8; 16];
+    irk.copy_from_slice(&b[24..40]);
+    let irk = match b[23] {
+        0 if irk == [0; 16] => None,
+        1 => Some(IdentityResolvingKey(core::num::NonZeroU128::new(
+            u128::from_le_bytes(irk),
+        )?)),
+        _ => return None,
+    };
+    let level = match b[40] {
+        1 => SecurityLevel::Encrypted,
+        2 => SecurityLevel::EncryptedAuthenticated,
+        _ => return None,
+    };
+    if b[41] != 1 {
+        return None;
+    }
+    let identity = Identity {
+        addr: Address {
+            kind: AddrKind::new(b[0]),
+            addr: BdAddr::new(addr),
+        },
+        irk,
+    };
+    Some(BondInformation::new(
+        identity,
+        LongTermKey(u128::from_le_bytes(ltk)),
+        level,
+        true,
+    ))
 }
 
 fn blob_key(key: &[u8; 32]) -> u32 {
@@ -171,6 +241,49 @@ impl<S: NorFlash> FlashStore<S> {
                 }
             }
         }
+    }
+
+    /// Stored bonds, most recent first. An unreadable list is forgotten.
+    pub fn bonds(&mut self) -> heapless::Vec<BondInformation, BONDS_MAX> {
+        let mut raw = [0u8; BONDS_MAX * BOND_LEN];
+        let mut out = heapless::Vec::new();
+        let Some(n) = self.get(KEY_BONDS, &mut raw) else {
+            return out;
+        };
+        if n % BOND_LEN != 0 {
+            return out;
+        }
+        for chunk in raw[..n].chunks_exact(BOND_LEN) {
+            let mut rec = [0u8; BOND_LEN];
+            rec.copy_from_slice(chunk);
+            let Some(b) = decode_bond(&rec) else {
+                return heapless::Vec::new();
+            };
+            let _ = out.push(b);
+        }
+        out
+    }
+
+    /// Stores a bond first in the list; a peer already known is replaced.
+    pub fn add_bond(&mut self, bond: &BondInformation) {
+        let old = self.bonds();
+        let mut raw = [0u8; BONDS_MAX * BOND_LEN];
+        raw[..BOND_LEN].copy_from_slice(&encode_bond(bond));
+        let mut n = BOND_LEN;
+        for b in old
+            .iter()
+            .filter(|b| b.identity.addr != bond.identity.addr)
+            .take(BONDS_MAX - 1)
+        {
+            raw[n..n + BOND_LEN].copy_from_slice(&encode_bond(b));
+            n += BOND_LEN;
+        }
+        self.put(KEY_BONDS, &raw[..n]);
+    }
+
+    /// Forgets every paired phone.
+    pub fn clear_bonds(&mut self) {
+        self.remove(KEY_BONDS);
     }
 
     /// Erases the whole partition (`FACTORY_RESET`).

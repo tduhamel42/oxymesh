@@ -79,8 +79,10 @@ pub enum Intent {
         config: u8,
         max_hops: u8,
     },
-    /// Bluetooth PIN: 0 random at pairing, or six digits.
+    /// Bluetooth PIN: six digits, or 0 for a random one drawn at once.
     SetPin(u32),
+    /// Forget every paired phone.
+    ForgetPaired,
     SetGps(bool),
     /// The screen's own settings.
     SetUi(UiPrefs),
@@ -107,6 +109,8 @@ pub enum Outcome {
     FactoryReset,
     /// For the runner: draw the badge, then deep sleep until B.
     Hibernate,
+    /// For the runner: erase the Bluetooth bonds and hang up.
+    ForgetPaired,
 }
 
 fn of(r: Result<(), u8>) -> Outcome {
@@ -139,6 +143,7 @@ pub fn perform(
             Outcome::Reboot
         }
         Intent::FactoryReset => Outcome::FactoryReset,
+        Intent::ForgetPaired => Outcome::ForgetPaired,
         Intent::SendAdvert { flood } => match dev.node.send_self_advert(now, *flood) {
             Ok(()) => Outcome::Ok,
             Err(e) => send_err(e),

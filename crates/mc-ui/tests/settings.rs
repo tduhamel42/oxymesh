@@ -27,6 +27,7 @@ fn ctx(w: &World) -> Ctx<'_> {
         battery_percent: Some(80),
         charging: false,
         light: false,
+        ble: mc_ui::Ble::default(),
         gps: None,
     }
 }
@@ -318,8 +319,9 @@ fn toggles_flip_and_save() {
 fn fixed_pin_is_typed_with_digits() {
     let mut r = Rig::new(LARGE);
     r.settings(2); // Bluetooth
-    r.press(&[Long(A)]); // PIN
+    r.press(&[Click(A), Long(A)]); // Status, then PIN
     r.draw();
+    assert!(r.app.keyboard().is_some(), "{}", r.draw());
     for d in "246810".chars() {
         let want = mc_ui::keyboard::Cand::Char(d);
         while r.app.keyboard().and_then(|k| k.selected()) != Some(&want) {

@@ -37,6 +37,8 @@ pub enum Overlay {
     },
     /// A QR code of `text`, as large as fits, centered.
     Qr { at: PixelRect, text: String },
+    /// A six-digit PIN in seven-segment digits, two groups of three, as tall as fits.
+    Pin { at: PixelRect, pin: u32 },
     /// A map: us at the center (a cross), nodes as rings with their names; positions in
     /// thousandths of the half-width, east and north.
     Map {
@@ -48,7 +50,10 @@ pub enum Overlay {
 impl Overlay {
     pub fn area(&self) -> PixelRect {
         match self {
-            Overlay::Clock { at, .. } | Overlay::Qr { at, .. } | Overlay::Map { at, .. } => *at,
+            Overlay::Clock { at, .. }
+            | Overlay::Pin { at, .. }
+            | Overlay::Qr { at, .. }
+            | Overlay::Map { at, .. } => *at,
         }
     }
 }
@@ -63,6 +68,7 @@ pub fn draw<D: DrawTarget<Color = BinaryColor>>(o: &Overlay, d: &mut D) -> Resul
         .draw(d)?;
     match o {
         Overlay::Clock { time, .. } => clock(at, *time, d),
+        Overlay::Pin { pin, .. } => pin_digits(at, *pin, d),
         Overlay::Qr { text, .. } => qr(at, text, d),
         Overlay::Map { points, .. } => map(at, points, d),
     }
@@ -172,6 +178,40 @@ fn clock<D: DrawTarget<Color = BinaryColor>>(
             x += t + gap;
         }
         digit(d, x, y0, w, h, t, *s)?;
+        x += w + gap;
+    }
+    Ok(())
+}
+
+fn pin_digits<D: DrawTarget<Color = BinaryColor>>(
+    at: PixelRect,
+    pin: u32,
+    d: &mut D,
+) -> Result<(), D::Error> {
+    // Like the clock: height from the rectangle, then narrower until six digits and the
+    // middle gap fit.
+    let h = (at.h as i32 - 4).max(10);
+    let mut w = h * 6 / 11;
+    let mut t = (h / 8).max(2);
+    let gap = (t * 2).max(4);
+    let total = |w: i32| 6 * w + 5 * gap + 2 * gap;
+    while total(w) > at.w as i32 && w > 4 {
+        w -= 1;
+        t = (w / 5).clamp(2, t);
+    }
+    let mut x = at.x + (at.w as i32 - total(w)) / 2;
+    let y = at.y + (at.h as i32 - h) / 2;
+    let mut p = pin % 1_000_000;
+    let mut digits = [0u8; 6];
+    for slot in digits.iter_mut().rev() {
+        *slot = (p % 10) as u8;
+        p /= 10;
+    }
+    for (i, v) in digits.iter().enumerate() {
+        if i == 3 {
+            x += 2 * gap;
+        }
+        digit(d, x, y, w, h, t, DIGITS[usize::from(*v)])?;
         x += w + gap;
     }
     Ok(())

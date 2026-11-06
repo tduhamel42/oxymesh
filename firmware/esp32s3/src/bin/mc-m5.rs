@@ -1,7 +1,10 @@
-//! oxymesh on the ThinkNode M5: USB companion with its own interface (MC4, U6).
+//! oxymesh on the ThinkNode M5: companion over Bluetooth and USB, with its own interface (MC4,
+//! MC5, U6).
 //!
-//! `mc-node` (`Device`) drives the SX1262 and speaks the MeshCore companion protocol on UART0
-//! (CH340 bridge, 115,200 baud, `<`/`>` framing). Storage in flash, in the `mcdata` partition.
+//! `mc-node` (`Device`) drives the SX1262 and speaks the MeshCore companion protocol over
+//! Bluetooth LE (Nordic UART service, PIN pairing, `oxymesh_esp32s3::ble`) and on UART0 (CH340
+//! bridge, 115,200 baud, `<`/`>` framing); every frame goes out on both. Storage in flash, in
+//! the `mcdata` partition.
 //! The screen runs `mc-ui` (Ratatui through mousefood, ADR-0008) on a 64 KB heap: two-button
 //! gestures, refresh policy, backlight auto-off, unread LED, hibernation with wake-up on the top
 //! button. Logging is off by default: UART0 carries the protocol (`debug-log` feature).
@@ -13,6 +16,7 @@ extern crate alloc;
 
 use embassy_embedded_hal::adapter::BlockingAsync;
 use embassy_executor::Spawner;
+use embassy_futures::join::join4;
 use embassy_time::{Duration, Instant, Timer};
 use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::mono_font::iso_8859_1::{FONT_6X13, FONT_10X20};
@@ -23,7 +27,9 @@ use esp_backtrace as _;
 use esp_bootloader_esp_idf::partitions::{PARTITION_TABLE_MAX_LEN, read_partition_table};
 use esp_hal::analog::adc::{Adc, AdcCalCurve, AdcConfig, Attenuation};
 use esp_hal::clock::CpuClock;
-use esp_hal::gpio::{Event as PinEvent, Input, InputConfig, Level, Output, OutputConfig, Pull, WakeupConfig};
+use esp_hal::gpio::{
+    Event as PinEvent, Input, InputConfig, Level, Output, OutputConfig, Pull, WakeupConfig,
+};
 use esp_hal::i2c::master::{Config as I2cConfig, I2c};
 use esp_hal::rtc_cntl::sleep::{LowPower, RtcSleepConfig};
 use esp_hal::spi::Mode;
@@ -31,6 +37,7 @@ use esp_hal::spi::master::{Config as SpiConfig, Spi};
 use esp_hal::time::Rate;
 use esp_hal::timer::timg::TimerGroup;
 use esp_hal::uart::{Config as UartConfig, Uart};
+use esp_radio::ble::controller::BleConnector;
 use esp_storage::FlashStorage;
 use log::{error, info};
 use mc_air::crypto::LocalIdentity;
@@ -41,9 +48,10 @@ use mc_ui::input::{Button, Gestures};
 use mc_ui::overlay::{self, Overlay, PixelRect};
 use mc_ui::panel::{self, COMPACT, Grid, LARGE};
 use mc_ui::refresh::{self, Kind, Policy};
-use mc_ui::{App, Ctx, Outcome, perform};
+use mc_ui::{App, Ble, Ctx, Outcome, perform};
 use oxymesh_esp32s3::battery::{Smoother, percent};
-use oxymesh_esp32s3::flashstore::FlashStore;
+use oxymesh_esp32s3::ble::{self as bt, Control, Server, Shared};
+use oxymesh_esp32s3::flashstore::{BONDS_MAX, FlashStore};
 use oxymesh_esp32s3::m5;
 use oxymesh_esp32s3::pca9557::{Pca9557, pin};
 use oxymesh_esp32s3::ssd1681::{Frame, Ssd1681};
@@ -52,6 +60,10 @@ use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 use ratatui_core::terminal::Terminal;
 use static_cell::{ConstStaticCell, StaticCell};
+use trouble_host::prelude::{
+    Address, DefaultPacketPool, ExternalController, GapConfig, HostResources, IoCapabilities,
+    PeripheralConfig, appearance,
+};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -63,8 +75,12 @@ const INFO: Info = Info {
     has_gps: true,
 };
 
-/// UI heap (ADR-0008): peak measured at 39 KB on the compact grid.
-const HEAP_SIZE: usize = 64 * 1024;
+/// Heap in main DRAM, which it shares with the stack. With the second region: 98 KB for the
+/// interface (≈ 43 KB at worst, compose on the compact grid) and Bluetooth (≈ 31 KB idle), and
+/// ≈ 68 KB of stack (29 KB used idle). Measured with `debug-log` (`docs/measurements.md`).
+const HEAP_SIZE: usize = 24 * 1024;
+/// Second heap region, in the RAM the bootloader gives back (`dram2`, 73,744 bytes).
+const HEAP_RECLAIMED: usize = 72 * 1024;
 /// How often screens get their tick (range test pings, toasts).
 const UI_TICK_MS: u64 = 250;
 /// The unread LED blinks this often, this long.
@@ -102,7 +118,11 @@ fn grid_of(p: &Prefs) -> Grid {
 fn to_panel(src: &Frame, dst: &mut Frame, invert: bool, rotate: bool) {
     for (i, d) in dst.bits.iter_mut().enumerate() {
         let b = if rotate {
-            src.bits.get(panel::BUF - 1 - i).copied().unwrap_or(0xFF).reverse_bits()
+            src.bits
+                .get(panel::BUF - 1 - i)
+                .copied()
+                .unwrap_or(0xFF)
+                .reverse_bits()
         } else {
             src.bits.get(i).copied().unwrap_or(0xFF)
         };
@@ -110,8 +130,87 @@ fn to_panel(src: &Frame, dst: &mut Frame, invert: bool, rotate: bool) {
     }
 }
 
+/// RAM high-water marks, logged with `debug-log`: the main stack is painted at boot and the
+/// untouched part measured later; the heap counts its own peak.
+#[cfg(feature = "debug-log")]
+mod diag {
+    unsafe extern "C" {
+        static _stack_start_cpu0: u32;
+        static _stack_end_cpu0: u32;
+    }
+    const PAINT: u32 = 0xA5A5_A5A5;
+    /// Past the stack guard word (`stack-guard-offset`, 60 bytes).
+    const SKIP: usize = 128;
+
+    fn bounds() -> (usize, usize) {
+        let start = &raw const _stack_start_cpu0 as usize;
+        let end = &raw const _stack_end_cpu0 as usize;
+        (end + SKIP, start)
+    }
+
+    /// Paints the free stack below the current frame, keeping 1 KB of margin.
+    pub fn paint() {
+        let (low, _) = bounds();
+        let here = 0u32;
+        let sp = (&raw const here as usize).saturating_sub(1024) & !3;
+        let mut a = low;
+        while a < sp {
+            // SAFETY: below the live stack frame and above the guard word: nothing lives there.
+            unsafe { (a as *mut u32).write_volatile(PAINT) };
+            a += 4;
+        }
+    }
+
+    /// (peak stack use, stack size) in bytes.
+    pub fn stack() -> (usize, usize) {
+        let (low, high) = bounds();
+        let mut a = low;
+        // SAFETY: reading the stack region word by word.
+        while a < high && unsafe { (a as *const u32).read_volatile() } == PAINT {
+            a += 4;
+        }
+        (high - a, high - low + SKIP)
+    }
+
+    pub fn log() {
+        let (peak, size) = stack();
+        let h = esp_alloc::HEAP.stats();
+        let regions: heapless::Vec<(usize, usize), 3> = h
+            .region_stats
+            .iter()
+            .flatten()
+            .map(|r| (r.used, r.size))
+            .collect();
+        log::info!(
+            "ram: stack peak {peak} of {size}; heap {} now, {} peak, of {}; regions {:?}",
+            h.current_usage,
+            h.max_usage,
+            h.size,
+            regions
+        );
+    }
+}
+
+/// Bluetooth as the screen shows it.
+fn ble_of(sh: &Shared) -> Ble {
+    Ble {
+        state: sh.state.get(),
+        pin: sh.pin.get(),
+        paired: sh.paired.get(),
+    }
+}
+
+/// The PIN pairing asks for: the fixed one, or one drawn at boot (`main.cpp:188-202`).
+fn pin_of(fixed: u32, hw: &esp_hal::rng::Rng) -> u32 {
+    if fixed != 0 {
+        fixed
+    } else {
+        100_000 + hw.random() % 900_000
+    }
+}
+
 /// What the screen sees for one draw or one input.
-fn ui_ctx(dev: &Device, charging: bool, light: bool) -> Ctx<'_> {
+fn ui_ctx(dev: &Device, ble: Ble, charging: bool, light: bool) -> Ctx<'_> {
     Ctx {
         dev,
         now_ms: Instant::now().as_millis(),
@@ -121,6 +220,7 @@ fn ui_ctx(dev: &Device, charging: bool, light: bool) -> Ctx<'_> {
         charging,
         light,
         gps: None,
+        ble,
     }
 }
 
@@ -152,13 +252,23 @@ fn draw_badge(f: &mut Frame, dev: &Device) {
 #[esp_rtos::main]
 async fn main(_spawner: Spawner) -> ! {
     esp_alloc::heap_allocator!(size: HEAP_SIZE);
+    esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: HEAP_RECLAIMED);
     #[cfg(feature = "debug-log")]
     esp_println::logger::init_logger_from_env();
+    #[cfg(feature = "debug-log")]
+    diag::paint();
     let p = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
     let lpwr = p.LPWR;
     let timg0 = TimerGroup::new(p.TIMG0);
     esp_rtos::start(timg0.timer0, p.FROM_CPU_INTR0);
-    info!("oxymesh mc-m5: USB companion with its interface");
+    info!("oxymesh mc-m5: companion over Bluetooth and USB, with its interface");
+    // Bluetooth radio first: it also feeds the hardware RNG with entropy.
+    // One phone at a time and no scanning: smaller controller pools (4.4 KB of heap). Not
+    // `max_connections(1)`: advertising then fails with "Memory Capacity Exceeded".
+    let ble_config = esp_radio::ble::Config::default()
+        .with_max_connections(2)
+        .with_scan_duplicate_list_count(10);
+    let connector = BleConnector::new(p.BT, ble_config).ok();
 
     let out = OutputConfig::default();
     let _lora_en = Output::new(p.GPIO46, Level::High, out);
@@ -219,6 +329,26 @@ async fn main(_spawner: Spawner) -> ! {
     dev.node.reset(id, prefs, 1_793_900_000, mc_now());
     store.load(dev);
     dev.connected = true; // USB: always connected.
+
+    // Bluetooth: name and PIN fixed at boot, like the C++ (`main.cpp:188-209`).
+    let mut mac = [0u8; 6];
+    for (d, s) in mac
+        .iter_mut()
+        .zip(esp_hal::efuse::base_mac_address().as_bytes())
+    {
+        *d = *s;
+    }
+    let mut ble_name = [0u8; mc_proto::ble::NAME_MAX];
+    let ble_name_len = mc_proto::ble::device_name(
+        mc_node::contacts::name_str(&dev.node.prefs.name),
+        mac,
+        &mut ble_name,
+    );
+    let ble_name = &ble_name[..ble_name_len];
+    let ble_sh = Shared::new();
+    ble_sh.pin.set(pin_of(dev.node.prefs.ble_pin, &hw));
+    let bonds = store.bonds();
+    ble_sh.paired.set(bonds.len() as u8);
 
     // Radio.
     let spi = Spi::new(
@@ -306,10 +436,9 @@ async fn main(_spawner: Spawner) -> ! {
     let panel_frame = PANEL.init(Frame::new());
     let mut app = App::new(grid_of(&dev.node.prefs), true);
     {
-        let c = ui_ctx(dev, usb_in.is_high(), light);
+        let c = ui_ctx(dev, ble_of(&ble_sh), usb_in.is_high(), light);
         app.start(&c);
     }
-    let mut term = Terminal::new(panel::backend(panel_frame, app.grid())).expect("terminal");
     let mut gestures = Gestures::new();
     let mut policy = Policy::new();
     let mut want_draw = true;
@@ -318,273 +447,358 @@ async fn main(_spawner: Spawner) -> ! {
     let mut next_ui_tick = 0u64;
     let mut next_blink = 0u64;
     let mut blink_off: Option<u64> = None;
-    loop {
-        let now = mc_now();
+    let mut last_ble = ble_of(&ble_sh);
+    // The loop owns the device and its peripherals; the Bluetooth side only shares `ble_sh`.
+    let ble_sh = &ble_sh;
+    let main_loop = async move {
+        let mut term = Terminal::new(panel::backend(panel_frame, app.grid())).expect("terminal");
+        loop {
+            let now = mc_now();
 
-        // Frames from the app.
-        while uart.read_ready() {
-            let Ok(n) = uart.read(&mut rx_bytes) else {
-                break;
-            };
-            for &b in &rx_bytes[..n] {
-                if let Some(f) = deframer.push(b) {
-                    let len = f.len();
-                    frame_in[..len].copy_from_slice(f);
-                    dev.on_app_frame(now, &frame_in[..len], &mut rng, &mut store);
-                }
-            }
-        }
-        while let Some(f) = dev.poll_app() {
-            if let Ok(n) = usb_frame(FROM_DEVICE, &f, &mut out_buf) {
-                let mut sent = 0;
-                while sent < n {
-                    match uart.write(&out_buf[sent..n]) {
-                        Ok(k) => sent += k,
-                        Err(_) => break,
+            // Frames from the app.
+            while uart.read_ready() {
+                let Ok(n) = uart.read(&mut rx_bytes) else {
+                    break;
+                };
+                for &b in &rx_bytes[..n] {
+                    if let Some(f) = deframer.push(b) {
+                        let len = f.len();
+                        frame_in[..len].copy_from_slice(f);
+                        dev.on_app_frame(now, &frame_in[..len], &mut rng, &mut store);
                     }
                 }
             }
-        }
-
-        // Radio.
-        let flags = radio.irq_status().unwrap_or(0);
-        if flags & irq::TX_DONE != 0 && transmitting {
-            dev.tx_done(now);
-            transmitting = false;
-            if let Some(io) = io.as_mut() {
-                let _ = io.set(pin::LED_NOTIFY, false);
+            loop {
+                let n = ble_sh.link.borrow_mut().recv(&mut frame_in);
+                let Some(n) = n else { break };
+                dev.on_app_frame(now, &frame_in[..n], &mut rng, &mut store);
             }
-            let _ = radio.start_rx(cfg.preamble);
-        } else if flags & irq::RX_DONE != 0 {
-            let crc = flags & irq::CRC_ERR != 0;
-            if let Ok(pk) = radio.read_packet(&mut buf, crc)
-                && !crc
+            while let Some(f) = dev.poll_app() {
+                if ble_sh.link.borrow_mut().send(&f) {
+                    ble_sh.outbound.signal(());
+                }
+                if let Ok(n) = usb_frame(FROM_DEVICE, &f, &mut out_buf) {
+                    let mut sent = 0;
+                    while sent < n {
+                        match uart.write(&out_buf[sent..n]) {
+                            Ok(k) => sent += k,
+                            Err(_) => break,
+                        }
+                    }
+                }
+            }
+
+            // Radio.
+            let flags = radio.irq_status().unwrap_or(0);
+            if flags & irq::TX_DONE != 0 && transmitting {
+                dev.tx_done(now);
+                transmitting = false;
+                if let Some(io) = io.as_mut() {
+                    let _ = io.set(pin::LED_NOTIFY, false);
+                }
+                let _ = radio.start_rx(cfg.preamble);
+            } else if flags & irq::RX_DONE != 0 {
+                let crc = flags & irq::CRC_ERR != 0;
+                if let Ok(pk) = radio.read_packet(&mut buf, crc)
+                    && !crc
+                {
+                    let snr4 = i8::try_from(pk.snr_qdb).unwrap_or(0);
+                    dev.on_rx(
+                        now,
+                        &buf[..pk.len.min(255)],
+                        snr4,
+                        pk.rssi_dbm,
+                        &mut rng,
+                        &mut store,
+                    );
+                }
+                let _ = radio.clear_irq();
+            } else if flags & (irq::HEADER_ERR | irq::CRC_ERR) != 0 {
+                let _ = radio.clear_irq();
+            }
+            if transmitting && Instant::now() > tx_started + Duration::from_secs(10) {
+                dev.tx_done(now);
+                transmitting = false;
+                let _ = radio.start_rx(cfg.preamble);
+            }
+            let busy = !transmitting && flags & irq::HEADER_VALID != 0 && flags & irq::RX_DONE == 0;
+            if !transmitting
+                && let Some(f) = dev.poll_tx(now, busy, &mut rng)
+                && radio.transmit(cfg.preamble, &f.raw).is_ok()
             {
-                let snr4 = i8::try_from(pk.snr_qdb).unwrap_or(0);
-                dev.on_rx(
-                    now,
-                    &buf[..pk.len.min(255)],
-                    snr4,
-                    pk.rssi_dbm,
-                    &mut rng,
-                    &mut store,
-                );
-            }
-            let _ = radio.clear_irq();
-        } else if flags & (irq::HEADER_ERR | irq::CRC_ERR) != 0 {
-            let _ = radio.clear_irq();
-        }
-        if transmitting && Instant::now() > tx_started + Duration::from_secs(10) {
-            dev.tx_done(now);
-            transmitting = false;
-            let _ = radio.start_rx(cfg.preamble);
-        }
-        let busy = !transmitting && flags & irq::HEADER_VALID != 0 && flags & irq::RX_DONE == 0;
-        if !transmitting
-            && let Some(f) = dev.poll_tx(now, busy, &mut rng)
-            && radio.transmit(cfg.preamble, &f.raw).is_ok()
-        {
-            transmitting = true;
-            tx_started = Instant::now();
-            if let Some(io) = io.as_mut() {
-                let _ = io.set(pin::LED_NOTIFY, true);
-            }
-        }
-        dev.tick(now, &mut rng, &mut store);
-
-        // Actions requested by the app.
-        while let Some(a) = dev.poll_action() {
-            match a {
-                Action::Reboot => {
-                    dev.flush_contacts(&mut store);
-                    Timer::after(Duration::from_millis(200)).await;
-                    esp_hal::system::software_reset();
+                transmitting = true;
+                tx_started = Instant::now();
+                if let Some(io) = io.as_mut() {
+                    let _ = io.set(pin::LED_NOTIFY, true);
                 }
-                Action::FactoryReset => {
-                    store.erase_all();
-                    Timer::after(Duration::from_millis(1000)).await;
-                    esp_hal::system::software_reset();
-                }
-                Action::RadioChanged => {
-                    cfg = lora_of(&dev.node.prefs);
-                    let _ = radio
-                        .configure(&cfg)
-                        .and_then(|()| {
-                            radio.set_tx_power(dev.node.prefs.radio.tx_power_dbm, m5::OCP_MA)
-                        })
-                        .and_then(|()| radio.start_rx(cfg.preamble));
-                    transmitting = false;
-                    want_draw = true;
-                }
-                Action::PinChanged => {}
             }
-        }
+            dev.tick(now, &mut rng, &mut store);
 
-        // Battery: smoothed every 10 s.
-        if Instant::now() >= next_battery {
-            next_battery = Instant::now() + Duration::from_secs(10);
-            let raw_mv = adc.read_blocking(&mut bat_pin);
-            dev.battery_mv =
-                bat.push((u32::from(raw_mv) * m5::BATTERY_DIVIDER_MILLI / 1000) as u16);
-        }
-
-        // Interface: notifications, buttons, timers.
-        let now_ms = Instant::now().as_millis();
-        let charging = usb_in.is_high();
-        gestures.edge(Button::A, btn_a.is_low(), now_ms);
-        gestures.edge(Button::B, btn_b.is_low(), now_ms);
-        let mut events: heapless::Vec<UiEvent, 32> = heapless::Vec::new();
-        while let Some(e) = dev.poll_ui() {
-            let _ = events.push(e);
-        }
-        {
-            let c = ui_ctx(dev, charging, light);
-            for e in &events {
-                app.event(e, &c);
-            }
-            while let Some(g) = gestures.poll(now_ms) {
-                policy.input(now_ms);
-                let timeout = u64::from(dev.node.prefs.ui.light_timeout_s) * 1000;
-                if dimmed {
-                    // The first press after the light went off only turns it back on.
-                    dimmed = false;
-                    light = true;
-                    if let Some(io) = io.as_mut() {
-                        let _ = io.set(pin::BACKLIGHT, true);
+            // Actions requested by the app.
+            while let Some(a) = dev.poll_action() {
+                match a {
+                    Action::Reboot => {
+                        dev.flush_contacts(&mut store);
+                        Timer::after(Duration::from_millis(200)).await;
+                        esp_hal::system::software_reset();
                     }
-                    light_until = now_ms + timeout;
-                    want_draw = true;
-                    continue;
-                }
-                if light && timeout > 0 {
-                    light_until = now_ms + timeout;
-                }
-                app.gesture(g, &c);
-            }
-            if now_ms >= next_ui_tick {
-                next_ui_tick = now_ms + UI_TICK_MS;
-                app.tick(&c);
-            }
-        }
-        for i in app.take_intents() {
-            let o = perform(&i, dev, mc_now(), &mut rng, &mut store);
-            match o {
-                Outcome::Light => {
-                    light = !light;
-                    dimmed = false;
-                    light_until = now_ms + u64::from(dev.node.prefs.ui.light_timeout_s) * 1000;
-                    if let Some(io) = io.as_mut() {
-                        let _ = io.set(pin::BACKLIGHT, light);
+                    Action::FactoryReset => {
+                        store.erase_all();
+                        Timer::after(Duration::from_millis(1000)).await;
+                        esp_hal::system::software_reset();
+                    }
+                    Action::RadioChanged => {
+                        cfg = lora_of(&dev.node.prefs);
+                        let _ = radio
+                            .configure(&cfg)
+                            .and_then(|()| {
+                                radio.set_tx_power(dev.node.prefs.radio.tx_power_dbm, m5::OCP_MA)
+                            })
+                            .and_then(|()| radio.start_rx(cfg.preamble));
+                        transmitting = false;
+                        want_draw = true;
+                    }
+                    Action::PinChanged => {
+                        let pin = pin_of(dev.node.prefs.ble_pin, &hw);
+                        ble_sh.pin.set(pin);
+                        let _ = ble_sh.control.try_send(Control::Pin(pin));
+                        want_draw = true;
                     }
                 }
-                Outcome::Reboot => {
-                    Timer::after(Duration::from_millis(200)).await;
-                    esp_hal::system::software_reset();
-                }
-                Outcome::FactoryReset => {
-                    store.erase_all();
-                    Timer::after(Duration::from_millis(1000)).await;
-                    esp_hal::system::software_reset();
-                }
-                Outcome::Hibernate => {
-                    dev.flush_contacts(&mut store);
-                    let [cur, _] = &mut *frames;
-                    let badge = term.backend_mut().display_mut();
-                    draw_badge(badge, dev);
-                    let u = dev.node.prefs.ui;
-                    to_panel(badge, cur, u.invert, u.rotate);
-                    let _ = epd.show_full(cur);
-                    while epd.busy() {
-                        Timer::after(Duration::from_millis(20)).await;
-                    }
-                    let _ = epd.sleep();
-                    let _ = radio.sleep();
-                    if let Some(io) = io.as_mut() {
-                        let _ = io.set(pin::BACKLIGHT, false);
-                        let _ = io.set(pin::LED_NOTIFY, false);
-                        let _ = io.set(pin::PERIPH_POWER, false);
-                    }
-                    // Wait for the button to be released, then sleep until it is pressed.
-                    while btn_b.is_low() {
-                        Timer::after(Duration::from_millis(20)).await;
-                    }
-                    btn_b.listen(PinEvent::LowLevel);
-                    let _ = btn_b
-                        .apply_wakeup_config(&WakeupConfig::default().with_low_power_path(true));
-                    LowPower::new(lpwr).sleep_deep(RtcSleepConfig::deep());
-                }
-                _ => {}
             }
-            let c = ui_ctx(dev, charging, light);
-            app.done(&i, &o, &c);
-            if app.sync(&c) {
-                drop(term);
-                panel_frame.clear();
-                term = Terminal::new(panel::backend(panel_frame, app.grid())).expect("terminal");
-            }
-            want_draw = true;
-        }
 
-        // Backlight auto-off.
-        let timeout = u64::from(dev.node.prefs.ui.light_timeout_s) * 1000;
-        if light && timeout > 0 && now_ms >= light_until {
-            light = false;
-            dimmed = true;
-            if let Some(io) = io.as_mut() {
-                let _ = io.set(pin::BACKLIGHT, false);
+            // A phone just paired: keep its bond.
+            loop {
+                let b = ble_sh.new_bonds.borrow_mut().pop_front();
+                let Some(b) = b else { break };
+                store.add_bond(&b);
+                ble_sh.paired.set(store.bonds().len() as u8);
             }
-            want_draw = true;
-        }
+            let ble = ble_of(&ble_sh);
+            if ble != last_ble {
+                last_ble = ble;
+                want_draw = true;
+            }
 
-        // Unread: a short blink every 5 s.
-        if dev.node.prefs.ui.led_unread && dev.history().unread() > 0 && now_ms >= next_blink {
-            next_blink = now_ms + BLINK_EVERY_MS;
-            blink_off = Some(now_ms + BLINK_MS);
-            if let Some(io) = io.as_mut() {
-                let _ = io.set(pin::LED_NOTIFY, true);
+            // Battery: smoothed every 10 s.
+            if Instant::now() >= next_battery {
+                next_battery = Instant::now() + Duration::from_secs(10);
+                #[cfg(feature = "debug-log")]
+                diag::log();
+                let raw_mv = adc.read_blocking(&mut bat_pin);
+                dev.battery_mv =
+                    bat.push((u32::from(raw_mv) * m5::BATTERY_DIVIDER_MILLI / 1000) as u16);
             }
-        }
-        if blink_off.is_some_and(|t| now_ms >= t) {
-            blink_off = None;
-            if !transmitting && let Some(io) = io.as_mut() {
-                let _ = io.set(pin::LED_NOTIFY, false);
-            }
-        }
 
-        // Drawing: on changes, the minute, a battery step of 5 %; never while BUSY.
-        let minute = dev.node.rtc.now(mc_now()) / 60;
-        let pct = (dev.battery_mv > 0).then(|| percent(dev.battery_mv)).unwrap_or(0);
-        if minute != last_minute || pct.abs_diff(last_percent) >= 5 {
-            last_minute = minute;
-            last_percent = pct;
-            want_draw = true;
-        }
-        want_draw |= app.take_dirty();
-        if !epd.busy() {
-            let [cur, prev] = &mut *frames;
-            if want_draw {
-                want_draw = false;
-                let c = ui_ctx(dev, charging, light);
-                let _ = term.draw(|f| app.draw(f, &c));
-                for o in app.overlays() {
-                    let _ = overlay::draw(o, term.backend_mut().display_mut());
+            // Interface: notifications, buttons, timers.
+            let now_ms = Instant::now().as_millis();
+            let charging = usb_in.is_high();
+            gestures.edge(Button::A, btn_a.is_low(), now_ms);
+            gestures.edge(Button::B, btn_b.is_low(), now_ms);
+            let mut events: heapless::Vec<UiEvent, 32> = heapless::Vec::new();
+            while let Some(e) = dev.poll_ui() {
+                let _ = events.push(e);
+            }
+            {
+                let c = ui_ctx(dev, ble_of(&ble_sh), charging, light);
+                for e in &events {
+                    app.event(e, &c);
                 }
-                prev.bits = cur.bits;
-                let u = dev.node.prefs.ui;
-                to_panel(term.backend().display(), cur, u.invert, u.rotate);
-                match policy.frame(refresh::hash(&cur.bits), app.take_screen_changed()) {
-                    Some(Kind::Full) => {
+                while let Some(g) = gestures.poll(now_ms) {
+                    policy.input(now_ms);
+                    let timeout = u64::from(dev.node.prefs.ui.light_timeout_s) * 1000;
+                    if dimmed {
+                        // The first press after the light went off only turns it back on.
+                        dimmed = false;
+                        light = true;
+                        if let Some(io) = io.as_mut() {
+                            let _ = io.set(pin::BACKLIGHT, true);
+                        }
+                        light_until = now_ms + timeout;
+                        want_draw = true;
+                        continue;
+                    }
+                    if light && timeout > 0 {
+                        light_until = now_ms + timeout;
+                    }
+                    app.gesture(g, &c);
+                }
+                if now_ms >= next_ui_tick {
+                    next_ui_tick = now_ms + UI_TICK_MS;
+                    app.tick(&c);
+                }
+            }
+            for i in app.take_intents() {
+                let o = perform(&i, dev, mc_now(), &mut rng, &mut store);
+                match o {
+                    Outcome::Light => {
+                        light = !light;
+                        dimmed = false;
+                        light_until = now_ms + u64::from(dev.node.prefs.ui.light_timeout_s) * 1000;
+                        if let Some(io) = io.as_mut() {
+                            let _ = io.set(pin::BACKLIGHT, light);
+                        }
+                    }
+                    Outcome::Reboot => {
+                        Timer::after(Duration::from_millis(200)).await;
+                        esp_hal::system::software_reset();
+                    }
+                    Outcome::ForgetPaired => {
+                        store.clear_bonds();
+                        ble_sh.paired.set(0);
+                        let _ = ble_sh.control.try_send(Control::ForgetAll);
+                    }
+                    Outcome::FactoryReset => {
+                        store.erase_all();
+                        Timer::after(Duration::from_millis(1000)).await;
+                        esp_hal::system::software_reset();
+                    }
+                    Outcome::Hibernate => {
+                        dev.flush_contacts(&mut store);
+                        let [cur, _] = &mut *frames;
+                        let badge = term.backend_mut().display_mut();
+                        draw_badge(badge, dev);
+                        let u = dev.node.prefs.ui;
+                        to_panel(badge, cur, u.invert, u.rotate);
                         let _ = epd.show_full(cur);
+                        while epd.busy() {
+                            Timer::after(Duration::from_millis(20)).await;
+                        }
+                        let _ = epd.sleep();
+                        let _ = radio.sleep();
+                        if let Some(io) = io.as_mut() {
+                            let _ = io.set(pin::BACKLIGHT, false);
+                            let _ = io.set(pin::LED_NOTIFY, false);
+                            let _ = io.set(pin::PERIPH_POWER, false);
+                        }
+                        // Wait for the button to be released, then sleep until it is pressed.
+                        while btn_b.is_low() {
+                            Timer::after(Duration::from_millis(20)).await;
+                        }
+                        btn_b.listen(PinEvent::LowLevel);
+                        let _ = btn_b.apply_wakeup_config(
+                            &WakeupConfig::default().with_low_power_path(true),
+                        );
+                        LowPower::new(lpwr).sleep_deep(RtcSleepConfig::deep());
                     }
-                    Some(Kind::Partial) => {
-                        let _ = epd.show_partial(cur, prev);
-                    }
-                    None => {}
+                    _ => {}
                 }
-            } else if policy.idle(now_ms) == Some(Kind::Full) {
-                let _ = epd.show_full(cur);
+                let c = ui_ctx(dev, ble_of(&ble_sh), charging, light);
+                app.done(&i, &o, &c);
+                if app.sync(&c) {
+                    drop(term);
+                    panel_frame.clear();
+                    term =
+                        Terminal::new(panel::backend(panel_frame, app.grid())).expect("terminal");
+                }
+                want_draw = true;
+            }
+
+            // Backlight auto-off.
+            let timeout = u64::from(dev.node.prefs.ui.light_timeout_s) * 1000;
+            if light && timeout > 0 && now_ms >= light_until {
+                light = false;
+                dimmed = true;
+                if let Some(io) = io.as_mut() {
+                    let _ = io.set(pin::BACKLIGHT, false);
+                }
+                want_draw = true;
+            }
+
+            // Unread: a short blink every 5 s.
+            if dev.node.prefs.ui.led_unread && dev.history().unread() > 0 && now_ms >= next_blink {
+                next_blink = now_ms + BLINK_EVERY_MS;
+                blink_off = Some(now_ms + BLINK_MS);
+                if let Some(io) = io.as_mut() {
+                    let _ = io.set(pin::LED_NOTIFY, true);
+                }
+            }
+            if blink_off.is_some_and(|t| now_ms >= t) {
+                blink_off = None;
+                if !transmitting && let Some(io) = io.as_mut() {
+                    let _ = io.set(pin::LED_NOTIFY, false);
+                }
+            }
+
+            // Drawing: on changes, the minute, a battery step of 5 %; never while BUSY.
+            let minute = dev.node.rtc.now(mc_now()) / 60;
+            let pct = (dev.battery_mv > 0)
+                .then(|| percent(dev.battery_mv))
+                .unwrap_or(0);
+            if minute != last_minute || pct.abs_diff(last_percent) >= 5 {
+                last_minute = minute;
+                last_percent = pct;
+                want_draw = true;
+            }
+            want_draw |= app.take_dirty();
+            if !epd.busy() {
+                let [cur, prev] = &mut *frames;
+                if want_draw {
+                    want_draw = false;
+                    let c = ui_ctx(dev, ble_of(&ble_sh), charging, light);
+                    let _ = term.draw(|f| app.draw(f, &c));
+                    for o in app.overlays() {
+                        let _ = overlay::draw(o, term.backend_mut().display_mut());
+                    }
+                    prev.bits = cur.bits;
+                    let u = dev.node.prefs.ui;
+                    to_panel(term.backend().display(), cur, u.invert, u.rotate);
+                    match policy.frame(refresh::hash(&cur.bits), app.take_screen_changed()) {
+                        Some(Kind::Full) => {
+                            let _ = epd.show_full(cur);
+                        }
+                        Some(Kind::Partial) => {
+                            let _ = epd.show_partial(cur, prev);
+                        }
+                        None => {}
+                    }
+                } else if policy.idle(now_ms) == Some(Kind::Full) {
+                    let _ = epd.show_full(cur);
+                }
+            }
+            Timer::after(Duration::from_millis(1)).await;
+        }
+    };
+
+    match connector {
+        Some(connector) => {
+            // Static random address from the MAC (two top bits set): a phone that knew the C++
+            // firmware sees a new device and pairs afresh.
+            let mut addr = mac;
+            addr[5] |= 0xC0;
+            let controller: ExternalController<_, 20> = ExternalController::new(connector);
+            let mut resources: HostResources<_, DefaultPacketPool, 1, 2, 1, BONDS_MAX> =
+                HostResources::new();
+            let stack = trouble_host::new(controller, &mut resources)
+                .set_random_address(Address::random(addr))
+                .set_io_capabilities(IoCapabilities::DisplayOnly)
+                .set_passkey(Some(ble_sh.pin.get()))
+                .build();
+            for b in bonds {
+                let _ = stack.add_bond_information(b);
+            }
+            let mut peripheral = stack.peripheral();
+            let runner = stack.runner();
+            let gap = core::str::from_utf8(ble_name).map_or("MeshCore", bt::gap_name);
+            match Server::new_with_config(GapConfig::Peripheral(PeripheralConfig {
+                name: gap,
+                appearance: &appearance::UNKNOWN,
+            })) {
+                Ok(server) => {
+                    join4(
+                        bt::run_host(runner),
+                        bt::serve(ble_name, &mut peripheral, &server, &ble_sh),
+                        bt::control(&stack, &ble_sh),
+                        main_loop,
+                    )
+                    .await;
+                }
+                Err(_) => main_loop.await,
             }
         }
-        Timer::after(Duration::from_millis(1)).await;
+        None => main_loop.await,
+    }
+    loop {
+        Timer::after(Duration::from_secs(60)).await;
     }
 }
