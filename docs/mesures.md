@@ -24,3 +24,9 @@ Journal des essais sur les vrais appareils. Chaque entrée : date, montage, comm
 Autres constats :
 - Le M5 rapporte 869618 kHz dans `SELF_INFO` : l'écart 2 annoncé par l'étude (869617) n'existe pas dans les bandes usuelles (ADR-0001 corrigé).
 - `mc sniff` sur le M5 pendant 2 min (22 h 15) : aucune trame entendue, réseau calme à cette heure.
+
+## 2026-11-05 — fuzz d'une heure
+
+| Cible | Exécutions | Durée | Plantages |
+|---|---|---|---|
+| `air_decode` (MC1) | 351 327 535 | 3601 s | 0 |
