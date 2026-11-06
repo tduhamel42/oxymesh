@@ -139,9 +139,11 @@ pub enum Event {
         data_type: u16,
         data: Text,
     },
-    /// Annonce d'un contact connu ou qu'on vient d'ajouter (`PUSH_CODE_ADVERT`).
+    /// Annonce d'un contact connu ou qu'on vient d'ajouter (`PUSH_CODE_ADVERT`). `raw` : la
+    /// trame telle qu'on la garde (route FLOOD, sans codes de transport, `BaseChatMesh.cpp:141`).
     Advert {
         key: [u8; PUB_KEY_LEN],
+        raw: Text,
     },
     /// Annonce d'un nœud qu'on n'a pas ajouté (`PUSH_CODE_NEW_ADVERT`).
     NewAdvert {
@@ -200,6 +202,15 @@ pub enum Event {
         snrs: heapless::Vec<u8, PATH_MAX>,
         final_snr4: i8,
     },
+    /// Réponse à une découverte de chemin (`PUSH_CODE_PATH_DISCOVERY_RESPONSE`) : le chemin
+    /// n'est pas retenu et aucun chemin réciproque ne part (`MyMesh.cpp:779-808`).
+    PathDiscovery {
+        key: [u8; PUB_KEY_LEN],
+        out_len: u8,
+        out_path: heapless::Vec<u8, PATH_MAX>,
+        in_len: u8,
+        in_path: heapless::Vec<u8, PATH_MAX>,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -246,6 +257,8 @@ pub struct Node {
     pub last_snr4: i8,
     pub last_rssi: i16,
     pub boot: Instant,
+    /// Tag d'une découverte de chemin en cours (`pending_discovery`).
+    pub pending_discovery: u32,
 }
 
 impl core::fmt::Debug for Node {
@@ -276,6 +289,7 @@ impl Node {
             last_snr4: 0,
             last_rssi: 0,
             boot: now,
+            pending_discovery: 0,
         }
     }
 

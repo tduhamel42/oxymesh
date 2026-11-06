@@ -17,10 +17,13 @@
 pub mod chat;
 pub mod clock;
 pub mod contacts;
+pub mod device;
 pub mod dispatch;
 pub mod node;
 pub mod persist;
+pub mod requests;
 pub mod rx;
 pub mod tables;
 
+pub use device::{Action, Device, Info, Storage};
 pub use node::{Event, Node, Prefs, SendError, Sent};

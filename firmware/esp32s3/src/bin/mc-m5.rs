@@ -284,7 +284,7 @@ async fn main(_spawner: Spawner) -> ! {
                 Event::RxLog { snr4, rssi, raw } => {
                     info!("réception snr4={snr4} rssi={rssi} : {}", Hex(&raw))
                 }
-                Event::Advert { key } => {
+                Event::Advert { key, .. } => {
                     info!("contact {} (annonce)", Hex(&key[..4]));
                     if let Some(c) = node
                         .contacts

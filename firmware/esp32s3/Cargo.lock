@@ -1392,7 +1392,15 @@ dependencies = [
  "heapless 0.9.3",
  "mc-air",
  "mc-core",
+ "mc-proto",
  "rand_core 0.10.1",
+]
+
+[[package]]
+name = "mc-proto"
+version = "0.0.0"
+dependencies = [
+ "mc-core",
 ]
 
 [[package]]

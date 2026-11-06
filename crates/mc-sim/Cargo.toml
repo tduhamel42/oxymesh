@@ -10,6 +10,7 @@ publish.workspace = true
 mc-core.workspace = true
 mc-air.workspace = true
 mc-node.workspace = true
+mc-proto.workspace = true
 rand_core.workspace = true
 rand_chacha.workspace = true
 

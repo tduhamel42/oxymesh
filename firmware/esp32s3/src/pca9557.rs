@@ -48,6 +48,13 @@ impl<'d> Pca9557<'d> {
         self.i2c.write(ADDR, &[REG_OUTPUT, self.out])
     }
 
+    /// Registre d'entrée complet (les 8 broches).
+    pub fn inputs(&mut self) -> Result<u8, esp_hal::i2c::master::Error> {
+        let mut b = [0u8];
+        self.i2c.write_read(ADDR, &[REG_INPUT], &mut b)?;
+        Ok(b[0])
+    }
+
     pub fn read(&mut self, pin: u8) -> Result<bool, esp_hal::i2c::master::Error> {
         let mut b = [0u8];
         self.i2c.write_read(ADDR, &[REG_INPUT], &mut b)?;

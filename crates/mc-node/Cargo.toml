@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 mc-core.workspace = true
 mc-air.workspace = true
+mc-proto.workspace = true
 heapless.workspace = true
 rand_core.workspace = true
 

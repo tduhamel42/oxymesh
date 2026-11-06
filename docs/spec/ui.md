@@ -23,6 +23,7 @@ Source de vérité pour `mc-ui`. Textes affichés **en anglais**. Écran e-paper
 ## 3. Éclairage et potentiomètre
 
 - L'éclairage reste allumé une fois activé, pour qu'on puisse régler sa luminosité au potentiomètre.
+- Le potentiomètre n'est pas lisible par le firmware (`docs/spec/m5.md`) : pas de zone morte possible en bas de course. L'extinction à 100 % est garantie par le bouton B et l'extinction automatique, qui coupent l'alimentation des LED (IO5), quelle que soit la position de la molette. L'en-tête montre toujours l'état de l'éclairage (Tanguy, 2026-11-06).
 - Extinction automatique réglable : 30 s, 2 min (défaut), jamais ; le délai repart à chaque appui.
 - Icône d'ampoule dans l'en-tête quand il est allumé.
 

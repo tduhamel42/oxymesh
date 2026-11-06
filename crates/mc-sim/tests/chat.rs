@@ -22,7 +22,7 @@ fn meet(w: &mut World, a: usize, b: usize, flood: bool) {
         w.run_until(secs(10), |w| has(
             w,
             b,
-            |e| matches!(e, Event::Advert { key } if *key == ka)
+            |e| matches!(e, Event::Advert { key, .. } if *key == ka)
         )),
         "annonce de {a} non reçue par {b}"
     );
@@ -33,7 +33,7 @@ fn meet(w: &mut World, a: usize, b: usize, flood: bool) {
         w.run_until(secs(10), |w| has(
             w,
             a,
-            |e| matches!(e, Event::Advert { key } if *key == kb)
+            |e| matches!(e, Event::Advert { key, .. } if *key == kb)
         )),
         "annonce de {b} non reçue par {a}"
     );
@@ -87,7 +87,7 @@ fn advert_message_ack_and_path_learning() {
     // Le PATH réciproque (500 ms) apprend à Bob le chemin vers Alice.
     let ka = *w.node(a).id.pub_key();
     assert!(w.run_until(secs(10), |w| {
-        let n = &w.nodes[b].node;
+        let n = &w.nodes[b].dev.node;
         n.contacts
             .find(&ka)
             .and_then(|s| n.contacts.get(s))
@@ -170,7 +170,7 @@ fn duplicate_frames_are_ignored() {
     let sn = &mut w.nodes[b];
     let mut rng = rand_chacha::ChaCha20Rng::from_seed([9; 32]);
     use rand_core::SeedableRng;
-    sn.node.on_rx(now, &raw, 40, -90, &mut rng);
+    sn.dev.on_rx(now, &raw, 40, -90, &mut rng, &mut sn.st);
     w.run(secs(2));
     let n = w.nodes[b]
         .events

@@ -45,6 +45,24 @@ impl Node {
         self.process(now, &mut pkt, snr4, rssi8, rng);
     }
 
+    /// `IMPORT_CONTACT` : la trame d'annonce est rejouée comme reçue par inondation
+    /// (`BaseChatMesh.cpp:588-601`). Faux si ce n'est pas une annonce.
+    pub fn import_advert(&mut self, now: Instant, raw: &[u8], rng: &mut impl Rng) -> bool {
+        let Ok(p) = Packet::decode(raw) else {
+            return false;
+        };
+        if p.header.ptype != PayloadType::ADVERT {
+            return false;
+        }
+        let Ok(mut pkt) = PacketBuf::from_packet(&p) else {
+            return false;
+        };
+        pkt.header.route = mc_air::Route::Flood;
+        pkt.transport = None;
+        self.process(now, &mut pkt, 0, 0, rng);
+        true
+    }
+
     fn allow_forward(&self) -> bool {
         self.prefs.repeat
     }
@@ -312,8 +330,9 @@ impl Node {
                     heapless::Vec::from_slice(pp.path).unwrap_or_default();
                 let extra: heapless::Vec<u8, 184> =
                     heapless::Vec::from_slice(pp.extra).unwrap_or_default();
-                self.on_path(now, slot, out_len, &out_path, pp.extra_type, &extra);
-                if pkt.header.route.is_flood() {
+                let reciprocal =
+                    self.on_path(now, slot, pkt, out_len, &out_path, pp.extra_type, &extra);
+                if reciprocal && pkt.header.route.is_flood() {
                     // Chemin réciproque, en direct le long du chemin appris, après 500 ms.
                     let r4 = rng.next_u32().to_le_bytes();
                     if let Ok(rp) = mc_air::payload::path_return(
@@ -560,18 +579,45 @@ impl Node {
         }
     }
 
+    /// Chemin reçu (`onContactPathRecv`) ; faux si aucun chemin réciproque ne doit partir.
+    #[allow(clippy::too_many_arguments)]
     fn on_path(
         &mut self,
         now: Instant,
         slot: Slot,
+        pkt: &PacketBuf,
         out_len: PathLen,
         out_path: &[u8],
         extra_type: u8,
         extra: &[u8],
-    ) {
+    ) -> bool {
+        // Réponse à une découverte de chemin : rapportée, ni retenue ni renvoyée.
+        if extra_type == PayloadType::RESPONSE.value() && extra.len() > 4 {
+            let tag = extra
+                .get(..4)
+                .and_then(|b| b.try_into().ok())
+                .map(u32::from_le_bytes);
+            if self.pending_discovery != 0 && tag == Some(self.pending_discovery) {
+                self.pending_discovery = 0;
+                if let Some(key) = self.contacts.get(slot).map(|c| c.pub_key) {
+                    let mut op = heapless::Vec::new();
+                    let _ = op.extend_from_slice(out_path);
+                    let mut ip = heapless::Vec::new();
+                    let _ = ip.extend_from_slice(pkt.path());
+                    self.emit(Event::PathDiscovery {
+                        key,
+                        out_len: out_len.byte(),
+                        out_path: op,
+                        in_len: pkt.path_len.byte(),
+                        in_path: ip,
+                    });
+                }
+                return false;
+            }
+        }
         let epoch = self.rtc.now(now);
         let Some(c) = self.contacts.get_mut(slot) else {
-            return;
+            return true;
         };
         c.out_path_len = out_len.byte();
         c.out_path = [0; 64];
@@ -595,6 +641,7 @@ impl Node {
                 data: text_of(extra),
             });
         }
+        true
     }
 
     /// Cherche l'accusé dans la table ; s'il y est, notification `SEND_CONFIRMED` et effacement
@@ -680,6 +727,15 @@ impl Node {
                 slot = None;
             }
         }
+        // Trame gardée : route FLOOD, codes de transport retirés (`BaseChatMesh.cpp:141-149`).
+        let raw = {
+            let mut b = pkt.clone();
+            b.header.route = mc_air::Route::Flood;
+            b.transport = None;
+            let mut out = [0u8; 255];
+            let n = b.encode(&mut out).unwrap_or(0);
+            text_of(out.get(..n).unwrap_or(&[]))
+        };
         let fill = |c: &mut Contact| {
             c.set_name(ad.name_str());
             c.kind = ad.kind;
@@ -694,7 +750,10 @@ impl Node {
             if let Some(c) = self.contacts.get_mut(s) {
                 fill(c);
             }
-            self.emit(Event::Advert { key: *key });
+            self.emit(Event::Advert {
+                key: *key,
+                raw: raw.clone(),
+            });
             return;
         }
         let mut fresh = Contact::new(*key);
@@ -723,7 +782,10 @@ impl Node {
                 let old = c.pub_key;
                 *c = fresh;
                 self.emit(Event::ContactOverwritten { key: old });
-                self.emit(Event::Advert { key: *key });
+                self.emit(Event::Advert {
+                    key: *key,
+                    raw: raw.clone(),
+                });
                 return;
             }
             self.emit(Event::NewAdvert { contact: fresh });
@@ -731,6 +793,9 @@ impl Node {
             return;
         }
         let _ = self.contacts.list.push(fresh);
-        self.emit(Event::Advert { key: *key });
+        self.emit(Event::Advert {
+            key: *key,
+            raw: raw.clone(),
+        });
     }
 }
