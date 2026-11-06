@@ -64,6 +64,7 @@ Findings:
 - `mc duo --a /dev/cu.wchusbserial210 --b /dev/cu.usbmodem1101 --pings 3`: 12/12, every DM and sync now going through flash.
 - `mc duo … --pings 0 --reboot`: Bob writes to the M5, the M5 reboots before the app fetches it, and the DM is still delivered after the reboot (11/11).
 - `Device`: 146,232 bytes (147,240 before): the 40 KB history, the heard-nodes ring (2.8 KB) and the packet log (1 KB) cost less than the 47 KB queue that moved to flash.
+- After the settings API refactor (U2, part 2): `mc duo … --pings 3 --reboot` 13/13; the companion arms now go through the shared setters.
 
 ## 2026-11-06 — U0: Ratatui on the M5's e-paper (ADR-0008)
 

@@ -2,6 +2,12 @@
 //! app commands, offline message queue, notifications, contact iteration, server requests.
 //! The node (`Node`) handles the network; `Device` talks to the app.
 
+mod screen;
+mod settings;
+
+pub use screen::{OUTBOX, REQUESTS, Reply, ReqKind};
+pub use settings::SetResult;
+
 use mc_air::crypto::{LocalIdentity, PUB_KEY_LEN};
 use mc_air::{PathLen, payload};
 use mc_core::{Duration, Instant};
@@ -10,13 +16,11 @@ use mc_proto::response::{Contact as RContact, DeviceInfo, LoginServer, SelfInfo,
 use mc_proto::{Command, Response};
 use rand_core::Rng;
 
-use crate::contacts::{Channel, Contact, MAX_CHANNELS, MAX_CONTACTS, PATH_UNKNOWN, Slot, name_str};
+use crate::contacts::{Contact, MAX_CHANNELS, MAX_CONTACTS, PATH_UNKNOWN, Slot, name_str};
 use crate::heard::{Heard, HeardNode, LoggedPacket, PacketLog};
 use crate::history::{HISTORY_RECORD, HISTORY_TEXT, History, Msg, Peer, Status};
 use crate::node::{Event, Node, SendError, Sent};
-use crate::persist::{
-    CHANNEL_RECORD, CONTACT_RECORD, PREFS_RECORD, encode_channel, encode_contact, encode_prefs,
-};
+use crate::persist::{CHANNEL_RECORD, CONTACT_RECORD, PREFS_RECORD, encode_contact, encode_prefs};
 
 /// Frame to the app (`MAX_FRAME_SIZE`).
 pub const FRAME_MAX: usize = 176;
@@ -73,6 +77,8 @@ pub enum UiEvent {
     Heard,
     /// Contacts were added, changed or removed.
     Contacts,
+    /// A request from the screen was answered or timed out (`Device::request_reply`).
+    Reply { tag: u32 },
 }
 
 /// Offline queue index entry; the frame itself is in storage.
@@ -139,6 +145,9 @@ pub struct Device {
     history: History,
     heard: Heard,
     packets: PacketLog,
+    outbox: heapless::Vec<screen::Outgoing, OUTBOX>,
+    ui_reqs: heapless::Vec<screen::Pending, REQUESTS>,
+    replies: heapless::Deque<Reply, REQUESTS>,
     iter: Option<Iter>,
     pending_login: u32,
     pending_status: u32,
@@ -236,6 +245,9 @@ impl Device {
             history: History::new(),
             heard: Heard::new(),
             packets: PacketLog::new(),
+            outbox: heapless::Vec::new(),
+            ui_reqs: heapless::Vec::new(),
+            replies: heapless::Deque::new(),
             iter: None,
             pending_login: 0,
             pending_status: 0,
@@ -270,6 +282,8 @@ impl Device {
     /// Call regularly: node events, deferred writes.
     pub fn tick(&mut self, now: Instant, rng: &mut impl Rng, st: &mut impl Storage) {
         self.pump(now, rng, st);
+        self.screen_tick(now, st);
+        self.pump(now, rng, st);
         if let Some(at) = self.contacts_dirty
             && now >= at
         {
@@ -298,12 +312,14 @@ impl Device {
     }
 
     pub fn next_wakeup(&self) -> Option<Instant> {
-        let a = self.node.next_wakeup();
-        let b = self.contacts_dirty;
-        match (a, b) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        }
+        [
+            self.node.next_wakeup(),
+            self.contacts_dirty,
+            self.screen_wakeup(),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 
     /// Next frame to the app. The contacts of a `GET_CONTACTS` come out one by one, when the
@@ -442,6 +458,13 @@ impl Device {
 
     fn err(&mut self, code: u8) {
         self.reply(&Response::Err(code));
+    }
+
+    fn done(&mut self, r: SetResult) {
+        match r {
+            Ok(()) => self.ok(),
+            Err(e) => self.err(e),
+        }
     }
 
     fn ok(&mut self) {
@@ -748,11 +771,20 @@ impl Device {
                 self.mark_contacts(now);
                 self.push(&Response::PathUpdated { key: *key });
             }
-            Event::SendConfirmed { ack, rtt_ms } => self.push(&Response::SendConfirmed {
-                ack: *ack,
-                rtt_ms: *rtt_ms,
-            }),
-            Event::Response { key, data } => self.on_response(key, data),
+            Event::SendConfirmed { ack, rtt_ms } => {
+                // A message from the screen: the app never sent it.
+                if !self.confirm_outgoing(now, u32::from_le_bytes(*ack), st) {
+                    self.push(&Response::SendConfirmed {
+                        ack: *ack,
+                        rtt_ms: *rtt_ms,
+                    });
+                }
+            }
+            Event::Response { key, data } => {
+                if !self.screen_response(now, key, data) {
+                    self.on_response(key, data);
+                }
+            }
             Event::Request {
                 key,
                 ts,
@@ -788,6 +820,9 @@ impl Device {
                 final_snr4,
             } => {
                 let _ = path_len;
+                if self.screen_trace(now, *tag, hashes, snrs, *final_snr4) {
+                    return;
+                }
                 self.push(&Response::TraceData {
                     reserved: 0,
                     flags: *flags,
@@ -1127,13 +1162,7 @@ impl Device {
                 }
             }
             Command::SetAdvertName { name } => {
-                let mut n = [0u8; 32];
-                let src = name_str(name);
-                for (o, b) in n.iter_mut().zip(src.iter().take(31)) {
-                    *o = *b;
-                }
-                self.node.prefs.name = n;
-                self.save_prefs(st);
+                self.set_name(name, st);
                 self.ok();
             }
             Command::AddUpdateContact {
@@ -1184,32 +1213,12 @@ impl Device {
                 cr,
                 repeat,
             } => {
-                let ok = (150_000..=2_500_000).contains(&freq_khz)
-                    && (7_000..=500_000).contains(&bw_hz)
-                    && (5..=12).contains(&sf)
-                    && (5..=8).contains(&cr);
-                let rep = repeat.unwrap_or(0) != 0;
-                if !ok || (rep && !REPEAT_FREQS.contains(&freq_khz)) {
-                    return self.err(err::ILLEGAL_ARG);
-                }
-                let r = &mut self.node.prefs.radio;
-                r.freq_khz = freq_khz;
-                r.bw_hz = bw_hz;
-                r.sf = sf;
-                r.cr = cr;
-                self.node.prefs.repeat = rep;
-                self.save_prefs(st);
-                let _ = self.actions.push_back(Action::RadioChanged);
-                self.ok();
+                let r = self.set_radio(freq_khz, bw_hz, sf, cr, repeat.unwrap_or(0) != 0, st);
+                self.done(r);
             }
             Command::SetRadioTxPower { dbm } => {
-                if dbm < -9 || dbm > self.info.max_tx_power {
-                    return self.err(err::ILLEGAL_ARG);
-                }
-                self.node.prefs.radio.tx_power_dbm = dbm;
-                self.save_prefs(st);
-                let _ = self.actions.push_back(Action::RadioChanged);
-                self.ok();
+                let r = self.set_tx_power(dbm, st);
+                self.done(r);
             }
             Command::ResetPath { key } => {
                 if self.node.reset_path(&key) {
@@ -1220,15 +1229,8 @@ impl Device {
                 }
             }
             Command::SetAdvertLatLon { lat, lon, .. } => {
-                if !(-90_000_000..=90_000_000).contains(&lat)
-                    || !(-180_000_000..=180_000_000).contains(&lon)
-                {
-                    return self.err(err::ILLEGAL_ARG);
-                }
-                self.node.prefs.lat = lat;
-                self.node.prefs.lon = lon;
-                self.save_prefs(st);
-                self.ok();
+                let r = self.set_location(lat, lon, st);
+                self.done(r);
             }
             Command::RemoveContact { key } => match self.node.contacts.find(&key) {
                 Some(Slot::List(i)) => {
@@ -1307,9 +1309,7 @@ impl Device {
                 rx_delay,
                 airtime_factor,
             } => {
-                self.node.prefs.rx_delay_base_milli = rx_delay;
-                self.node.prefs.airtime_factor_milli = airtime_factor;
-                self.save_prefs(st);
+                self.set_tuning(rx_delay, airtime_factor, st);
                 self.ok();
             }
             Command::GetTuningParams => {
@@ -1394,18 +1394,8 @@ impl Device {
                 None => self.err(err::NOT_FOUND),
             },
             Command::SetChannel { idx, name, secret } => {
-                match self.node.channels.0.get_mut(usize::from(idx)) {
-                    Some(c) => {
-                        *c = Channel {
-                            name,
-                            secret: mc_air::ChannelSecret::from_psk16(&secret),
-                        };
-                        let rec = encode_channel(c);
-                        st.save_channel(idx, &rec);
-                        self.ok();
-                    }
-                    None => self.err(err::NOT_FOUND),
-                }
+                let r = self.set_channel(idx, name, secret, st);
+                self.done(r);
             }
             Command::SignStart => {
                 self.sign = Some(heapless::Vec::new());
@@ -1445,13 +1435,8 @@ impl Device {
                 Err(_) => self.err(err::TABLE_FULL),
             },
             Command::SetDevicePin { pin } => {
-                if pin != 0 && !(100_000..=999_999).contains(&pin) {
-                    return self.err(err::ILLEGAL_ARG);
-                }
-                self.node.prefs.ble_pin = pin;
-                self.save_prefs(st);
-                let _ = self.actions.push_back(Action::PinChanged);
-                self.ok();
+                let r = self.set_pin(pin, st);
+                self.done(r);
             }
             Command::SetOtherParams {
                 manual_add,
@@ -1459,20 +1444,7 @@ impl Device {
                 advert_loc_policy,
                 multi_acks,
             } => {
-                let p = &mut self.node.prefs;
-                p.manual_add_contacts = manual_add;
-                if let Some(t) = telemetry {
-                    p.telemetry_base = t & 3;
-                    p.telemetry_loc = (t >> 2) & 3;
-                    p.telemetry_env = (t >> 4) & 3;
-                }
-                if let Some(a) = advert_loc_policy {
-                    p.advert_loc_policy = a;
-                }
-                if let Some(m) = multi_acks {
-                    p.multi_acks = m;
-                }
-                self.save_prefs(st);
+                self.set_other_params(manual_add, telemetry, advert_loc_policy, multi_acks, st);
                 self.ok();
             }
             Command::SendTelemetryReq { key, .. } => match key {
@@ -1516,9 +1488,8 @@ impl Device {
                 let s = core::str::from_utf8(var).unwrap_or("");
                 match s.split_once(':') {
                     Some(("gps", v)) if self.info.has_gps => {
-                        self.node.prefs.gps_enabled = v.trim() == "1";
-                        self.save_prefs(st);
-                        self.ok();
+                        let r = self.set_gps(v.trim() == "1", st);
+                        self.done(r);
                     }
                     Some(("gps_interval", v)) if self.info.has_gps => {
                         self.gps_interval = v.trim().parse().unwrap_or(0);
@@ -1660,11 +1631,7 @@ impl Device {
                 }
             }
             Command::SetAutoaddConfig { config, max_hops } => {
-                self.node.prefs.autoadd_config = config;
-                if let Some(h) = max_hops {
-                    self.node.prefs.autoadd_max_hops = h.min(64);
-                }
-                self.save_prefs(st);
+                self.set_autoadd(config, max_hops, st);
                 self.ok();
             }
             Command::GetAutoaddConfig => {
@@ -1687,12 +1654,8 @@ impl Device {
                 self.reply(&Response::AllowedRepeatFreq { ranges: &b });
             }
             Command::SetPathHashMode { mode } => {
-                if mode > 2 {
-                    return self.err(err::ILLEGAL_ARG);
-                }
-                self.node.prefs.path_hash_mode = mode;
-                self.save_prefs(st);
-                self.ok();
+                let r = self.set_path_hash_mode(mode, st);
+                self.done(r);
             }
             Command::SendChannelData {
                 idx,
@@ -1800,15 +1763,7 @@ impl Device {
             ),
             ("get", "tx") => w(out, format_args!("> {}", p.radio.tx_power_dbm)),
             ("set", rest) if rest.starts_with("name ") => {
-                let mut n = [0u8; 32];
-                for (o, b) in n
-                    .iter_mut()
-                    .zip(rest.get(5..).unwrap_or("").as_bytes().iter().take(31))
-                {
-                    *o = *b;
-                }
-                p.name = n;
-                self.save_prefs(st);
+                self.set_name(rest.get(5..).unwrap_or("").as_bytes(), st);
                 let _ = out.push_str("OK");
             }
             ("reboot", _) => {

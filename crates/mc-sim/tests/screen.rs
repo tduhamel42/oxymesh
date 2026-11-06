@@ -133,3 +133,183 @@ fn queue_and_history_survive_a_reboot() {
 }
 
 use rand_core::SeedableRng;
+
+// ------------------------------------------------------------------ sending from the screen
+
+use mc_node::device::ReqKind;
+
+fn key(w: &World, i: usize) -> [u8; 32] {
+    *w.nodes[i].dev.node.id.pub_key()
+}
+
+fn status(w: &World, i: usize, seq: u32) -> Status {
+    w.nodes[i].dev.history().get(seq).unwrap().status
+}
+
+/// Frames pushed to node `i`'s app with this code.
+fn pushed(w: &World, i: usize, code: u8) -> usize {
+    w.nodes[i]
+        .app
+        .iter()
+        .filter(|f| f.first() == Some(&code))
+        .count()
+}
+
+#[test]
+fn screen_message_is_delivered_and_the_app_does_not_hear_the_ack() {
+    let mut w = bob_writes("first");
+    let kb = key(&w, 1);
+    let now = w.now;
+    let sn = &mut w.nodes[0];
+    let seq = sn
+        .dev
+        .send_text(now, &kb, b"from the screen", &mut sn.st)
+        .unwrap();
+    assert_eq!(status(&w, 0, seq), Status::Sending { attempt: 0 });
+    assert!(w.run_until(secs(30), |w| matches!(
+        status(w, 0, seq),
+        Status::Delivered { .. }
+    )));
+    assert_eq!(pushed(&w, 0, 0x82), 0, "no SEND_CONFIRMED for the app");
+    assert!(
+        w.nodes[1].events.iter().any(
+            |e| matches!(e, Event::ContactMsg { text, .. } if **text == b"from the screen"[..])
+        )
+    );
+}
+
+#[test]
+fn unreachable_contact_gets_three_tries_then_a_flood_then_failed() {
+    let mut w = bob_writes("first");
+    let kb = key(&w, 1);
+    w.unlink(0, 1);
+    w.nodes[0].ui.clear();
+    let now = w.now;
+    let sn = &mut w.nodes[0];
+    let seq = sn.dev.send_text(now, &kb, b"anyone?", &mut sn.st).unwrap();
+    assert!(w.run_until(secs(300), |w| status(w, 0, seq) == Status::Failed));
+    // Each try went out as a TXT_MSG: 3 by the known route, then 1 flood.
+    let tx: Vec<_> = w
+        .log
+        .iter()
+        .filter(|(_, from, raw)| {
+            *from == 0
+                && mc_air::Packet::decode(raw)
+                    .is_ok_and(|p| p.header.ptype == mc_air::PayloadType::TXT_MSG)
+        })
+        .collect();
+    assert_eq!(tx.len(), 4, "3 tries and a flood");
+    let last = mc_air::Packet::decode(&tx[3].2).unwrap();
+    assert!(last.header.route.is_flood(), "the last try floods");
+    let c = w.nodes[0].dev.node.contacts.find(&kb).unwrap();
+    assert_eq!(
+        w.nodes[0].dev.node.contacts.get(c).unwrap().out_path_len,
+        mc_node::contacts::PATH_UNKNOWN,
+        "RESET_PATH before the flood"
+    );
+    // The screen was told at each step: 3 retries and the failure.
+    let told = w.nodes[0]
+        .ui
+        .iter()
+        .filter(|e| matches!(e, UiEvent::Status { seq: s } if *s == seq))
+        .count();
+    assert_eq!(told, 4);
+}
+
+#[test]
+fn a_late_ack_of_an_earlier_try_still_counts() {
+    let mut w = bob_writes("first");
+    let kb = key(&w, 1);
+    w.unlink(0, 1);
+    let now = w.now;
+    let sn = &mut w.nodes[0];
+    let seq = sn
+        .dev
+        .send_text(now, &kb, b"slow link", &mut sn.st)
+        .unwrap();
+    assert!(w.run_until(secs(60), |w| status(w, 0, seq)
+        == Status::Sending { attempt: 1 }));
+    w.link(0, 1);
+    assert!(w.run_until(secs(120), |w| matches!(
+        status(w, 0, seq),
+        Status::Delivered { .. }
+    )));
+}
+
+#[test]
+fn ping_and_status_from_the_screen_answer_the_screen_only() {
+    let mut w = World::new(31);
+    let a = w.add("Alice", |_| {});
+    let b = w.add("Bob", |p| p.telemetry_base = 2);
+    w.link(a, b);
+    for (x, y) in [(a, b), (b, a)] {
+        let now = w.now;
+        w.node(x).send_self_advert(now, false).unwrap();
+        let kx = key(&w, x);
+        assert!(w.run_until(secs(10), |w| {
+            w.nodes[y].dev.node.contacts.find(&kx).is_some()
+        }));
+    }
+    let kb = key(&w, b);
+    let mut rng = rand_chacha::ChaCha20Rng::seed_from_u64(9);
+    let now = w.now;
+    let tag = w.nodes[a]
+        .dev
+        .request(now, &kb, ReqKind::Telemetry, &mut rng)
+        .unwrap();
+    assert!(w.run_until(secs(30), |w| w.nodes[a].dev.request_reply(tag).is_some()));
+    let r = w.nodes[a].dev.request_reply(tag).unwrap();
+    assert!(r.ok && !r.data.is_empty() && r.rtt_ms > 0, "{r:?}");
+    assert!(w.nodes[a].ui.contains(&UiEvent::Reply { tag }));
+    assert_eq!(pushed(&w, a, 0x8B), 0, "no TELEMETRY_RESPONSE for the app");
+
+    // No answer: the screen hears the timeout.
+    w.unlink(a, b);
+    let now = w.now;
+    let tag = w.nodes[a]
+        .dev
+        .request(now, &kb, ReqKind::Status, &mut rng)
+        .unwrap();
+    assert!(w.run_until(secs(60), |w| w.nodes[a].dev.request_reply(tag).is_some()));
+    assert!(!w.nodes[a].dev.request_reply(tag).unwrap().ok);
+}
+
+#[test]
+fn settings_api_checks_like_the_companion_and_saves() {
+    let mut w = World::new(41);
+    let a = w.add("Alice", |_| {});
+    let sn = &mut w.nodes[a];
+    assert_eq!(
+        sn.dev.set_tx_power(30, &mut sn.st),
+        Err(mc_proto::codec::err::ILLEGAL_ARG)
+    );
+    assert_eq!(
+        sn.dev.set_radio(869_618, 62_500, 13, 5, false, &mut sn.st),
+        Err(mc_proto::codec::err::ILLEGAL_ARG)
+    );
+    assert_eq!(
+        sn.dev.set_radio(869_525, 250_000, 11, 5, false, &mut sn.st),
+        Ok(())
+    );
+    assert_eq!(sn.dev.poll_action(), Some(mc_node::Action::RadioChanged));
+    let mut ui = sn.dev.node.prefs.ui;
+    ui.compact = true;
+    ui.tz_offset_min = 60;
+    sn.dev.set_ui(ui, &mut sn.st);
+    let saved =
+        mc_node::persist::decode_prefs(sn.st.prefs.as_ref().unwrap(), &sn.dev.node.prefs).unwrap();
+    assert_eq!(saved.ui, ui);
+    assert_eq!(saved.radio.bw_hz, 250_000);
+    let idx = sn.dev.add_hashtag_channel("#oxymesh", &mut sn.st).unwrap();
+    assert_eq!(
+        sn.dev.add_hashtag_channel("#oxymesh", &mut sn.st),
+        Ok(idx),
+        "same slot again"
+    );
+    assert_eq!(
+        sn.dev.node.channels.0[usize::from(idx)].secret,
+        mc_air::crypto::ChannelSecret::from_hashtag("#oxymesh")
+    );
+    sn.dev.remove_channel(idx, &mut sn.st).unwrap();
+    assert!(sn.dev.node.channels.0[usize::from(idx)].is_empty());
+}
