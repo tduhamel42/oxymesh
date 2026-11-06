@@ -19,6 +19,7 @@ pub mod clock;
 pub mod contacts;
 pub mod dispatch;
 pub mod node;
+pub mod persist;
 pub mod rx;
 pub mod tables;
 

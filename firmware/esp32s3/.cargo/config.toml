@@ -1,0 +1,16 @@
+# Réglages de compilation ici ; réglages d'exécution dans `esp-config.toml`.
+include = ["esp-config.toml"]
+
+[target.xtensa-esp32s3-none-elf]
+# Table de partitions d'oxymesh (ADR-0006) : le SPIFFS du firmware C++ n'est jamais écrit.
+runner = "espflash flash --monitor --chip esp32s3 --partition-table partitions.csv"
+
+[build]
+rustflags = [
+  "-C", "link-arg=-nostartfiles",
+]
+
+target = "xtensa-esp32s3-none-elf"
+
+[unstable]
+build-std = ["core", "alloc"]
