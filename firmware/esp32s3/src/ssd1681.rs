@@ -6,8 +6,6 @@
 //! (RAM 0x26). The BUSY pin stays high during a refresh: the driver does not wait for it, it
 //! exposes [`Ssd1681::busy`] so that the main loop keeps running (radio, BLE).
 
-use embedded_graphics::pixelcolor::BinaryColor;
-use embedded_graphics::prelude::*;
 use esp_hal::Blocking;
 use esp_hal::delay::Delay;
 use esp_hal::gpio::{Input, Output};
@@ -24,62 +22,9 @@ pub enum Error {
     Timeout,
 }
 
-/// In-memory image: 1 bit per pixel, 1 = white (SSD1681 convention).
-pub struct Frame {
-    pub bits: [u8; BUF],
-}
-
-impl Frame {
-    pub const fn new() -> Self {
-        Self { bits: [0xFF; BUF] }
-    }
-
-    pub fn clear(&mut self) {
-        self.bits = [0xFF; BUF];
-    }
-}
-
-impl Default for Frame {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl OriginDimensions for Frame {
-    fn size(&self) -> Size {
-        Size::new(WIDTH, HEIGHT)
-    }
-}
-
-impl DrawTarget for Frame {
-    type Color = BinaryColor;
-    type Error = core::convert::Infallible;
-
-    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = Pixel<Self::Color>>,
-    {
-        for Pixel(p, c) in pixels {
-            let (Ok(x), Ok(y)) = (u32::try_from(p.x), u32::try_from(p.y)) else {
-                continue;
-            };
-            if x >= WIDTH || y >= HEIGHT {
-                continue;
-            }
-            let i = (y * (WIDTH / 8) + x / 8) as usize;
-            let bit = 0x80u8 >> (x % 8);
-            if let Some(b) = self.bits.get_mut(i) {
-                // BinaryColor::On = black ink.
-                if c.is_on() {
-                    *b &= !bit;
-                } else {
-                    *b |= bit;
-                }
-            }
-        }
-        Ok(())
-    }
-}
+/// In-memory image: 1 bit per pixel, 1 = white (SSD1681 convention). Shared with `mc-ui`, so
+/// the emulator and the tests decode exactly what the panel receives.
+pub use mc_ui::panel::Frame;
 
 pub struct Ssd1681<'d> {
     spi: Spi<'d, Blocking>,
@@ -170,6 +115,8 @@ impl<'d> Ssd1681<'d> {
     /// refresh starts from it. Returns immediately; BUSY drops at the end (~2 s).
     pub fn show_full(&mut self, frame: &Frame) -> Result<(), Error> {
         self.wait(5000)?;
+        // Border back to the waveform's white: a partial refresh set it to "unchanged".
+        self.command(0x3C, &[0x05])?;
         self.write_ram(0x24, frame)?;
         self.write_ram(0x26, frame)?;
         self.command(0x22, &[0xF7])?; // clock, temperature, OTP LUT, mode 1

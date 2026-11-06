@@ -289,6 +289,12 @@ impl<'d> Sx126x<'d> {
         self.cmd(&[0x83, 0x00, 0x00, 0x00]) // SetTx without timeout
     }
 
+    /// Sleep, cold start (configuration lost): for hibernation, the boot reconfigures.
+    pub fn sleep(&mut self) -> Result<(), Error> {
+        self.cmd(&[0x80, 0x00])?;
+        self.cmd(&[0x84, 0x00])
+    }
+
     pub fn dio1(&self) -> bool {
         self.dio1.is_high()
     }

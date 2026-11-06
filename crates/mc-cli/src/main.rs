@@ -36,6 +36,12 @@ enum Cmd {
         #[arg(long)]
         channel: Vec<String>,
     },
+    /// Make the device send its advert (zero hop unless `--flood`).
+    Advert {
+        port: String,
+        #[arg(long)]
+        flood: bool,
+    },
     /// Make the device transmit a raw frame (SEND_RAW_PACKET).
     Inject {
         port: String,
@@ -91,6 +97,7 @@ fn main() {
             channel,
         } => sniff(&port, secs, &channel),
         Cmd::Inject { port, hex, prio } => inject(&port, &hex, prio),
+        Cmd::Advert { port, flood } => advert(&port, flood),
         Cmd::Airtest {
             ref_port,
             dut,
@@ -157,6 +164,17 @@ fn sniff(path: &str, secs: Option<u64>, channels: &[String]) -> Result<(), Strin
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
+    Ok(())
+}
+
+fn advert(path: &str, flood: bool) -> Result<(), String> {
+    let mut p = Port::open(path, "device")?;
+    p.verbose = true;
+    p.ask(&Command::DeviceQuery { app_ver: APP_VER })?;
+    p.ask(&Command::SetDeviceTime {
+        unix_s: crate::port::now_unix(),
+    })?;
+    p.ask(&Command::SendSelfAdvert { flood: Some(flood) })?;
     Ok(())
 }
 

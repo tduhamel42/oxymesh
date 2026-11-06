@@ -58,6 +58,13 @@ Findings:
   - With 100 to 300 ms before each ping: 0 lost in 2 runs. With 3 s between the prefs change and the first ping: 0 lost in 5 runs (100 pings). `mc duo` now waits 3 s.
   - Not reproduced between two oxymesh nodes in mc-sim. Cause unknown; next step is a run with the C++ firmware on both ends.
 
+## 2026-11-06 — the interface on the M5 (U6, part 1)
+
+- Firmware `mc-m5` with `mc-ui`: 64 KB heap, one Ratatui terminal drawing into the panel frame, overlays, refresh-debt policy, gestures from the two buttons, light auto-off, unread LED, hibernation.
+- Image 900,384 bytes, against a 1.75 MB app partition.
+- `mc duo --a /dev/cu.wchusbserial210 --b /dev/cu.usbmodem1101 --pings 3 --reboot`: 13/13 with the interface running in the same loop as the radio.
+- Still to check by hand (U6 checklist): navigation, a message to the Heltec with its delivery, the tools on real traffic, light and potentiometer, no packet lost during a refresh.
+
 ## 2026-11-06 — offline queue in flash, screen history (U2)
 
 - Firmware with the offline queue and the 200-message history in the `mcdata` partition (index in RAM), prefs record v2. The M5's v1 prefs record (128 bytes) was read back: same name, key and radio after flashing.
