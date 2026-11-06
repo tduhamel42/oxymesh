@@ -1,7 +1,9 @@
 //! Vecteurs de `testdata/proto/vectors.toml` (générés par `gen.mjs`, recoupés avec meshcore.js ;
 //! repris de loranet) et propriétés du codec et du tramage USB.
 
-use mc_proto::{Command, DecodeError, FROM_DEVICE, Response, TO_DEVICE, UsbDeframer, usb_frame};
+use mc_proto::{
+    Command, DecodeError, DeviceReject, FROM_DEVICE, Response, TO_DEVICE, UsbDeframer, usb_frame,
+};
 use proptest::prelude::*;
 use serde::Deserialize;
 
@@ -9,6 +11,7 @@ use serde::Deserialize;
 struct File {
     command: Vec<Frame>,
     response: Vec<Frame>,
+    device: Vec<Device>,
 }
 
 #[derive(Deserialize)]
@@ -17,6 +20,14 @@ struct Frame {
     hex: String,
     expect: String,
     dump: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct Device {
+    name: String,
+    hex: String,
+    expect: String,
+    canonical: Option<String>,
 }
 
 fn load() -> File {
@@ -37,6 +48,13 @@ fn kind(e: DecodeError) -> String {
     format!("err:{e:?}")
 }
 
+fn reject(e: DeviceReject) -> String {
+    match e {
+        DeviceReject::Ignored => "ignored".into(),
+        DeviceReject::Err(c) => format!("err:{c}"),
+    }
+}
+
 #[test]
 fn command_vectors() {
     for v in load().command {
@@ -48,6 +66,13 @@ fn command_vectors() {
                 let mut out = [0u8; 256];
                 let n = c.encode(&mut out).unwrap();
                 assert_eq!(hex(&out[..n]), v.hex, "{} réencodé", v.name);
+                // Toute trame canonique passe aussi côté appareil, avec le même sens.
+                assert_eq!(
+                    Command::decode_device(&bytes),
+                    Ok(c),
+                    "{} côté appareil",
+                    v.name
+                );
             }
             Err(e) => assert_eq!(kind(e), v.expect, "{}", v.name),
         }
@@ -71,9 +96,137 @@ fn response_vectors() {
     }
 }
 
+/// Section `[[device]]` : décodage comme `MyMesh::handleCmdFrame`, puis forme canonique.
+#[test]
+fn device_vectors() {
+    let file = load();
+    assert!(file.device.len() > 100);
+    for v in file.device {
+        let bytes = unhex(&v.hex);
+        match Command::decode_device(&bytes) {
+            Ok(c) => {
+                assert_eq!(v.expect, "ok", "{} accepté ({c})", v.name);
+                let canonical = v.canonical.as_deref().expect("forme canonique");
+                let mut out = [0u8; 256];
+                let n = c.encode(&mut out).unwrap();
+                assert_eq!(hex(&out[..n]), canonical, "{} forme canonique", v.name);
+                assert_eq!(
+                    Command::decode(&unhex(canonical)),
+                    Ok(c),
+                    "{} relu en strict",
+                    v.name
+                );
+            }
+            Err(e) => {
+                assert_eq!(reject(e), v.expect, "{}", v.name);
+                assert!(v.canonical.is_none(), "{}", v.name);
+            }
+        }
+    }
+}
+
+#[test]
+fn private_keys_are_never_displayed() {
+    let key = [0xabu8; 64];
+    let shown = [
+        Command::ImportPrivateKey { key }.to_string(),
+        Response::PrivateKey { key }.to_string(),
+    ];
+    for s in shown {
+        assert!(!s.contains("abab"), "{s}");
+    }
+}
+
+#[test]
+fn encode_refuses_values_without_canonical_form() {
+    let mut out = [0u8; 256];
+    let bad = [
+        Command::AddUpdateContact {
+            key: [1; 32],
+            kind: 1,
+            flags: 0,
+            path_len: 0,
+            path: [0; 64],
+            name: [0; 32],
+            last_advert: 0,
+            lat_lon: None,
+            lastmod: Some(5),
+        },
+        Command::SetOtherParams {
+            manual_add: 0,
+            telemetry: None,
+            advert_loc_policy: Some(1),
+            multi_acks: None,
+        },
+        Command::SendRawData {
+            path_len: 2,
+            path: &[1],
+            payload: &[1, 2, 3, 4],
+        },
+        Command::SendTracePath {
+            tag: 0,
+            auth: 0,
+            flags: 1,
+            path: &[1, 2, 3],
+        },
+        Command::SendTxtMsg {
+            txt_type: 0,
+            attempt: 0,
+            timestamp: 0,
+            prefix: [0; 6],
+            text: &[0x41; 170],
+        },
+    ];
+    for c in bad {
+        assert!(c.encode(&mut out).is_err(), "{c:?}");
+    }
+    let bad = [
+        Response::Other {
+            code: 0x05,
+            body: &[],
+        },
+        Response::TraceData {
+            reserved: 0,
+            flags: 0,
+            tag: 0,
+            auth: 0,
+            hashes: &[1, 2],
+            snrs: &[1],
+            final_snr4: 0,
+        },
+        Response::AllowedRepeatFreq { ranges: &[0; 7] },
+    ];
+    for r in bad {
+        assert!(r.encode(&mut out).is_err(), "{r:?}");
+    }
+}
+
+/// Trames d'essai : octets quelconques, ou un code de commande ou de réponse connu suivi d'une
+/// queue de longueur quelconque (les codes connus sont rares parmi 256).
+fn frames() -> impl Strategy<Value = Vec<u8>> {
+    prop_oneof![
+        prop::collection::vec(any::<u8>(), 0..200),
+        (0u8..=70, prop::collection::vec(any::<u8>(), 0..180)).prop_map(|(c, mut t)| {
+            t.insert(0, c);
+            t
+        }),
+        (0x80u8..=0x92, prop::collection::vec(any::<u8>(), 0..180)).prop_map(|(c, mut t)| {
+            t.insert(0, c);
+            t
+        }),
+        // Queues courtes : préconditions de longueur et champs lus hors de la trame.
+        (0u8..=70, prop::collection::vec(any::<u8>(), 0..40)).prop_map(|(c, mut t)| {
+            t.insert(0, c);
+            t
+        }),
+    ]
+}
+
 proptest! {
+    #![proptest_config(ProptestConfig::with_cases(4096))]
+
     #[test]
-    fn any_accepted_frame_is_canonical(bytes in prop::collection::vec(any::<u8>(), 0..200)) {
+    fn any_accepted_frame_is_canonical(bytes in frames()) {
         let mut out = [0u8; 256];
         if let Ok(r) = Response::decode(&bytes) {
             let n = r.encode(&mut out).unwrap();
@@ -82,6 +235,25 @@ proptest! {
         if let Ok(c) = Command::decode(&bytes) {
             let n = c.encode(&mut out).unwrap();
             prop_assert_eq!(&out[..n], &bytes[..]);
+            // Le mode appareil accepte toute trame canonique, avec le même sens.
+            prop_assert_eq!(Command::decode_device(&bytes), Ok(c));
+        }
+    }
+
+    /// ADR-0002 : toute commande acceptée côté appareil s'écrit en une trame canonique que le
+    /// décodage strict relit à l'identique.
+    #[test]
+    fn device_accepted_reencodes_canonically(bytes in frames()) {
+        match Command::decode_device(&bytes) {
+            Ok(c) => {
+                let mut out = [0u8; 256];
+                let n = c.encode(&mut out).unwrap();
+                prop_assert_eq!(Command::decode(&out[..n]), Ok(c));
+            }
+            Err(DeviceReject::Ignored) => {
+                prop_assert!(bytes.is_empty() || bytes.len() > mc_proto::FRAME_MAX);
+            }
+            Err(DeviceReject::Err(code)) => prop_assert!(code == 1 || code == 6),
         }
     }
 
@@ -114,4 +286,22 @@ fn usb_frame_refuses_bad_sizes() {
     assert!(usb_frame(TO_DEVICE, &[0; 177], &mut buf).is_err());
     assert_eq!(usb_frame(TO_DEVICE, &[0x0a], &mut buf), Ok(4));
     assert_eq!(&buf[..4], &[b'<', 1, 0, 0x0a]);
+}
+
+/// ASI:58-66 : une trame annoncée plus longue que 176 octets est lue en entier, tronquée à 176,
+/// et la suite du flux n'est pas prise pour du bruit.
+#[test]
+fn usb_long_frame_is_truncated_like_the_cpp() {
+    let mut stream = vec![b'<', 200, 0];
+    stream.extend((0..200u8).map(|i| i ^ 0x5a));
+    stream.extend([b'<', 1, 0, 0x0a]);
+    let mut d = UsbDeframer::new(TO_DEVICE);
+    let mut got = Vec::new();
+    for b in stream {
+        if let Some(f) = d.push(b) {
+            got.push(f.to_vec());
+        }
+    }
+    let first: Vec<u8> = (0..176u8).map(|i| i ^ 0x5a).collect();
+    assert_eq!(got, vec![first, vec![0x0a]]);
 }

@@ -246,12 +246,20 @@ name = "mc-core"
 version = "0.0.0"
 
 [[package]]
+name = "mc-proto"
+version = "0.0.0"
+dependencies = [
+ "mc-core",
+]
+
+[[package]]
 name = "oxymesh-fuzz"
 version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
  "mc-air",
  "mc-core",
+ "mc-proto",
 ]
 
 [[package]]
