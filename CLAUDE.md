@@ -117,6 +117,9 @@ cargo run --release -p mc-cli -- airtest --ref /dev/cu.usbmodem141101 --dut /dev
 cargo run --release -p mc-cli -- ui                  # the device interface in a terminal, on a simulated device (--compact)
 cargo run --release -p mc-cli -- ui --png local/ui-png   # every screen of the tour as panel-exact PNG
 INSTA_UPDATE=always cargo test -p mc-ui              # accept changed screen snapshots (review the diff!)
+cargo run --release -p mc-cli -- advert <port> [--flood]   # make a companion advertise (also sets its clock)
+cargo run --release -p mc-cli -- send <port> <key prefix hex> "text"   # direct message, waits for the delivery
+cargo run --release -p mc-cli -- inbox <port>               # fetch and print the messages waiting on a companion
 cargo run --release -p mc-cli -- duo --a /dev/cu.wchusbserial120 --b /dev/cu.usbmodem141101   # two companions talk (adverts, DMs, channel, pings), zero-hop; --flood for more
 ```
 

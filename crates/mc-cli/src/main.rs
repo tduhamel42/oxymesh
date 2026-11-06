@@ -36,6 +36,14 @@ enum Cmd {
         #[arg(long)]
         channel: Vec<String>,
     },
+    /// Send a direct message to a contact, by the hex prefix of its key (6 bytes or more).
+    Send {
+        port: String,
+        to: String,
+        text: String,
+    },
+    /// Fetch and print the messages waiting on the device (SYNC_NEXT_MESSAGE until empty).
+    Inbox { port: String },
     /// Make the device send its advert (zero hop unless `--flood`).
     Advert {
         port: String,
@@ -98,6 +106,8 @@ fn main() {
         } => sniff(&port, secs, &channel),
         Cmd::Inject { port, hex, prio } => inject(&port, &hex, prio),
         Cmd::Advert { port, flood } => advert(&port, flood),
+        Cmd::Inbox { port } => inbox(&port),
+        Cmd::Send { port, to, text } => send(&port, &to, &text),
         Cmd::Airtest {
             ref_port,
             dut,
@@ -164,6 +174,69 @@ fn sniff(path: &str, secs: Option<u64>, channels: &[String]) -> Result<(), Strin
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
+    Ok(())
+}
+
+fn send(path: &str, to: &str, text: &str) -> Result<(), String> {
+    let mut prefix = [0u8; 32];
+    let n = mc_core::hex::decode_into(to, &mut prefix).ok_or("invalid hex prefix")?;
+    if n < 6 {
+        return Err("the prefix needs at least 6 bytes (12 hex digits)".into());
+    }
+    let mut p = Port::open(path, "device")?;
+    p.verbose = true;
+    p.ask(&Command::DeviceQuery { app_ver: APP_VER })?;
+    let now = crate::port::now_unix();
+    let sent = p.ask(&Command::SendTxtMsg {
+        txt_type: 0,
+        attempt: 0,
+        timestamp: now,
+        prefix: prefix[..6].try_into().unwrap_or([0; 6]),
+        text: text.as_bytes(),
+    })?;
+    if let Ok(Response::Sent { ack, .. }) = Response::decode(&sent) {
+        let got = p.wait(20, |r| match r {
+            Response::SendConfirmed { ack: a, rtt_ms } if *a == ack => Some(*rtt_ms),
+            _ => None,
+        });
+        match got {
+            Ok(rtt) => println!("delivered, round trip {rtt} ms"),
+            Err(_) => println!("no delivery confirmation within 20 s"),
+        }
+    }
+    Ok(())
+}
+
+fn inbox(path: &str) -> Result<(), String> {
+    let mut p = Port::open(path, "device")?;
+    p.ask(&Command::DeviceQuery { app_ver: APP_VER })?;
+    let mut n = 0;
+    loop {
+        let f = p.ask(&Command::SyncNextMessage)?;
+        match Response::decode(&f) {
+            Ok(Response::NoMoreMessages) => break,
+            Ok(Response::ContactMsg {
+                prefix,
+                text,
+                timestamp,
+                path_len,
+                snr4,
+                ..
+            }) => println!(
+                "DM from {} at {timestamp} path_len {path_len:#04x} SNR {:.2}: {}",
+                mc_core::Hex(&prefix),
+                f32::from(snr4) / 4.0,
+                String::from_utf8_lossy(text)
+            ),
+            Ok(Response::ChannelMsg { idx, text, .. }) => {
+                println!("channel {idx}: {}", String::from_utf8_lossy(text))
+            }
+            Ok(other) => println!("{other}"),
+            Err(e) => println!("unreadable frame ({e:?})"),
+        }
+        n += 1;
+    }
+    println!("{n} message(s)");
     Ok(())
 }
 
