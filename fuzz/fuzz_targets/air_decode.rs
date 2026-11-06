@@ -1,8 +1,8 @@
-//! Trames MeshCore sur l'air (`docs/spec/air.md`). Le premier octet choisit : trame complète,
-//! texte clair (message direct, canal, données, PATH) ou données d'annonce.
+//! MeshCore over-the-air packets (`docs/spec/air.md`). The first byte selects: whole packet,
+//! plaintext (direct message, channel, data, PATH) or advert data.
 //!
-//! Oracle : jamais de panic ; toute trame acceptée se réécrit à l'identique ; tout découpage de
-//! charge utile reste dans la trame ; des données d'annonce réencodées se relisent pareil.
+//! Oracle: never panic; every accepted packet re-encodes identically; every payload split stays
+//! within the packet; re-encoded advert data reads back the same.
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;

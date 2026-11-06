@@ -1,10 +1,11 @@
 [package]
 name = "mc-core"
-description = "Types communs sans IO : lecture/écriture d'octets, temps entier, temps d'antenne, budget de duty cycle"
+description = "IO-free common types: byte reading/writing, integer time, airtime, duty-cycle budget"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 

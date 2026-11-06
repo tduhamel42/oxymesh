@@ -1,8 +1,9 @@
-//! Radio simulée : des appareils (`mc-node` avec leur couche compagnon) reliés par des liens,
-//! en demi-duplex, avec collisions et écoute avant émission. Déterministe : une seule graine.
+//! Simulated radio: devices (`mc-node` with their companion layer) connected by links, half
+//! duplex, with collisions and listen-before-talk. Deterministic: a single seed.
 //!
-//! Le modèle est volontairement simple : une trame est reçue par chaque voisin qui n'émet pas et
-//! ne reçoit rien d'autre pendant toute sa durée ; un recouvrement détruit les deux trames.
+//! The model is deliberately simple: a frame is received by every neighbour that neither
+//! transmits nor receives anything else during its whole duration; an overlap destroys both
+//! frames.
 
 use std::collections::BTreeMap;
 
@@ -14,7 +15,7 @@ use mc_node::{Device, Event, Node, Prefs, Storage};
 use rand_chacha::ChaCha20Rng;
 use rand_core::{Rng, SeedableRng};
 
-/// Stockage en mémoire (tests, appareil virtuel).
+/// In-memory storage (tests, virtual device).
 #[derive(Debug, Default, Clone)]
 pub struct MemStorage {
     pub identity: Option<([u8; 64], [u8; 32])>,
@@ -55,7 +56,7 @@ impl Storage for MemStorage {
     }
 }
 
-/// Ce que l'appareil virtuel annonce.
+/// What the virtual device reports.
 pub const SIM_INFO: Info = Info {
     manufacturer: "oxymesh sim",
     version: "v1.18.0-oxymesh",
@@ -69,11 +70,11 @@ pub struct SimNode {
     pub dev: Device,
     pub st: MemStorage,
     rng: ChaCha20Rng,
-    /// Fin de l'émission en cours.
+    /// End of the transmission in progress.
     tx_until: Option<Instant>,
-    /// Événements produits (copies destinées à l'interface), gardés pour les tests.
+    /// Produced events (copies meant for the UI), kept for the tests.
     pub events: Vec<Event>,
-    /// Trames envoyées à l'app hors réponse directe (notifications, contacts).
+    /// Frames sent to the app outside direct responses (notifications, contacts).
     pub app: Vec<Frame>,
 }
 
@@ -84,24 +85,24 @@ struct OnAir {
     end: Instant,
 }
 
-/// Une trame émise : (instant, émetteur, octets).
+/// A transmitted frame: (instant, sender, bytes).
 pub type Heard = (Instant, usize, Vec<u8>);
 
 #[allow(missing_debug_implementations)]
 pub struct World {
     pub nodes: Vec<SimNode>,
-    /// `links[a][b]` : b entend a, avec ce SNR (×4).
+    /// `links[a][b]`: b hears a, with this SNR (×4).
     links: Vec<Vec<Option<i8>>>,
     pub now: Instant,
     on_air: Vec<OnAir>,
-    /// Pertes aléatoires, en millièmes.
+    /// Random losses, in thousandths.
     pub loss_milli: u32,
     rng: ChaCha20Rng,
-    /// Journal de toutes les émissions.
+    /// Log of all transmissions.
     pub log: Vec<Heard>,
 }
 
-/// Identité de test déterministe.
+/// Deterministic test identity.
 pub fn identity(label: &str) -> LocalIdentity {
     let mut i = 0u32;
     loop {
@@ -114,7 +115,7 @@ pub fn identity(label: &str) -> LocalIdentity {
     }
 }
 
-/// Époque de départ des simulations.
+/// Start epoch of the simulations.
 pub const EPOCH: u32 = 1_793_900_000;
 
 impl World {
@@ -130,7 +131,7 @@ impl World {
         }
     }
 
-    /// Ajoute un appareil nommé `name` (connecté à une app) ; renvoie son indice.
+    /// Adds a device named `name` (connected to an app); returns its index.
     pub fn add(&mut self, name: &str, tweak: impl FnOnce(&mut Prefs)) -> usize {
         let id = identity(name);
         let mut prefs = Prefs::defaults(id.pub_key());
@@ -157,7 +158,7 @@ impl World {
         self.nodes.len() - 1
     }
 
-    /// Lien dans les deux sens, SNR 10 dB.
+    /// Link in both directions, SNR 10 dB.
     pub fn link(&mut self, a: usize, b: usize) {
         self.links[a][b] = Some(40);
         self.links[b][a] = Some(40);
@@ -176,18 +177,18 @@ impl World {
             .flatten()
     }
 
-    /// Le canal est-il occupé pour `n` (un voisin émet) ?
+    /// Is the channel busy for `n` (a neighbour is transmitting)?
     fn busy(&self, n: usize) -> bool {
         self.on_air
             .iter()
             .any(|t| t.from != n && self.hears(t.from, n).is_some() && t.start <= self.now)
     }
 
-    /// Avance d'un pas de `dt`.
+    /// Advances by one step of `dt`.
     pub fn step(&mut self, dt: Duration) {
         self.now = self.now + dt;
         let now = self.now;
-        // Fins d'émission : livraison aux voisins.
+        // Transmission ends: delivery to neighbours.
         let mut done = Vec::new();
         let mut i = 0;
         while i < self.on_air.len() {
@@ -211,9 +212,9 @@ impl World {
                 if to == t.from {
                     continue;
                 }
-                // Demi-duplex : un nœud qui a émis pendant la trame ne l'entend pas.
+                // Half duplex: a node that transmitted during the frame does not hear it.
                 let deaf = self.log_overlaps_tx(to, t.start, t.end);
-                // Collision : une autre trame audible chevauche celle-ci.
+                // Collision: another audible frame overlaps this one.
                 let collided = done.iter().chain(self.on_air.iter()).any(|o| {
                     !std::ptr::eq(o, t)
                         && o.from != to
@@ -230,7 +231,7 @@ impl World {
                     .on_rx(now, &t.raw, snr4, -90, &mut sn.rng, &mut sn.st);
             }
         }
-        // Émissions.
+        // Transmissions.
         for n in 0..self.nodes.len() {
             if self.nodes[n].tx_until.is_some() {
                 continue;
@@ -270,7 +271,7 @@ impl World {
         })
     }
 
-    /// Avance jusqu'à ce que `pred` soit vrai, au plus `max`. Vrai si atteint.
+    /// Advances until `pred` is true, for at most `max`. True if reached.
     pub fn run_until(&mut self, max: Duration, mut pred: impl FnMut(&World) -> bool) -> bool {
         let end = self.now + max;
         while self.now < end {
@@ -282,7 +283,7 @@ impl World {
         pred(self)
     }
 
-    /// Avance de `d`.
+    /// Advances by `d`.
     pub fn run(&mut self, d: Duration) {
         let end = self.now + d;
         while self.now < end {
@@ -294,8 +295,8 @@ impl World {
         &mut self.nodes[i].dev.node
     }
 
-    /// Une trame de l'app vers l'appareil `i` ; renvoie ce que l'appareil écrit aussitôt
-    /// (réponse, notifications, contacts d'un `GET_CONTACTS`).
+    /// An app frame to device `i`; returns what the device writes immediately (response,
+    /// notifications, contacts of a `GET_CONTACTS`).
     pub fn app(&mut self, i: usize, frame: &[u8]) -> Vec<Frame> {
         let now = self.now;
         let sn = &mut self.nodes[i];
@@ -310,7 +311,7 @@ impl World {
         out
     }
 
-    /// Les événements de `i`, vidés.
+    /// The events of `i`, drained.
     pub fn take_events(&mut self, i: usize) -> Vec<Event> {
         std::mem::take(&mut self.nodes[i].events)
     }

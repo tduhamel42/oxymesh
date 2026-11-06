@@ -1,4 +1,4 @@
-//! Tailles mémoire des structures du nœud (budget RAM de l'ESP32-S3 sans PSRAM, ADR-0003).
+//! Memory sizes of the node structures (RAM budget of the ESP32-S3 without PSRAM, ADR-0003).
 
 #[test]
 fn print_sizes() {
@@ -24,6 +24,6 @@ fn print_sizes() {
     println!("PacketBuf       {:>7}", size_of::<mc_air::PacketBuf>());
     assert!(
         size_of::<mc_node::Node>() < 128 * 1024,
-        "le nœud doit tenir dans 128 Ko"
+        "the node must fit in 128 KB"
     );
 }

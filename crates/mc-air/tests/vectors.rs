@@ -1,6 +1,6 @@
-//! Vecteurs de `testdata/air/vectors.toml`, produits par l'oracle Python indépendant
-//! (`testdata/air/gen.py`). Chaque trame est décodée, réencodée à l'identique, puis reconstruite
-//! avec les constructeurs de la crate.
+//! Vectors from `testdata/air/vectors.toml`, produced by the independent Python oracle
+//! (`testdata/air/gen.py`). Each packet is decoded, re-encoded identically, then rebuilt with the
+//! crate's builders.
 
 use mc_air::crypto::{self, ChannelSecret, LocalIdentity};
 use mc_air::payload::{self, Advert, GroupDataPlain, GroupTxtPlain, PathPlain, TxtPlain};
@@ -117,12 +117,12 @@ struct Reject {
 
 fn hx(s: &str) -> Vec<u8> {
     let mut out = vec![0u8; s.len() / 2];
-    let n = mc_core::hex::decode_into(s, &mut out).expect("hexadécimal valide");
+    let n = mc_core::hex::decode_into(s, &mut out).expect("valid hexadecimal");
     out.truncate(n);
     out
 }
 fn arr<const N: usize>(s: &str) -> [u8; N] {
-    hx(s).try_into().expect("longueur")
+    hx(s).try_into().expect("length")
 }
 
 fn load() -> Vectors {
@@ -130,7 +130,7 @@ fn load() -> Vectors {
         env!("CARGO_MANIFEST_DIR"),
         "/../../testdata/air/vectors.toml"
     );
-    toml::from_str(&std::fs::read_to_string(path).expect("vecteurs")).expect("TOML valide")
+    toml::from_str(&std::fs::read_to_string(path).expect("vectors")).expect("valid TOML")
 }
 
 fn ident(v: &Vectors, name: &str) -> LocalIdentity {
@@ -138,16 +138,16 @@ fn ident(v: &Vectors, name: &str) -> LocalIdentity {
         .identity
         .iter()
         .find(|i| i.name == name)
-        .expect("identité");
+        .expect("identity");
     LocalIdentity::from_private(&arr(&i.prv))
 }
 
 fn pkt<'v>(v: &'v Vectors, name: &str) -> &'v Pkt {
-    v.packet.iter().find(|p| p.name == name).expect("trame")
+    v.packet.iter().find(|p| p.name == name).expect("packet")
 }
 
-/// Remet route, chemin et codes de transport d'une trame de référence sur une trame construite,
-/// puis compare l'encodage complet.
+/// Copies the route, path and transport codes of a reference packet onto a built packet, then
+/// compares the complete encoding.
 fn assert_same_frame(mut built: PacketBuf, reference: &Pkt) {
     built.header.route = Route::from_bits(reference.route);
     built.transport = reference.transport;
@@ -203,7 +203,7 @@ fn seal_and_open() {
         let opened = crypto::open(&secret, &out[..n], &mut dec).unwrap();
         assert_eq!(&opened[..plain.len()], &plain[..]);
         assert!(opened[plain.len()..].iter().all(|&b| b == 0));
-        // Un bit changé dans le chiffré : MAC faux.
+        // One bit flipped in the ciphertext: wrong MAC.
         let mut bad = out;
         bad[n - 1] ^= 1;
         assert_eq!(
@@ -218,7 +218,7 @@ fn packets_roundtrip() {
     let v = load();
     for p in &v.packet {
         let raw = hx(&p.raw);
-        let d = Packet::decode(&raw).unwrap_or_else(|e| panic!("{} : {e:?}", p.name));
+        let d = Packet::decode(&raw).unwrap_or_else(|e| panic!("{}: {e:?}", p.name));
         assert_eq!(d.header.route as u8, p.route, "{}", p.name);
         assert_eq!(d.header.ptype.value(), p.ptype, "{}", p.name);
         assert_eq!(d.path_len.byte(), p.path_len, "{}", p.name);
@@ -230,7 +230,7 @@ fn packets_roundtrip() {
         let n = d.encode(&mut out).unwrap();
         assert_eq!(&out[..n], &raw[..], "{}", p.name);
         payload::Payload::parse(d.header.ptype, d.payload)
-            .unwrap_or_else(|e| panic!("{} : {e:?}", p.name));
+            .unwrap_or_else(|e| panic!("{}: {e:?}", p.name));
     }
 }
 
@@ -249,13 +249,13 @@ fn adverts() {
         assert_eq!(ad.kind, a.kind);
         assert_eq!(ad.location, a.lat.zip(a.lon));
         assert_eq!(hex(ad.name_str()), a.adv_name);
-        // Réencodage des données d'annonce, puis de l'annonce complète (Ed25519 déterministe).
+        // Re-encode the advert data, then the complete advert (deterministic Ed25519).
         let mut buf = [0u8; 32];
         let n = ad.encode(&mut buf).unwrap();
         assert_eq!(hex(&buf[..n]), a.app_data, "{}", a.packet);
         let id = ident(&v, &a.identity);
         assert_same_frame(payload::advert(&id, a.ts, &buf[..n]).unwrap(), reference);
-        // Une signature altérée est refusée.
+        // A tampered signature is rejected.
         let mut bad = raw.clone();
         bad[2 + reference.path.len() / 2 + 40] ^= 1;
         let d = Packet::decode(&bad).unwrap();
@@ -280,7 +280,7 @@ fn direct_messages() {
             sealed,
         } = payload::Payload::parse(d.header.ptype, d.payload).unwrap()
         else {
-            panic!("{} : pas un datagramme adressé", t.packet);
+            panic!("{}: not an addressed datagram", t.packet);
         };
         assert_eq!(ptype, PayloadType::TXT_MSG);
         assert_eq!((dest, src), (to.hash(), from.hash()));
@@ -295,7 +295,7 @@ fn direct_messages() {
             assert_eq!(tp.after_nul, t.attempt);
         }
         assert_eq!(tp.ack_crc(from.pub_key()), t.ack);
-        // Construction côté émetteur.
+        // Build on the sender side.
         let mut p = [0u8; 200];
         let (n, ack) =
             payload::txt_plain(t.ts, 0, t.attempt, &hx(&t.text), from.pub_key(), &mut p).unwrap();
@@ -329,7 +329,7 @@ fn channels() {
             sealed,
         } = payload::Payload::parse(d.header.ptype, d.payload).unwrap()
         else {
-            panic!("{} : pas un datagramme de canal", g.packet);
+            panic!("{}: not a channel datagram", g.packet);
         };
         assert_eq!(channel, g.channel_hash);
         let mut buf = [0u8; 200];
@@ -357,7 +357,7 @@ fn channels() {
         let built = payload::group_datagram(ptype, &secret, &want).unwrap();
         assert_same_frame(built, reference);
     }
-    // Le canal Public et le canal « #test » dérivé du nom.
+    // The Public channel and the "#test" channel derived from its name.
     assert_eq!(
         hex(&ChannelSecret::PUBLIC.0[..16]),
         "8b3387e9c5cdea6ac9e5edbaa115cd72"
@@ -452,6 +452,6 @@ fn transport_codes() {
 fn rejects() {
     let v = load();
     for r in &v.reject {
-        assert!(Packet::decode(&hx(&r.raw)).is_err(), "{} accepté", r.name);
+        assert!(Packet::decode(&hx(&r.raw)).is_err(), "{} accepted", r.name);
     }
 }

@@ -1,14 +1,14 @@
-oxymesh — firmware compatible avec MeshCore, écrit en Rust.
+oxymesh — MeshCore-compatible firmware, written in Rust.
 
-Ce projet réimplémente les protocoles de MeshCore (format des trames sur l'air et protocole
-compagnon) à partir de la lecture de ses sources. Aucun fichier de MeshCore n'est recopié.
+This project reimplements MeshCore's protocols (over-the-air packet format and companion
+protocol) from a reading of its sources. No MeshCore file is copied.
 
   MeshCore — https://github.com/meshcore-dev/MeshCore
   Copyright (c) 2025 Scott Powell / rippleradios.com
-  Licence MIT. Version de référence : companion-v1.18.0 (commit 81dbae5, 2026-10-15).
+  MIT License. Reference version: companion-v1.18.0 (commit 81dbae5, 2026-10-15).
 
-Les faits matériels sur le ThinkNode M5 (brochage, courbe de batterie) viennent aussi de la
-variante ELECROW-ThinkNode-M5 de Meshtastic (GPL-3.0, commit 9bcf0f7) ; aucun code n'en est repris.
-Le pilote de l'écran SSD1681 est écrit d'après la datasheet, sans reprendre GxEPD2 (GPL-3.0).
+Hardware facts about the ThinkNode M5 (pinout, battery curve) also come from Meshtastic's
+ELECROW-ThinkNode-M5 variant (GPL-3.0, commit 9bcf0f7); no code is taken from it.
+The SSD1681 display driver is written from the datasheet, without reusing GxEPD2 (GPL-3.0).
 
-« MeshCore » est le nom du projet d'origine ; ce dépôt n'en fait pas partie et n'est pas approuvé par lui.
+"MeshCore" is the name of the original project; this repository is not part of it and is not endorsed by it.

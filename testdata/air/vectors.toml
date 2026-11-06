@@ -1,5 +1,5 @@
-# Vecteurs MeshCore sur l'air, produits par testdata/air/gen.py (oracle indépendant).
-# Ne pas éditer à la main : relancer `python3 -I testdata/air/gen.py > testdata/air/vectors.toml`.
+# MeshCore over-the-air vectors, produced by testdata/air/gen.py (independent oracle).
+# Do not edit by hand: rerun `python3 -I testdata/air/gen.py > testdata/air/vectors.toml`.
 
 [[identity]]
 name = "alice"
@@ -263,7 +263,7 @@ plain = "e0bdec6a70617373776f7264"
 
 [[packet]]
 name = "trace_one_snr"
-note = "1 saut parcouru, SNR 10 dB"
+note = "1 hop travelled, SNR 10 dB"
 raw = "26012804030201d0c0b0a000112233"
 route = 2
 ptype = 9

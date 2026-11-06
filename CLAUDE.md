@@ -1,120 +1,120 @@
 # CLAUDE.md — oxymesh
 
-Firmware **compatible MeshCore** écrit en Rust. Première cible : l'Elecrow **ThinkNode M5** (ESP32-S3-WROOM-1-N4, SX1262, e-paper SSD1681 200×200, deux boutons, potentiomètre de luminosité, GPS, buzzer). Rôle : **compagnon** (Bluetooth et USB), comme `companion_radio_ble` de MeshCore.
+**MeshCore-compatible** firmware written in Rust. First target: the Elecrow **ThinkNode M5** (ESP32-S3-WROOM-1-N4, SX1262, SSD1681 200×200 e-paper, two buttons, brightness potentiometer, GPS, buzzer). Role: **companion** (Bluetooth and USB), like MeshCore's `companion_radio_ble`.
 
-Plan d'origine : `~/.claude/plans/check-meshcore-firmware-especially-sparkling-pelican.md` (2026-11-05). Les passages marqués **(ADR-xxxx)** renvoient à `docs/decisions/`.
+Original plan: `~/.claude/plans/check-meshcore-firmware-especially-sparkling-pelican.md` (2026-11-05). Passages marked **(ADR-xxxx)** refer to `docs/decisions/`.
 
 ---
 
-## 1. Contraintes non négociables
+## 1. Non-negotiable constraints
 
-- **Compatibilité stricte, octet pour octet, avec MeshCore v1.18** (ADR-0001) :
-  - sur l'air, avec les compagnons, relais et serveurs de salon d'origine ;
-  - avec le protocole compagnon (app officielle, meshcore.js, meshcore-cli, app-web de loranet).
-  - Seuls les **écarts volontaires** listés dans `docs/spec/companion.md` sont permis, et ils doivent être invisibles pour l'app.
-- **Référence** : MeshCore `companion-v1.18.0` (commit 81dbae5). Toute règle de comportement de la spec cite le fichier et la ligne d'origine. **En cas de doute, le code C++ fait foi, pas la doc de MeshCore.**
-- **Le SPIFFS d'origine n'est jamais écrit** (ADR-0006) : migration au premier démarrage et retour au firmware C++ sans perte.
-- **Licences** (ADR-0007) : MeshCore est sous MIT (attribution dans `NOTICE`). Meshtastic et GxEPD2 sont sous GPL : on n'en recopie **aucun code**, seulement des faits matériels.
-- **Réglementation UE** : valeurs dans `config/eu868.toml`, jamais en dur. Le duty cycle est borné par le firmware.
+- **Strict, byte-for-byte compatibility with MeshCore v1.18** (ADR-0001):
+  - over the air, with the original companions, repeaters and room servers;
+  - with the companion protocol (official app, meshcore.js, meshcore-cli, loranet's web app).
+  - Only the **deliberate deviations** listed in `docs/spec/companion.md` are allowed, and they must be invisible to the app.
+- **Reference**: MeshCore `companion-v1.18.0` (commit 81dbae5). Every behavioral rule in the spec cites the original file and line. **When in doubt, the C++ code is authoritative, not the MeshCore docs.**
+- **The original SPIFFS is never written** (ADR-0006): migration on first boot, and lossless return to the C++ firmware.
+- **Licenses** (ADR-0007): MeshCore is MIT (attribution in `NOTICE`). Meshtastic and GxEPD2 are GPL: we copy **no code** from them, only hardware facts.
+- **EU regulations**: values live in `config/eu868.toml`, never hard-coded. The duty cycle is enforced by the firmware.
 
 ## 2. Architecture
 
-### Cœur sans IO (ADR-0003)
+### IO-free core (ADR-0003)
 
-Tout le protocole est une **machine à états pure** : sans IO, sans horloge système, sans async, sans allocation, à capacités fixes (350 contacts, 40 canaux). L'aléa et l'heure sont injectés. Le firmware, le simulateur et l'appareil virtuel ne sont que des *runners* :
+The whole protocol is a **pure state machine**: no IO, no system clock, no async, no allocation, fixed capacities (350 contacts, 40 channels). Randomness and time are injected. The firmware, the simulator and the virtual device are just *runners*:
 
 ```rust
-// Esquisse — le contrat exact est dans mc-core
+// Sketch — the exact contract lives in mc-core
 fn handle(&mut self, input: Input<'_>, now: Instant, rng: &mut impl RngCore); // Rx | TxDone | CadDone | Timer | AppFrame | Button…
 fn poll_command(&mut self) -> Option<RadioCommand>;   // Listen | Transmit | Cad | Sleep
-fn poll_output(&mut self) -> Option<Output<'_>>;      // trame vers l'app | StoreOp | événement d'interface
+fn poll_output(&mut self) -> Option<Output<'_>>;      // frame to the app | StoreOp | UI event
 fn next_wakeup(&self) -> Option<Instant>;
 ```
 
-### Dépôt
+### Repository
 
 ```
 crates/
-  mc-core/    no_std  Reader/Writer, temps (ns entiers), temps d'antenne, DutyBudget, contrat de la machine
-  mc-air/     no_std  trames sur l'air (docs/spec/air.md) : codec, charges utiles, crypto, hashes, portée, annonces
-  mc-proto/   no_std  protocole compagnon (docs/spec/companion.md), dans les deux sens ; décodage Strict (app) et Device
-  mc-node/    no_std  la machine : dispatcher, mesh, chat, compagnon, réglages ; persistance en StoreOp
-  mc-spiffs/  no_std  lecteur SPIFFS en lecture seule et importeurs du firmware C++
-  mc-ui/      no_std  écrans 200×200 (docs/spec/ui.md) sur embedded-graphics, politique de rafraîchissement e-paper
-  mc-sim/     std     radio simulée simple pour relier plusieurs mc-node
-  mc-cli/     std     binaire `mc` : info, probe, sniff, inject, emu, conform, spiffs, ui
-firmware/esp32s3/     workspace SÉPARÉ (toolchain Xtensa `esp`) : cartes, pilotes, runner
-fuzz/                 cibles cargo-fuzz (workspace séparé, nightly)
-config/               régions (preset radio + portée) et réglementation (TOML, avec sources)
-docs/spec/            spécifications — source de vérité
-docs/decisions/       ADR courts (une décision = un fichier)
-testdata/             vecteurs de test (oracle Python indépendant, meshcore.js, captures de nos appareils)
+  mc-core/    no_std  Reader/Writer, time (integer ns), airtime, DutyBudget, state machine contract
+  mc-air/     no_std  over-the-air packets (docs/spec/air.md): codec, payloads, crypto, hashes, scope, adverts
+  mc-proto/   no_std  companion protocol (docs/spec/companion.md), both directions; Strict (app) and Device decoding
+  mc-node/    no_std  the state machine: dispatcher, mesh, chat, companion, settings; persistence as StoreOp
+  mc-spiffs/  no_std  read-only SPIFFS reader and importers for the C++ firmware
+  mc-ui/      no_std  200×200 screens (docs/spec/ui.md) on embedded-graphics, e-paper refresh policy
+  mc-sim/     std     simple simulated radio linking several mc-node instances
+  mc-cli/     std     `mc` binary: info, probe, sniff, inject, emu, conform, spiffs, ui
+firmware/esp32s3/     SEPARATE workspace (Xtensa `esp` toolchain): boards, drivers, runner
+fuzz/                 cargo-fuzz targets (separate workspace, nightly)
+config/               regions (radio preset + scope) and regulations (TOML, with sources)
+docs/spec/            specifications — source of truth
+docs/decisions/       short ADRs (one decision = one file)
+testdata/             test vectors (independent Python oracle, meshcore.js, captures from our own devices)
 ```
 
-Une partie du code vient de loranet (`~/Documents/Perso/Dev/loranet`, même auteur) : il est **recopié** puis adapté, avec l'origine dans le message de commit. Aucune dépendance entre les deux dépôts, et loranet n'est jamais modifié depuis ici.
+Part of the code comes from loranet (`~/Documents/Perso/Dev/loranet`, same author): it is **copied** then adapted, with its origin stated in the commit message. No dependency between the two repositories, and loranet is never modified from here.
 
-## 3. Règles de code
+## 3. Code rules
 
-- Crates du cœur : `#![no_std]`, `#![forbid(unsafe_code)]` (lints du workspace), **pas d'allocation, pas de flottants** (`clippy::float_arithmetic` refusé, `scripts/ci.sh` cherche `f32`/`f64`).
-- **Parseurs durcis** (ils lisent des octets venus d'inconnus sur l'air ou d'une app) :
-  - zéro-copie sur `&[u8]`, jamais de panic sur une entrée externe : clippy `deny(unwrap_used, expect_used, indexing_slicing, panic)` hors tests ;
-  - sur l'air : `decode → encode` redonne exactement les mêmes octets, sinon rejet ;
-  - commandes de l'app, côté appareil : on accepte **exactement** ce qu'accepte le C++ (champs finaux optionnels, octets en trop ignorés) (ADR-0002).
-- Formats écrits à la main, pas de serde sur l'air ni dans le protocole compagnon. Serde permis pour la config et les outils.
-- **Spec d'abord** : toute règle commence dans `docs/spec/`, puis vecteurs, puis code. Une ambiguïté → un ADR.
-- Docs, specs, ADR et commentaires en **français** ; identifiants en anglais ; **textes affichés à l'utilisateur (écran, CLI de l'appareil) en anglais**.
+- Core crates: `#![no_std]`, `#![forbid(unsafe_code)]` (workspace lints), **no allocation, no floats** (`clippy::float_arithmetic` denied, `scripts/ci.sh` searches for `f32`/`f64`).
+- **Hardened parsers** (they read bytes from strangers over the air or from an app):
+  - zero-copy on `&[u8]`, never panic on external input: clippy `deny(unwrap_used, expect_used, indexing_slicing, panic)` outside tests;
+  - over the air: `decode → encode` must give back exactly the same bytes, otherwise reject;
+  - app commands, device side: we accept **exactly** what the C++ accepts (optional trailing fields, extra bytes ignored) (ADR-0002).
+- Hand-written formats, no serde over the air or in the companion protocol. Serde is allowed for config and tools.
+- **Spec first**: every rule starts in `docs/spec/`, then vectors, then code. An ambiguity → an ADR.
+- Everything is in **English**: docs, specs, ADRs, comments, identifiers, commit messages and **text shown to the user (screen, device CLI)**.
 
 ## 4. Tests
 
-- Tests unitaires et `proptest` (aller-retour, canonicité).
-- Vecteurs dans `testdata/`, vérifiés par les tests :
-  - sur l'air : **oracle Python indépendant** (`testdata/air/gen.py`, Python pur sans dépendance : AES, X25519, Ed25519 RFC 8032) ;
-  - protocole compagnon : meshcore.js (`testdata/proto/gen.mjs`) ;
-  - captures de **nos propres appareils** seulement. Les captures du vrai réseau restent locales (`/local/`, ignoré par git).
-- Une cible `cargo-fuzz` par décodeur, créée **en même temps** que lui.
-- `mc conform` : comparaison différentielle des réponses du firmware C++ (Heltec V4, référence) et des nôtres.
-- Matériel : M5 = appareil sous test, Heltec V4 en MeshCore C++ v1.18 USB = référence (`LOG_RX_DATA` et `SEND_RAW_PACKET` en font un oracle sur l'air).
+- Unit tests and `proptest` (round trip, canonicity).
+- Vectors in `testdata/`, checked by the tests:
+  - over the air: **independent Python oracle** (`testdata/air/gen.py`, pure Python with no dependencies: AES, X25519, Ed25519 RFC 8032);
+  - companion protocol: meshcore.js (`testdata/proto/gen.mjs`);
+  - captures from **our own devices** only. Captures from the real network stay local (`/local/`, ignored by git).
+- One `cargo-fuzz` target per decoder, created **together with** it.
+- `mc conform`: differential comparison of the C++ firmware's responses (Heltec V4, reference) with ours.
+- Hardware: M5 = device under test, Heltec V4 running MeshCore C++ v1.18 USB = reference (`LOG_RX_DATA` and `SEND_RAW_PACKET` make it an over-the-air oracle).
 
-## 5. Feuille de route
+## 5. Roadmap
 
-Chaque étape est commitée localement quand elle est finie et testée. Rien n'est poussé sans l'accord de Tanguy.
+Each milestone is committed locally once finished and tested. Nothing is pushed without Tanguy's approval.
 
-0. **MC0** — dépôt, ADR 0001-0007, specs `air`, `companion`, `m5`, `ui`.
-1. **MC1** — `mc-core` + `mc-air` ; oracle Python ; `mc info|sniff|inject`.
-2. **MC2** — `mc-proto` complet (66 commandes, 29 réponses, 17 notifications), modes Strict et Device.
-3. **MC3** — `mc-node` + `mc-sim` ; `mc emu`, `mc conform`.
-4. **MC4** — le M5 en USB : radio (émission, CAD), stockage, carte, batterie, horloge, GPS, potentiomètre.
-5. **MC5** — Bluetooth (NUS, LESC, PIN, MTU), app officielle et app-web de loranet.
-6. **MC6** — migration depuis le SPIFFS du firmware C++.
-7. **MC7** — nouvelle interface e-paper.
-8. **MC8** — endurance 24 h sur le réseau et mesures (`docs/mesures.md`).
+0. **MC0** — repository, ADRs 0001-0007, `air`, `companion`, `m5`, `ui` specs.
+1. **MC1** — `mc-core` + `mc-air`; Python oracle; `mc info|sniff|inject`.
+2. **MC2** — complete `mc-proto` (66 commands, 29 responses, 17 notifications), Strict and Device modes.
+3. **MC3** — `mc-node` + `mc-sim`; `mc emu`, `mc conform`.
+4. **MC4** — the M5 over USB: radio (transmit, CAD), storage, board, battery, clock, GPS, potentiometer.
+5. **MC5** — Bluetooth (NUS, LESC, PIN, MTU), official app and loranet's web app.
+6. **MC6** — migration from the C++ firmware's SPIFFS.
+7. **MC7** — new e-paper interface.
+8. **MC8** — 24 h endurance run on the network, and measurements (`docs/measurements.md`).
 
-Plus tard : rôles relais et salon, Heltec V4, nRF52 (ThinkNode M1, T-Echo), sommeil léger.
+Later: repeater and room server roles, Heltec V4, nRF52 (ThinkNode M1, T-Echo), light sleep.
 
-## 6. À ne pas faire
+## 6. Do not
 
-- Pas de changement de format sur l'air ou du protocole compagnon : on est compatible ou on n'est rien.
-- Pas d'écriture dans le SPIFFS du firmware C++.
-- Pas de code recopié de Meshtastic ni de GxEPD2.
-- Pas de valeurs réglementaires en dur.
-- Pas de captures du vrai réseau (noms, messages d'autres gens) dans le dépôt.
-- Pas de sauvegarde de flash imposée avant un flash (Tanguy n'en veut pas).
-- Pas de PR publique (MeshCore, trouble-host…) sans l'accord de Tanguy.
+- No change to the over-the-air format or the companion protocol: we are compatible or we are nothing.
+- No writes to the C++ firmware's SPIFFS.
+- No code copied from Meshtastic or GxEPD2.
+- No hard-coded regulatory values.
+- No captures from the real network (names, other people's messages) in the repository.
+- No mandatory flash backup before flashing (Tanguy does not want one).
+- No public PR (MeshCore, trouble-host…) without Tanguy's approval.
 
-## 7. Commandes
+## 7. Commands
 
 ```sh
-scripts/ci.sh                         # tout ce que fait la CI (CI_SKIP_FUZZ=1, CI_SKIP_FIRMWARE=1 pour sauter)
+scripts/ci.sh                         # everything CI does (CI_SKIP_FUZZ=1, CI_SKIP_FIRMWARE=1 to skip)
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-scripts/fuzz.sh N [cible…]            # fuzz, N secondes par cible
-python3 -I testdata/air/gen.py > testdata/air/vectors.toml   # vecteurs sur l'air (oracle Python pur)
-(cd testdata/proto && npm ci && node gen.mjs vectors.toml)   # vecteurs compagnon, recoupés avec meshcore.js
-cargo run --release -p mc-cli -- info /dev/cu.wchusbserial120          # interroger un compagnon USB
-cargo run --release -p mc-cli -- sniff /dev/cu.usbmodem141101 --channel '#test'   # trames entendues, décodées
-cargo run --release -p mc-cli -- airtest --ref /dev/cu.usbmodem141101 --dut /dev/cu.wchusbserial120   # mc-air contre un C++, en zéro saut
+scripts/fuzz.sh N [target…]           # fuzz, N seconds per target
+python3 -I testdata/air/gen.py > testdata/air/vectors.toml   # over-the-air vectors (pure Python oracle)
+(cd testdata/proto && npm ci && node gen.mjs vectors.toml)   # companion vectors, cross-checked with meshcore.js
+cargo run --release -p mc-cli -- info /dev/cu.wchusbserial120          # query a USB companion
+cargo run --release -p mc-cli -- sniff /dev/cu.usbmodem141101 --channel '#test'   # packets heard, decoded
+cargo run --release -p mc-cli -- airtest --ref /dev/cu.usbmodem141101 --dut /dev/cu.wchusbserial120   # mc-air against a C++ node, zero-hop
 ```
 
-Le Heltec sert aussi au bot d'écho de loranet (`ln mc bot`, lancé depuis `../loranet`) : demander à Tanguy avant de l'arrêter, et le relancer ensuite avec la même commande et le même `--state`.
+The Heltec also runs loranet's echo bot (`ln mc bot`, started from `../loranet`): ask Tanguy before stopping it, then restart it afterwards with the same command and the same `--state`.
 
-Appareils sur le Mac de Tanguy : Heltec V4 (référence C++) sur `/dev/cu.usbmodem141101`, ThinkNode M5 sur `/dev/cu.wchusbserial120` (pont CH340, pilote WCH installé).
+Devices on Tanguy's Mac: Heltec V4 (C++ reference) on `/dev/cu.usbmodem141101`, ThinkNode M5 on `/dev/cu.wchusbserial120` (CH340 bridge, WCH driver installed).

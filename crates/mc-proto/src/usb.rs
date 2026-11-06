@@ -1,17 +1,18 @@
-//! Tramage du compagnon sur USB série (`docs/spec/companion.md` §1.2) : `'<'` ou `'>'`, longueur
-//! `u16` petit-boutiste, trame. En Bluetooth, chaque écriture ou notification est déjà une trame.
+//! Companion framing over USB serial (`docs/spec/companion.md` §1.2): `'<'` or `'>'`,
+//! little-endian `u16` length, frame. Over Bluetooth, each write or notification is already a
+//! frame.
 
 use crate::codec::FRAME_MAX;
 use mc_core::{Overflow, Writer};
 
-/// Début d'une trame de l'app vers l'appareil.
+/// Start of a frame from the app to the device.
 pub const TO_DEVICE: u8 = b'<';
-/// Début d'une trame de l'appareil vers l'app.
+/// Start of a frame from the device to the app.
 pub const FROM_DEVICE: u8 = b'>';
-/// Taille maximale d'une trame tramée.
+/// Maximum size of a framed frame.
 pub const USB_MAX: usize = FRAME_MAX + 3;
 
-/// Écrit `start ‖ len ‖ frame` dans `out`. Renvoie la longueur écrite.
+/// Writes `start ‖ len ‖ frame` into `out`. Returns the length written.
 pub fn usb_frame(start: u8, frame: &[u8], out: &mut [u8]) -> Result<usize, Overflow> {
     if frame.is_empty() || frame.len() > FRAME_MAX {
         return Err(Overflow);
@@ -31,10 +32,9 @@ enum State {
     Body,
 }
 
-/// Retrouve les trames dans un flux d'octets, comme `ArduinoSerialInterface::checkRecvFrame`
-/// (ASI:38-73) : tout ce qui précède l'octet de début est ignoré (journal de démarrage, bruit),
-/// comme une longueur nulle ; une trame annoncée plus longue que 176 octets est lue en entier et
-/// tronquée à 176.
+/// Recovers frames from a byte stream, like `ArduinoSerialInterface::checkRecvFrame`
+/// (ASI:38-73): anything before the start byte is ignored (boot log, noise), as is a zero length;
+/// a frame announced as longer than 176 bytes is read in full and truncated to 176.
 #[derive(Debug, Clone)]
 pub struct UsbDeframer {
     start: u8,
@@ -45,7 +45,7 @@ pub struct UsbDeframer {
 }
 
 impl UsbDeframer {
-    /// `start` : [`FROM_DEVICE`] côté app, [`TO_DEVICE`] côté appareil.
+    /// `start`: [`FROM_DEVICE`] on the app side, [`TO_DEVICE`] on the device side.
     pub const fn new(start: u8) -> Self {
         Self {
             start,
@@ -56,7 +56,7 @@ impl UsbDeframer {
         }
     }
 
-    /// Ajoute un octet. Renvoie une trame quand elle est complète.
+    /// Feeds one byte. Returns a frame once it is complete.
     pub fn push(&mut self, b: u8) -> Option<&[u8]> {
         match self.state {
             State::Idle => {

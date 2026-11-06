@@ -1,11 +1,11 @@
-//! Batterie du M5 (`docs/spec/m5.md` §3) : tension et pourcentage par la courbe Li-ion mesurée.
+//! M5 battery (`docs/spec/m5.md` §3): voltage and percentage from the measured Li-ion curve.
 
-/// Tension à vide de 100 % à 0 % par pas de 10 % (faits matériels repris de Meshtastic).
+/// Open-circuit voltage from 100 % to 0 % in 10 % steps (hardware facts taken from Meshtastic).
 const OCV_MV: [u16; 11] = [
     4100, 4050, 3990, 3890, 3800, 3720, 3630, 3530, 3420, 3300, 3100,
 ];
 
-/// Pourcentage (0 à 100) par interpolation linéaire entre deux points de la courbe.
+/// Percentage (0 to 100) by linear interpolation between two points of the curve.
 pub fn percent(mv: u16) -> u8 {
     if mv >= OCV_MV[0] {
         return 100;
@@ -21,7 +21,7 @@ pub fn percent(mv: u16) -> u8 {
     0
 }
 
-/// Moyenne glissante sur 8 mesures, pour éviter les sauts à l'écran.
+/// Moving average over 8 samples, to avoid jumps on screen.
 pub struct Smoother {
     samples: [u16; 8],
     n: usize,

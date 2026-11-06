@@ -1,13 +1,13 @@
-//! Commandes de l'app (`docs/spec/companion.md` §2), dans les deux modes de décodage :
+//! App commands (`docs/spec/companion.md` §2), in both decoding modes:
 //!
-//! - [`Command::decode`] : **strict** (app, outils, tests), canonique ;
-//! - [`Command::decode_device`] : ce qu'accepte `MyMesh::handleCmdFrame` au stade de l'analyse
-//!   (§10, ADR-0002) : champs finaux optionnels, octets en trop ignorés, préconditions de
-//!   longueur exactes du C++, octets lus au-delà de la trame valant 0.
+//! - [`Command::decode`]: **strict** (app, tools, tests), canonical;
+//! - [`Command::decode_device`]: what `MyMesh::handleCmdFrame` accepts at the parsing stage
+//!   (§10, ADR-0002): optional trailing fields, extra bytes ignored, the C++'s exact length
+//!   preconditions, bytes read past the end of the frame reading as 0.
 //!
-//! Toute commande acceptée par `decode_device` s'écrit avec [`Command::encode`] en une trame que
-//! `decode` relit à l'identique. Les contrôles que le C++ fait après l'analyse (bornes → ERR 6,
-//! contact ou canal inconnu → ERR 2…) appartiennent à la machine d'état, pas au codec.
+//! Every command accepted by `decode_device` is written by [`Command::encode`] as a frame that
+//! `decode` reads back identically. The checks the C++ makes after parsing (bounds → ERR 6,
+//! unknown contact or channel → ERR 2…) belong to the state machine, not to the codec.
 
 use core::fmt;
 use mc_core::{Hex, Overflow, Reader, Writer};
@@ -17,26 +17,26 @@ use crate::codec::{
     path_bytes, read_path,
 };
 
-/// Portée d'inondation temporaire, en RAM (commande 54, M:1978-1988).
+/// Temporary flood scope, in RAM (command 54, M:1978-1988).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FloodScopeKey {
-    /// `[1]` = 0 sans clé : efface la portée temporaire.
+    /// `[1]` = 0 without a key: clears the temporary scope.
     Clear,
-    /// `[1]` = 0 suivi de la clé de région (16 octets).
+    /// `[1]` = 0 followed by the region key (16 bytes).
     Key([u8; 16]),
-    /// `[1]` = 1 (v12+) : inondations sans portée.
+    /// `[1]` = 1 (v12+): unscoped floods.
     Unscoped,
 }
 
-/// Une commande de l'app. Les positions `[i]` comptent le code en `[0]`.
+/// An app command. Positions `[i]` count the code as `[0]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command<'a> {
-    /// Commande 1 : `[1..7]` réservés, `[8..]` nom de l'app (peut être vide).
+    /// Command 1: `[1..7]` reserved, `[8..]` app name (may be empty).
     AppStart {
         reserved: [u8; 7],
         app_name: &'a [u8],
     },
-    /// Commande 2 : texte non vide.
+    /// Command 2: non-empty text.
     SendTxtMsg {
         txt_type: u8,
         attempt: u8,
@@ -44,25 +44,25 @@ pub enum Command<'a> {
         prefix: [u8; 6],
         text: &'a [u8],
     },
-    /// Commande 3 : texte éventuellement vide.
+    /// Command 3: text, possibly empty.
     SendChannelTxtMsg {
         txt_type: u8,
         idx: u8,
         timestamp: u32,
         text: &'a [u8],
     },
-    /// Commande 4. Sans `since`, tous les contacts.
+    /// Command 4. Without `since`, all contacts.
     GetContacts { since: Option<u32> },
-    /// Commande 5.
+    /// Command 5.
     GetDeviceTime,
-    /// Commande 6.
+    /// Command 6.
     SetDeviceTime { unix_s: u32 },
-    /// Commande 7. `Some(true)` : inondation dans la portée par défaut ; `Some(false)` ou `None`
-    /// (octet absent) : zéro saut.
+    /// Command 7. `Some(true)`: flood within the default scope; `Some(false)` or `None`
+    /// (byte absent): zero hop.
     SendSelfAdvert { flood: Option<bool> },
-    /// Commande 8 : nom non vide (l'appareil le tronque à 31 octets).
+    /// Command 8: non-empty name (the device truncates it to 31 bytes).
     SetAdvertName { name: &'a [u8] },
-    /// Commande 9 : contact (§3.2) ; `lat_lon` puis `lastmod` optionnels (`lastmod` exige
+    /// Command 9: contact (§3.2); `lat_lon` then `lastmod` optional (`lastmod` requires
     /// `lat_lon`).
     AddUpdateContact {
         key: [u8; 32],
@@ -75,9 +75,9 @@ pub enum Command<'a> {
         lat_lon: Option<(i32, i32)>,
         lastmod: Option<u32>,
     },
-    /// Commande 10.
+    /// Command 10.
     SyncNextMessage,
-    /// Commande 11. Sans `repeat`, la répétition est désactivée.
+    /// Command 11. Without `repeat`, repeating is disabled.
     SetRadioParams {
         freq_khz: u32,
         bw_hz: u32,
@@ -85,148 +85,148 @@ pub enum Command<'a> {
         cr: u8,
         repeat: Option<u8>,
     },
-    /// Commande 12.
+    /// Command 12.
     SetRadioTxPower { dbm: i8 },
-    /// Commande 13.
+    /// Command 13.
     ResetPath { key: [u8; 32] },
-    /// Commande 14 : degrés × 10⁶ ; `alt` est lue mais ignorée par le C++.
+    /// Command 14: degrees × 10⁶; `alt` is read but ignored by the C++.
     SetAdvertLatLon {
         lat: i32,
         lon: i32,
         alt: Option<i32>,
     },
-    /// Commande 15.
+    /// Command 15.
     RemoveContact { key: [u8; 32] },
-    /// Commande 16.
+    /// Command 16.
     ShareContact { key: [u8; 32] },
-    /// Commande 17. `None` : exporte l'appareil lui-même.
+    /// Command 17. `None`: exports the device itself.
     ExportContact { key: Option<[u8; 32]> },
-    /// Commande 18 : trame d'annonce brute, au moins 98 octets.
+    /// Command 18: raw advert packet, at least 98 bytes.
     ImportContact { raw: &'a [u8] },
-    /// Commande 19 : `[1..6]` = `"reboot"`.
+    /// Command 19: `[1..6]` = `"reboot"`.
     Reboot,
-    /// Commande 20.
+    /// Command 20.
     GetBattAndStorage,
-    /// Commande 21 : valeurs × 1000.
+    /// Command 21: values × 1000.
     SetTuningParams { rx_delay: u32, airtime_factor: u32 },
-    /// Commande 22.
+    /// Command 22.
     DeviceQuery { app_ver: u8 },
-    /// Commande 23.
+    /// Command 23.
     ExportPrivateKey,
-    /// Commande 24.
+    /// Command 24.
     ImportPrivateKey { key: [u8; 64] },
-    /// Commande 25 : chemin valide (taille de hash 1 à 3, 64 octets au plus), charge d'au moins
-    /// 4 octets.
+    /// Command 25: valid path (hash size 1 to 3, at most 64 bytes), payload of at least
+    /// 4 bytes.
     SendRawData {
         path_len: u8,
         path: &'a [u8],
         payload: &'a [u8],
     },
-    /// Commande 26 : mot de passe éventuellement vide (15 caractères utiles).
+    /// Command 26: password, possibly empty (15 usable characters).
     SendLogin { key: [u8; 32], password: &'a [u8] },
-    /// Commande 27.
+    /// Command 27.
     SendStatusReq { key: [u8; 32] },
-    /// Commande 28.
+    /// Command 28.
     HasConnection { key: [u8; 32] },
-    /// Commande 29.
+    /// Command 29.
     Logout { key: [u8; 32] },
-    /// Commande 30.
+    /// Command 30.
     GetContactByKey { key: [u8; 32] },
-    /// Commande 31.
+    /// Command 31.
     GetChannel { idx: u8 },
-    /// Commande 32 : secret de 16 octets seulement (une clé de 32 octets reçoit ERR 1).
+    /// Command 32: 16-byte secret only (a 32-byte key gets ERR 1).
     SetChannel {
         idx: u8,
         name: [u8; 32],
         secret: [u8; 16],
     },
-    /// Commande 33.
+    /// Command 33.
     SignStart,
-    /// Commande 34 : morceau non vide.
+    /// Command 34: non-empty chunk.
     SignData { data: &'a [u8] },
-    /// Commande 35.
+    /// Command 35.
     SignFinish,
-    /// Commande 36 : hashes non vides, de 2^(`flags & 3`) octets chacun, 64 au plus.
+    /// Command 36: non-empty hashes, 2^(`flags & 3`) bytes each, at most 64.
     SendTracePath {
         tag: u32,
         auth: u32,
         flags: u8,
         path: &'a [u8],
     },
-    /// Commande 37.
+    /// Command 37.
     SetDevicePin { pin: u32 },
-    /// Commande 38. Champs optionnels dans l'ordre, chacun exige le précédent.
+    /// Command 38. Optional fields in order, each requires the previous one.
     SetOtherParams {
         manual_add: u8,
         telemetry: Option<u8>,
         advert_loc_policy: Option<u8>,
         multi_acks: Option<u8>,
     },
-    /// Commande 39. `None` : télémétrie de l'appareil lui-même (trame de 4 octets).
+    /// Command 39. `None`: telemetry of the device itself (4-byte frame).
     SendTelemetryReq {
         reserved: [u8; 3],
         key: Option<[u8; 32]>,
     },
-    /// Commande 40.
+    /// Command 40.
     GetCustomVars,
-    /// Commande 41 : `"nom:valeur"`, au moins 3 octets.
+    /// Command 41: `"name:value"`, at least 3 bytes.
     SetCustomVar { var: &'a [u8] },
-    /// Commande 42 : clé comparée sur ses 7 premiers octets.
+    /// Command 42: key compared on its first 7 bytes.
     GetAdvertPath { reserved: u8, key: [u8; 32] },
-    /// Commande 43.
+    /// Command 43.
     GetTuningParams,
-    /// Commande 50 : données non vides.
+    /// Command 50: non-empty data.
     SendBinaryReq { key: [u8; 32], data: &'a [u8] },
-    /// Commande 51 : `[1..5]` = `"reset"`.
+    /// Command 51: `[1..5]` = `"reset"`.
     FactoryReset,
-    /// Commande 52 : `[1]` = 0, puis la clé.
+    /// Command 52: `[1]` = 0, then the key.
     SendPathDiscoveryReq { key: [u8; 32] },
-    /// Commande 54.
+    /// Command 54.
     SetFloodScopeKey { scope: FloodScopeKey },
-    /// Commande 55 : charge non vide dont le premier octet a le bit 0x80.
+    /// Command 55: non-empty payload whose first byte has bit 0x80 set.
     SendControlData { data: &'a [u8] },
-    /// Commande 56. 0 = cœur, 1 = radio, 2 = paquets.
+    /// Command 56. 0 = core, 1 = radio, 2 = packets.
     GetStats { kind: u8 },
-    /// Commande 57 : données non vides.
+    /// Command 57: non-empty data.
     SendAnonReq { key: [u8; 32], data: &'a [u8] },
-    /// Commande 58.
+    /// Command 58.
     SetAutoaddConfig { config: u8, max_hops: Option<u8> },
-    /// Commande 59.
+    /// Command 59.
     GetAutoaddConfig,
-    /// Commande 60.
+    /// Command 60.
     GetAllowedRepeatFreq,
-    /// Commande 61 : `[1]` = 0, puis le mode.
+    /// Command 61: `[1]` = 0, then the mode.
     SetPathHashMode { mode: u8 },
-    /// Commande 62.
+    /// Command 62.
     SendChannelData {
         idx: u8,
-        /// `None` : inondation (`path_len` 0xFF) ; sinon `(path_len, chemin)`, 0 = zéro saut.
+        /// `None`: flood (`path_len` 0xFF); otherwise `(path_len, path)`, 0 = zero hop.
         path: Option<(u8, &'a [u8])>,
         data_type: u16,
         data: &'a [u8],
     },
-    /// Commande 63. `None` efface la portée par défaut.
+    /// Command 63. `None` clears the default scope.
     SetDefaultFloodScope { scope: Option<([u8; 31], [u8; 16])> },
-    /// Commande 64.
+    /// Command 64.
     GetDefaultFloodScope,
-    /// Commande 65 : trame brute émise telle quelle, au moins 2 octets.
+    /// Command 65: raw packet transmitted as is, at least 2 bytes.
     SendRawPacket { priority: u8, raw: &'a [u8] },
-    /// Commande 66 : commande texte, au moins 2 octets.
+    /// Command 66: text command, at least 2 bytes.
     RunCliCommand { cmd: &'a [u8] },
 }
 
-// ------------------------------------------------------------------- lecture côté appareil
+// ------------------------------------------------------------------------ device-side reading
 
-/// Zéros prêtés quand un chemin déborde de la trame (voir [`device_channel_data`]).
+/// Zeros lent when a path runs past the end of the frame (see [`device_channel_data`]).
 static ZEROS: [u8; MAX_PATH] = [0; MAX_PATH];
 
-/// Octet `i`, ou 0 au-delà de la trame. Le C++ lit alors la suite de `cmd_frame` (M.h:267),
-/// tampon qui garde les octets de la trame précédente ; nous lisons des zéros (§10).
+/// Byte `i`, or 0 past the end of the frame. The C++ then reads the rest of `cmd_frame`
+/// (M.h:267), a buffer that keeps the bytes of the previous frame; we read zeros (§10).
 fn byte(f: &[u8], i: usize) -> u8 {
     f.get(i).copied().unwrap_or(0)
 }
 
-/// `N` octets à partir de `at`, complétés de zéros au-delà de la trame.
+/// `N` bytes starting at `at`, zero-padded past the end of the frame.
 fn pad<const N: usize>(f: &[u8], at: usize) -> [u8; N] {
     let mut out = [0u8; N];
     for (o, b) in out.iter_mut().zip(f.iter().skip(at)) {
@@ -243,20 +243,20 @@ fn i32_at(f: &[u8], at: usize) -> i32 {
     i32::from_le_bytes(pad(f, at))
 }
 
-/// La fin de la trame à partir de `at` (vide au-delà).
+/// The tail of the frame from `at` (empty past the end).
 fn tail(f: &[u8], at: usize) -> &[u8] {
     f.get(at..).unwrap_or(&[])
 }
 
-/// Hashes d'un TRACE cohérents avec `flags` (M:1813-1818) : `n` multiple de 2^(flags & 3) et
-/// au plus 64 hashes.
+/// TRACE hashes consistent with `flags` (M:1813-1818): `n` a multiple of 2^(flags & 3) and at
+/// most 64 hashes.
 fn trace_path_ok(flags: u8, n: usize) -> bool {
     let sz = flags & 3;
     (n >> sz) <= MAX_PATH && n.is_multiple_of(1usize << sz)
 }
 
-/// SEND_CHANNEL_DATA (M:1198-1237). `len < 4` et `path_len` invalide (hors 0xFF) → ERR 6. Le
-/// chemin et `data_type` sont lus sans contrôle de longueur ; la charge est ce qui reste après.
+/// SEND_CHANNEL_DATA (M:1198-1237). `len < 4` and invalid `path_len` (other than 0xFF) → ERR 6.
+/// The path and `data_type` are read without a length check; the payload is whatever is left.
 fn device_channel_data(f: &[u8]) -> Result<Command<'_>, DeviceReject> {
     if f.len() < 4 {
         return Err(DeviceReject::ILLEGAL_ARG);
@@ -267,9 +267,9 @@ fn device_channel_data(f: &[u8]) -> Result<Command<'_>, DeviceReject> {
         (None, 3)
     } else {
         let n = path_bytes(path_len).ok_or(DeviceReject::ILLEGAL_ARG)?;
-        // Un chemin qui déborde de la trame entraîne data_type lu hors de la trame, donc 0 : la
-        // commande échoue toujours (ERR 2 ou ERR 6), quels que soient les octets du chemin. On
-        // prête des zéros pour garder une valeur zéro-copie.
+        // A path running past the end of the frame makes data_type read outside the frame,
+        // hence 0: the command always fails (ERR 2 or ERR 6), whatever the path bytes. We lend
+        // zeros to keep a zero-copy value.
         let bytes = match f.get(3..3 + n) {
             Some(b) => b,
             None => ZEROS.get(..n).unwrap_or(&[]),
@@ -284,8 +284,8 @@ fn device_channel_data(f: &[u8]) -> Result<Command<'_>, DeviceReject> {
     })
 }
 
-/// SEND_RAW_DATA (M:1557-1576), trame d'au moins 6 octets : `path_len` invalide (0xFF compris)
-/// → ERR 1 ; moins de 4 octets de charge après le chemin → ERR 6.
+/// SEND_RAW_DATA (M:1557-1576), frame of at least 6 bytes: invalid `path_len` (0xFF included)
+/// → ERR 1; fewer than 4 payload bytes after the path → ERR 6.
 fn device_raw_data(f: &[u8]) -> Result<Command<'_>, DeviceReject> {
     let path_len = byte(f, 1);
     let n = path_bytes(path_len).ok_or(DeviceReject::UNSUPPORTED)?;
@@ -299,7 +299,7 @@ fn device_raw_data(f: &[u8]) -> Result<Command<'_>, DeviceReject> {
     }
 }
 
-/// SEND_TRACE_PATH (M:1813-1838), trame de plus de 10 octets : hashes incohérents avec
+/// SEND_TRACE_PATH (M:1813-1838), frame longer than 10 bytes: hashes inconsistent with
 /// `flags` → ERR 6.
 fn device_trace(f: &[u8]) -> Result<Command<'_>, DeviceReject> {
     let flags = byte(f, 9);
@@ -347,7 +347,7 @@ fn opt_key(r: &mut Reader<'_>) -> Result<Option<[u8; 32]>, DecodeError> {
     }
 }
 
-/// Le reste, non vide.
+/// The remainder, non-empty (at least `min` bytes).
 fn rest_min<'a>(r: &mut Reader<'a>, min: usize) -> Result<&'a [u8], DecodeError> {
     let b = r.rest();
     if b.len() < min {
@@ -358,11 +358,11 @@ fn rest_min<'a>(r: &mut Reader<'a>, min: usize) -> Result<&'a [u8], DecodeError>
 }
 
 impl<'a> Command<'a> {
-    /// Écrit la trame dans `out`. Renvoie sa longueur.
+    /// Writes the frame into `out`. Returns its length.
     ///
-    /// Échoue si `out` est trop petit, ou si la valeur n'a pas de forme canonique (le décodage
-    /// strict de la trame écrite la refuserait ou lirait autre chose : `lastmod` sans position,
-    /// chemin de longueur fausse, trame de plus de 176 octets…).
+    /// Fails if `out` is too small, or if the value has no canonical form (strict decoding of
+    /// the written frame would reject it or read something else: `lastmod` without a position,
+    /// path of the wrong length, frame longer than 176 bytes…).
     pub fn encode(&self, out: &mut [u8]) -> Result<usize, Overflow> {
         let n = self.write(out)?;
         match out.get(..n).map(Command::decode) {
@@ -615,7 +615,7 @@ impl<'a> Command<'a> {
         Ok(w.position())
     }
 
-    /// Code de la commande.
+    /// Command code.
     pub const fn code(&self) -> u8 {
         match self {
             Command::AppStart { .. } => cmd::APP_START,
@@ -680,7 +680,7 @@ impl<'a> Command<'a> {
         }
     }
 
-    /// Décodage **strict** (app, outils, tests) : canonique, octets en trop refusés.
+    /// **Strict** decoding (app, tools, tests): canonical, extra bytes rejected.
     pub fn decode(frame: &'a [u8]) -> Result<Self, DecodeError> {
         if frame.len() > FRAME_MAX {
             return Err(DecodeError::Length);
@@ -939,7 +939,7 @@ impl<'a> Command<'a> {
             cmd::GET_DEFAULT_FLOOD_SCOPE => Command::GetDefaultFloodScope,
             cmd::SEND_RAW_PACKET => Command::SendRawPacket {
                 priority: r.u8()?,
-                // Au moins un en-tête et un path_len (le C++ exige len ≥ 4, M:2045).
+                // At least a header and a path_len (the C++ requires len ≥ 4, M:2045).
                 raw: rest_min(&mut r, 2)?,
             },
             cmd::RUN_CLI_COMMAND => Command::RunCliCommand {
@@ -951,12 +951,12 @@ impl<'a> Command<'a> {
         Ok(c)
     }
 
-    /// Décodage **côté appareil** : accepte exactement ce qu'accepte `MyMesh::handleCmdFrame`
-    /// (M:1055-2062) au stade de l'analyse, et refuse avec l'erreur qu'il répondrait.
+    /// **Device-side** decoding: accepts exactly what `MyMesh::handleCmdFrame` (M:1055-2062)
+    /// accepts at the parsing stage, and rejects with the error it would reply.
     ///
-    /// Octets en trop ignorés là où le C++ les ignore ; champs finaux optionnels selon la
-    /// longueur ; octets lus au-delà de la trame (le C++ ne vérifie pas toujours la longueur)
-    /// valant 0. Le détail, branche par branche, est dans `docs/spec/companion.md` §10.
+    /// Extra bytes ignored where the C++ ignores them; optional trailing fields depending on the
+    /// length; bytes read past the end of the frame (the C++ does not always check the length)
+    /// read as 0. The details, branch by branch, are in `docs/spec/companion.md` §10.
     pub fn decode_device(frame: &'a [u8]) -> Result<Self, DeviceReject> {
         let f = frame;
         let len = f.len();
@@ -986,8 +986,8 @@ impl<'a> Command<'a> {
                 prefix: pad(f, 7),
                 text: tail(f, 13),
             },
-            // M:1178, sans contrôle de longueur. En dessous de 7 octets, le C++ passe une longueur
-            // de texte négative à memcpy (BCM:528) : comportement indéfini, refusé ici (§10).
+            // M:1178, no length check. Below 7 bytes, the C++ passes a negative text length to
+            // memcpy (BCM:528): undefined behaviour, rejected here (§10).
             cmd::SEND_CHANNEL_TXT_MSG if len >= 7 => Command::SendChannelTxtMsg {
                 txt_type: byte(f, 1),
                 idx: byte(f, 2),
@@ -996,13 +996,13 @@ impl<'a> Command<'a> {
             },
             // M:1198
             cmd::SEND_CHANNEL_DATA => return device_channel_data(f),
-            // M:1238 : since seulement si len ≥ 5, sinon 0.
+            // M:1238: since only if len ≥ 5, otherwise 0.
             cmd::GET_CONTACTS => Command::GetContacts {
                 since: (len >= 5).then(|| u32_at(f, 1)),
             },
             // M:1259
             cmd::SET_ADVERT_NAME if len >= 2 => Command::SetAdvertName { name: tail(f, 1) },
-            // M:1266 : alt si len ≥ 13.
+            // M:1266: alt if len ≥ 13.
             cmd::SET_ADVERT_LATLON if len >= 9 => Command::SetAdvertLatLon {
                 lat: i32_at(f, 1),
                 lon: i32_at(f, 5),
@@ -1014,13 +1014,13 @@ impl<'a> Command<'a> {
             cmd::SET_DEVICE_TIME if len >= 5 => Command::SetDeviceTime {
                 unix_s: u32_at(f, 1),
             },
-            // M:1297 : inondation seulement si [1] == 1.
+            // M:1297: flood only if [1] == 1.
             cmd::SEND_SELF_ADVERT => Command::SendSelfAdvert {
                 flood: (len >= 2).then(|| byte(f, 1) == 1),
             },
             // M:1317
             cmd::RESET_PATH if len >= 33 => Command::ResetPath { key: pad(f, 1) },
-            // M:1328, champs lus jusqu'à [135] (M:194-217), lat/lon si len ≥ 144, lastmod si
+            // M:1328, fields read up to [135] (M:194-217), lat/lon if len ≥ 144, lastmod if
             // len ≥ 148.
             cmd::ADD_UPDATE_CONTACT if len >= 36 => Command::AddUpdateContact {
                 key: pad(f, 1),
@@ -1033,11 +1033,11 @@ impl<'a> Command<'a> {
                 lat_lon: (len >= 144).then(|| (i32_at(f, 136), i32_at(f, 140))),
                 lastmod: (len >= 148).then(|| u32_at(f, 144)),
             },
-            // M:1349, M:1359, M:1371 : clé lue sans contrôle de longueur.
+            // M:1349, M:1359, M:1371: key read without a length check.
             cmd::REMOVE_CONTACT => Command::RemoveContact { key: pad(f, 1) },
             cmd::SHARE_CONTACT => Command::ShareContact { key: pad(f, 1) },
             cmd::GET_CONTACT_BY_KEY => Command::GetContactByKey { key: pad(f, 1) },
-            // M:1379 : len < 33 → soi-même.
+            // M:1379: len < 33 → self.
             cmd::EXPORT_CONTACT => Command::ExportContact {
                 key: (len >= 33).then(|| pad(f, 1)),
             },
@@ -1045,7 +1045,7 @@ impl<'a> Command<'a> {
             cmd::IMPORT_CONTACT if len > 98 => Command::ImportContact { raw: tail(f, 1) },
             // M:1415
             cmd::SYNC_NEXT_MESSAGE => Command::SyncNextMessage,
-            // M:1424, sans contrôle de longueur ; repeat si len > 11.
+            // M:1424, no length check; repeat if len > 11.
             cmd::SET_RADIO_PARAMS => Command::SetRadioParams {
                 freq_khz: u32_at(f, 1),
                 bw_hz: u32_at(f, 5),
@@ -1064,7 +1064,7 @@ impl<'a> Command<'a> {
             },
             // M:1481
             cmd::GET_TUNING_PARAMS => Command::GetTuningParams,
-            // M:1488 : [1] toujours lu ; [2], [3], [4] si len ≥ 3, 4, 5.
+            // M:1488: [1] always read; [2], [3], [4] if len ≥ 3, 4, 5.
             cmd::SET_OTHER_PARAMS => Command::SetOtherParams {
                 manual_add: byte(f, 1),
                 telemetry: (len >= 3).then(|| byte(f, 2)),
@@ -1075,7 +1075,7 @@ impl<'a> Command<'a> {
             cmd::SET_PATH_HASH_MODE if byte(f, 1) == 0 && len >= 3 => {
                 Command::SetPathHashMode { mode: byte(f, 2) }
             }
-            // M:1512 : memcmp sur 6 octets, quelle que soit la longueur.
+            // M:1512: memcmp over 6 bytes, whatever the length.
             cmd::REBOOT if pad::<6>(f, 1) == *b"reboot" => Command::Reboot,
             // M:1517, M:1528
             cmd::GET_BATT_AND_STORAGE => Command::GetBattAndStorage,
@@ -1100,7 +1100,7 @@ impl<'a> Command<'a> {
             cmd::SEND_PATH_DISCOVERY_REQ if byte(f, 1) == 0 && len >= 34 => {
                 Command::SendPathDiscoveryReq { key: pad(f, 2) }
             }
-            // M:1680 puis M:1700.
+            // M:1680 then M:1700.
             cmd::SEND_TELEMETRY_REQ if len >= 36 => Command::SendTelemetryReq {
                 reserved: pad(f, 1),
                 key: Some(pad(f, 4)),
@@ -1119,7 +1119,7 @@ impl<'a> Command<'a> {
             cmd::LOGOUT if len >= 33 => Command::Logout { key: pad(f, 1) },
             // M:1752
             cmd::GET_CHANNEL if len >= 2 => Command::GetChannel { idx: byte(f, 1) },
-            // M:1767 : une clé de 32 octets (len ≥ 66) n'est pas prise en charge.
+            // M:1767: a 32-byte key (len ≥ 66) is not supported.
             cmd::SET_CHANNEL if len >= 66 => return Err(DeviceReject::UNSUPPORTED),
             // M:1769
             cmd::SET_CHANNEL if len >= 50 => Command::SetChannel {
@@ -1131,7 +1131,7 @@ impl<'a> Command<'a> {
             cmd::SIGN_START => Command::SignStart,
             cmd::SIGN_DATA if len > 1 => Command::SignData { data: tail(f, 1) },
             cmd::SIGN_FINISH => Command::SignFinish,
-            // M:1813 (len − 10 < 179 est toujours vrai)
+            // M:1813 (len − 10 < 179 is always true)
             cmd::SEND_TRACE_PATH if len > 10 => return device_trace(f),
             // M:1839
             cmd::SET_DEVICE_PIN if len >= 5 => Command::SetDevicePin { pin: u32_at(f, 1) },
@@ -1143,11 +1143,11 @@ impl<'a> Command<'a> {
                 reserved: byte(f, 1),
                 key: pad(f, 2),
             },
-            // M:1914 (type inconnu → ERR 6, après l'analyse)
+            // M:1914 (unknown type → ERR 6, after parsing)
             cmd::GET_STATS if len >= 2 => Command::GetStats { kind: byte(f, 1) },
-            // M:1965 : memcmp sur 5 octets, quelle que soit la longueur.
+            // M:1965: memcmp over 5 bytes, whatever the length.
             cmd::FACTORY_RESET if pad::<5>(f, 1) == *b"reset" => Command::FactoryReset,
-            // M:1978 : clé si len ≥ 18, sinon effacement.
+            // M:1978: key if len ≥ 18, otherwise clear.
             cmd::SET_FLOOD_SCOPE_KEY if len >= 2 && byte(f, 1) == 0 => Command::SetFloodScopeKey {
                 scope: if len >= 18 {
                     FloodScopeKey::Key(pad(f, 2))
@@ -1159,7 +1159,7 @@ impl<'a> Command<'a> {
             cmd::SET_FLOOD_SCOPE_KEY if len >= 2 && byte(f, 1) == 1 => Command::SetFloodScopeKey {
                 scope: FloodScopeKey::Unscoped,
             },
-            // M:1989 : portée si len ≥ 48, sinon effacement.
+            // M:1989: scope if len ≥ 48, otherwise clear.
             cmd::SET_DEFAULT_FLOOD_SCOPE => Command::SetDefaultFloodScope {
                 scope: (len >= 48).then(|| (pad(f, 1), pad(f, 32))),
             },
@@ -1169,7 +1169,7 @@ impl<'a> Command<'a> {
             cmd::SEND_CONTROL_DATA if len >= 2 && byte(f, 1) & 0x80 != 0 => {
                 Command::SendControlData { data: tail(f, 1) }
             }
-            // M:2023 : [1] toujours lu ; max_hops si len ≥ 3.
+            // M:2023: [1] always read; max_hops if len ≥ 3.
             cmd::SET_AUTOADD_CONFIG => Command::SetAutoaddConfig {
                 config: byte(f, 1),
                 max_hops: (len >= 3).then(|| byte(f, 2)),
@@ -1182,14 +1182,14 @@ impl<'a> Command<'a> {
                 priority: byte(f, 1),
                 raw: tail(f, 2),
             },
-            // M:2059 : code inconnu ou précondition ratée.
+            // M:2059: unknown code or failed precondition.
             _ => return Err(DeviceReject::UNSUPPORTED),
         };
         Ok(c)
     }
 }
 
-// ------------------------------------------------------------------------------------ affichage
+// -------------------------------------------------------------------------------------- display
 
 fn key_or_self(f: &mut fmt::Formatter<'_>, key: &Option<[u8; 32]>) -> fmt::Result {
     match key {
@@ -1316,7 +1316,7 @@ impl fmt::Display for Command<'_> {
             ),
             Command::DeviceQuery { app_ver } => write!(f, "DEVICE_QUERY app_ver={app_ver}"),
             Command::ExportPrivateKey => f.write_str("EXPORT_PRIVATE_KEY"),
-            Command::ImportPrivateKey { .. } => f.write_str("IMPORT_PRIVATE_KEY <64 octets>"),
+            Command::ImportPrivateKey { .. } => f.write_str("IMPORT_PRIVATE_KEY <64 bytes>"),
             Command::SendRawData {
                 path_len,
                 path,
@@ -1329,7 +1329,7 @@ impl fmt::Display for Command<'_> {
             ),
             Command::SendLogin { key, password } => write!(
                 f,
-                "SEND_LOGIN key={} password=<{} octets>",
+                "SEND_LOGIN key={} password=<{} bytes>",
                 Hex(key),
                 password.len()
             ),

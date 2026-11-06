@@ -1,10 +1,11 @@
 [package]
 name = "mc-cli"
-description = "Binaire `mc` : interroger un compagnon MeshCore en USB, décoder ce qu'il entend, injecter des trames, éprouver la compatibilité"
+description = "The `mc` binary: query a MeshCore companion over USB, decode what it hears, inject frames, test compatibility"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "mc"

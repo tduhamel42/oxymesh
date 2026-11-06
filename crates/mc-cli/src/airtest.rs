@@ -1,10 +1,10 @@
-//! `mc airtest` : éprouve `mc-air` contre un vrai firmware MeshCore C++, sans rien inonder.
+//! `mc airtest`: tests `mc-air` against a real MeshCore C++ firmware, without flooding anything.
 //!
-//! La référence (`--ref`, un compagnon USB) émet nos trames brutes (`SEND_RAW_PACKET`) et nous
-//! rapporte tout ce qu'elle entend (`LOG_RX_DATA`). L'appareil sous test (`--dut`, un compagnon
-//! USB en C++) doit accepter, déchiffrer et accuser nos trames ; ses propres trames, captées par
-//! la référence, doivent se décoder avec notre code. Tout passe en zéro saut (route directe,
-//! chemin vide) : aucun relais ne les retransmet.
+//! The reference (`--ref`, a USB companion) transmits our raw frames (`SEND_RAW_PACKET`) and
+//! reports everything it hears (`LOG_RX_DATA`). The device under test (`--dut`, a C++ USB
+//! companion) must accept, decrypt and acknowledge our frames; its own frames, captured by the
+//! reference, must decode with our code. Everything goes zero-hop (direct route, empty path):
+//! no repeater retransmits them.
 
 use mc_air::crypto::{self, ChannelSecret, LocalIdentity};
 use mc_air::payload::{self, Advert, GroupDataPlain, Payload, TxtPlain};
@@ -57,7 +57,7 @@ fn alice() -> LocalIdentity {
     }
 }
 
-/// Encode une trame en zéro saut (route directe, chemin vide).
+/// Encodes a frame as zero-hop (direct route, empty path).
 fn zero_hop(mut b: PacketBuf) -> Result<Vec<u8>, String> {
     b.header.route = Route::Direct;
     let mut out = [0u8; 255];
@@ -68,11 +68,11 @@ fn zero_hop(mut b: PacketBuf) -> Result<Vec<u8>, String> {
 fn inject(r: &mut Port, raw: &[u8]) -> Result<(), String> {
     match Response::decode(&r.ask(&Command::SendRawPacket { priority: 0, raw })?) {
         Ok(Response::Ok) => Ok(()),
-        other => Err(format!("SEND_RAW_PACKET refusé : {other:?}")),
+        other => Err(format!("SEND_RAW_PACKET rejected: {other:?}")),
     }
 }
 
-/// Attend une trame entendue par la référence qui satisfait `pred`.
+/// Waits for a frame heard by the reference that satisfies `pred`.
 fn heard<T>(
     r: &mut Port,
     secs: u64,
@@ -87,12 +87,12 @@ fn heard<T>(
 fn expect_ok(frame: &[u8], what: &str) -> Result<(), String> {
     match Response::decode(frame) {
         Ok(Response::Ok) => Ok(()),
-        other => Err(format!("{what} : {other:?}")),
+        other => Err(format!("{what}: {other:?}")),
     }
 }
 
-/// Récupère les messages en attente de l'appareil jusqu'à trouver celui que `pred` reconnaît.
-/// Les autres (trafic réel) sont comptés, pas affichés.
+/// Fetches the device's pending messages until finding the one `pred` recognizes.
+/// The others (real traffic) are counted, not printed.
 fn fetch<T>(d: &mut Port, mut pred: impl FnMut(&Response<'_>) -> Option<T>) -> Result<T, String> {
     let _ = d.wait(15, |r| matches!(r, Response::MsgWaiting).then_some(()));
     let mut skipped = 0;
@@ -108,7 +108,7 @@ fn fetch<T>(d: &mut Port, mut pred: impl FnMut(&Response<'_>) -> Option<T>) -> R
         skipped += 1;
     }
     Err(format!(
-        "message absent de la file ({skipped} autres messages ignorés)"
+        "message not in the queue ({skipped} other messages skipped)"
     ))
 }
 
@@ -119,7 +119,7 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
     d.verbose = verbose;
     let mut rep = Report { ok: 0, failed: 0 };
 
-    // Mise en route des deux appareils.
+    // Bring up both devices.
     for p in [&mut rf, &mut d] {
         let mut ok = false;
         for _ in 0..3 {
@@ -129,7 +129,7 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
             }
         }
         if !ok {
-            return Err(format!("{} ne répond pas", p.name));
+            return Err(format!("{} does not respond", p.name));
         }
     }
     let _ = rf.ask(&Command::AppStart {
@@ -142,28 +142,23 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
     })?;
     let (dut_key, dut_name) = match Response::decode(&self_info) {
         Ok(Response::SelfInfo(si)) => (si.key, si.node_name.to_vec()),
-        other => return Err(format!("SELF_INFO attendu : {other:?}")),
+        other => return Err(format!("expected SELF_INFO: {other:?}")),
     };
     println!(
-        "appareil sous test : {} « {} »",
+        "device under test: {} \"{}\"",
         Hex(&dut_key[..4]),
         String::from_utf8_lossy(&dut_name)
     );
     let now = now_unix();
     let _ = d.ask(&Command::SetDeviceTime { unix_s: now });
     let a = alice();
-    let s_ad = a
-        .shared_secret(&dut_key)
-        .ok_or("clé de l'appareil illisible")?;
-    println!(
-        "identité de test : {} « {ALICE_NAME} »",
-        Hex(&a.pub_key()[..4])
-    );
+    let s_ad = a.shared_secret(&dut_key).ok_or("unreadable device key")?;
+    println!("test identity: {} \"{ALICE_NAME}\"", Hex(&a.pub_key()[..4]));
 
-    // 1. Notre annonce, signée par mc-air, acceptée par le C++.
+    // 1. Our advert, signed by mc-air, accepted by the C++ firmware.
     let ts_adv = now;
     rep.check(
-        "annonce de mc-air acceptée par le C++",
+        "mc-air advert accepted by the C++ firmware",
         (|| {
             let ad = AppData {
                 kind: mc_air::advert::TYPE_CHAT,
@@ -178,10 +173,10 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
             let key = *a.pub_key();
             d.wait(10, |r| match r {
                 Response::Advert { key: k } if *k == key => {
-                    Some("contact ajouté (ADVERT)".to_string())
+                    Some("contact added (ADVERT)".to_string())
                 }
                 Response::NewAdvert(c) if c.key == key => Some(format!(
-                    "vue (NEW_ADVERT, nom « {} »)",
+                    "seen (NEW_ADVERT, name \"{}\")",
                     String::from_utf8_lossy(fixed_str(&c.name))
                 )),
                 _ => None,
@@ -189,7 +184,7 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
         })(),
     );
 
-    // Contact en zéro saut : les réponses de l'appareil restent locales.
+    // Zero-hop contact: the device's replies stay local.
     let add = Command::AddUpdateContact {
         key: *a.pub_key(),
         kind: 1,
@@ -203,8 +198,8 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
     };
     expect_ok(&d.ask(&add)?, "ADD_UPDATE_CONTACT")?;
 
-    // 2. Message direct de mc-air, lu par le C++, qui renvoie le bon accusé.
-    let text = format!("oxymesh airtest {now} : ça marche ?");
+    // 2. Direct message from mc-air, read by the C++ firmware, which returns the right ack.
+    let text = format!("oxymesh airtest {now} — does it work?");
     let ts_dm = now;
     let mut plain = [0u8; 200];
     let (n, ack) = payload::txt_plain(ts_dm, 0, 0, text.as_bytes(), a.pub_key(), &mut plain)
@@ -222,7 +217,7 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
     let _ = rf.drain()?;
     inject(&mut rf, &raw)?;
     rep.check(
-        "message direct de mc-air déchiffré par le C++",
+        "mc-air direct message decrypted by the C++ firmware",
         fetch(&mut d, |r| match r {
             Response::ContactMsg {
                 prefix,
@@ -233,10 +228,10 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
                 ..
             } if prefix[..] == a.pub_key()[..6] => Some(
                 if *t == text.as_bytes() && *timestamp == ts_dm && *txt_type == 0 {
-                    Ok(format!("texte identique, path_len={path_len:#04x}"))
+                    Ok(format!("identical text, path_len={path_len:#04x}"))
                 } else {
                     Err(format!(
-                        "reçu « {} » ts={timestamp}",
+                        "received \"{}\" ts={timestamp}",
                         String::from_utf8_lossy(t)
                     ))
                 },
@@ -246,19 +241,19 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
         .and_then(|x| x),
     );
     rep.check(
-        "accusé du C++ égal au CRC calculé par mc-air",
+        "C++ ack equals the CRC computed by mc-air",
         heard(&mut rf, 10, |p| {
             match Payload::parse(p.header.ptype, p.payload) {
                 Ok(Payload::Ack { crc, rest }) if crc == ack => {
-                    Some(format!("{crc:08x}, {} octets", 4 + rest.len()))
+                    Some(format!("{crc:08x}, {} bytes", 4 + rest.len()))
                 }
                 _ => None,
             }
         }),
     );
 
-    // 3. Message direct du C++, déchiffré par mc-air ; son accusé, calculé par mc-air, confirme l'envoi.
-    let reply = format!("réponse du C++ {now}");
+    // 3. Direct message from the C++ firmware, decrypted by mc-air; its ack, computed by mc-air, confirms delivery.
+    let reply = format!("reply from C++ {now}");
     let ts_reply = now_unix().max(now + 1);
     let sent = d.ask(&Command::SendTxtMsg {
         txt_type: 0,
@@ -270,9 +265,9 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
     let expected_ack = match Response::decode(&sent) {
         Ok(Response::Sent { flood, ack, .. }) => {
             rep.check(
-                "SEND_TXT_MSG en direct",
+                "SEND_TXT_MSG sent direct",
                 if flood {
-                    Err("envoyé en inondation".into())
+                    Err("sent as flood".into())
                 } else {
                     Ok(String::new())
                 },
@@ -301,18 +296,18 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
         }
     });
     rep.check(
-        "message direct du C++ déchiffré par mc-air",
+        "C++ direct message decrypted by mc-air",
         match &got {
             Ok((t, ts, _)) if *t == reply.as_bytes() && *ts == ts_reply => {
-                Ok(format!("« {reply} »"))
+                Ok(format!("\"{reply}\""))
             }
-            Ok((t, ts, _)) => Err(format!("« {} » ts={ts}", String::from_utf8_lossy(t))),
+            Ok((t, ts, _)) => Err(format!("\"{}\" ts={ts}", String::from_utf8_lossy(t))),
             Err(e) => Err(e.clone()),
         },
     );
     if let (Ok((_, _, ours)), Some(theirs)) = (&got, expected_ack) {
         rep.check(
-            "CRC d'accusé de mc-air égal à celui annoncé par le C++",
+            "mc-air ack CRC equals the one announced by the C++ firmware",
             if ours.to_le_bytes() == theirs {
                 Ok(format!("{ours:08x}"))
             } else {
@@ -325,23 +320,23 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
         let raw = zero_hop(payload::ack(&ack6).map_err(|e| format!("{e:?}"))?)?;
         inject(&mut rf, &raw)?;
         rep.check(
-            "accusé de mc-air reconnu par le C++ (SEND_CONFIRMED)",
+            "mc-air ack recognized by the C++ firmware (SEND_CONFIRMED)",
             d.wait(10, |r| match r {
                 Response::SendConfirmed { ack, rtt_ms } if *ack == theirs => {
-                    Some(format!("aller-retour {rtt_ms} ms"))
+                    Some(format!("round trip {rtt_ms} ms"))
                 }
                 _ => None,
             }),
         );
     }
 
-    // 4. Annonce du C++, vérifiée par mc-air.
+    // 4. Advert from the C++ firmware, verified by mc-air.
     expect_ok(
         &d.ask(&Command::SendSelfAdvert { flood: Some(false) })?,
         "SEND_SELF_ADVERT",
     )?;
     rep.check(
-        "annonce du C++ vérifiée par mc-air",
+        "C++ advert verified by mc-air",
         heard(&mut rf, 10, |p| {
             match Payload::parse(p.header.ptype, p.payload) {
                 Ok(Payload::Advert(adv)) if *adv.pub_key == dut_key => {
@@ -353,7 +348,7 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
         .and_then(|x| x),
     );
 
-    // 5. Canal privé de test : datagramme du C++ lu par mc-air, texte de mc-air lu par le C++.
+    // 5. Private test channel: C++ datagram read by mc-air, mc-air text read by the C++ firmware.
     let chan = ChannelSecret::from_hashtag(CHANNEL);
     let mut slot = None;
     for idx in (1..40u8).rev() {
@@ -388,7 +383,7 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
             "SEND_CHANNEL_DATA",
         )?;
         rep.check(
-            "datagramme de canal du C++ déchiffré par mc-air",
+            "C++ channel datagram decrypted by mc-air",
             heard(&mut rf, 10, |p| {
                 match Payload::parse(p.header.ptype, p.payload) {
                     Ok(Payload::Group {
@@ -411,7 +406,7 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
             .and_then(|x| x),
         );
 
-        let msg = "salut le canal, ça va ?";
+        let msg = "hi channel — all good?";
         let ts_ch = now_unix().max(now + 2);
         let mut plain = [0u8; 200];
         let n = payload::group_txt_plain(ts_ch, ALICE_NAME.as_bytes(), msg.as_bytes(), &mut plain)
@@ -423,7 +418,7 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
         inject(&mut rf, &raw)?;
         let want = format!("{ALICE_NAME}: {msg}");
         rep.check(
-            "message de canal de mc-air lu par le C++",
+            "mc-air channel message read by the C++ firmware",
             fetch(&mut d, |r| match r {
                 Response::ChannelMsg {
                     idx: i,
@@ -433,41 +428,41 @@ pub fn run(ref_path: &str, dut_path: &str, verbose: bool) -> Result<(), String> 
                 } if *i == idx => Some(if *text == want.as_bytes() && *timestamp == ts_ch {
                     Ok(String::new())
                 } else {
-                    Err(format!("« {} »", String::from_utf8_lossy(text)))
+                    Err(format!("\"{}\"", String::from_utf8_lossy(text)))
                 }),
                 _ => None,
             })
             .and_then(|x| x),
         );
-        // Rend le créneau.
+        // Release the slot.
         let _ = d.ask(&Command::SetChannel {
             idx,
             name: [0; 32],
             secret: [0; 16],
         });
     } else {
-        rep.check("canal de test", Err("aucun créneau libre".into()));
+        rep.check("test channel", Err("no free slot".into()));
     }
 
     let _ = d.ask(&Command::RemoveContact { key: *a.pub_key() });
-    println!("\n{} réussis, {} échoués", rep.ok, rep.failed);
+    println!("\n{} passed, {} failed", rep.ok, rep.failed);
     if rep.failed == 0 {
         Ok(())
     } else {
-        Err(format!("{} vérifications échouées", rep.failed))
+        Err(format!("{} checks failed", rep.failed))
     }
 }
 
 fn adv_check(adv: &Advert<'_>, want_name: &[u8]) -> Result<String, String> {
     if !adv.verify() {
-        return Err("signature refusée par mc-air".into());
+        return Err("signature rejected by mc-air".into());
     }
-    let ad = AppData::decode(adv.app_data).map_err(|e| format!("données d'annonce : {e:?}"))?;
+    let ad = AppData::decode(adv.app_data).map_err(|e| format!("advert data: {e:?}"))?;
     if ad.name_str() != want_name {
         return Err(format!(
-            "nom « {} »",
+            "name \"{}\"",
             String::from_utf8_lossy(ad.name_str())
         ));
     }
-    Ok(format!("signature ok, type {}, nom identique", ad.kind))
+    Ok(format!("signature ok, type {}, identical name", ad.kind))
 }

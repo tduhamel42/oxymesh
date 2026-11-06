@@ -1,4 +1,4 @@
-//! Le nœud : état, réglages, événements et interface avec le runner.
+//! The node: state, settings, events and interface with the runner.
 
 use mc_air::crypto::{LocalIdentity, PUB_KEY_LEN};
 use mc_air::{PacketBuf, PathLen, PayloadType, Route, packet::PATH_MAX};
@@ -10,12 +10,12 @@ use crate::contacts::{Channels, Contacts};
 use crate::dispatch::{Dispatcher, RadioParams, TxFrame, next_int};
 use crate::tables::Seen;
 
-/// Texte le plus long d'un message (`MAX_TEXT_LEN`).
+/// Longest message text (`MAX_TEXT_LEN`).
 pub const TEXT_MAX: usize = 160;
-/// Accusés attendus (`EXPECTED_ACK_TABLE_SIZE`).
+/// Expected acks (`EXPECTED_ACK_TABLE_SIZE`).
 pub const ACK_TABLE: usize = 8;
 
-/// Réglages persistants (`NodePrefs.h`). Les facteurs `float` du C++ sont gardés × 1000.
+/// Persistent settings (`NodePrefs.h`). The C++ `float` factors are stored × 1000.
 #[derive(Debug, Clone)]
 pub struct Prefs {
     pub name: [u8; 32],
@@ -37,7 +37,7 @@ pub struct Prefs {
     pub ble_pin: u32,
     pub repeat: bool,
     pub path_hash_mode: u8,
-    /// Portée par défaut : nom (terminé par 0x00) et clé ; clé nulle = aucune.
+    /// Default scope: name (0x00-terminated) and key; all-zero key = none.
     pub default_scope_name: [u8; 31],
     pub default_scope_key: [u8; 16],
     pub interference_threshold: i8,
@@ -47,7 +47,7 @@ pub struct Prefs {
 }
 
 impl Prefs {
-    /// Réglages nuls, pour [`Node::empty`].
+    /// Zeroed settings, for [`Node::empty`].
     pub const ZERO: Self = Self {
         name: [0; 32],
         lat: 0,
@@ -82,8 +82,8 @@ impl Prefs {
         buzzer_quiet: false,
     };
 
-    /// Réglages d'usine du build M5 (`MyMesh.cpp:916-1007`) : nom = 4 premiers octets de la clé
-    /// en hexadécimal majuscule, 869,618 MHz / 62,5 kHz / SF8 / CR 5, 22 dBm.
+    /// Factory settings of the M5 build (`MyMesh.cpp:916-1007`): name = first 4 bytes of the key
+    /// in uppercase hex, 869.618 MHz / 62.5 kHz / SF8 / CR 5, 22 dBm.
     pub fn defaults(pub_key: &[u8; PUB_KEY_LEN]) -> Self {
         let mut name = [0u8; 32];
         const HEX: &[u8; 16] = b"0123456789ABCDEF";
@@ -136,20 +136,20 @@ impl Prefs {
     }
 }
 
-/// Texte borné (message, nom…).
+/// Bounded text (message, name…).
 pub type Text = heapless::Vec<u8, { FRAME_MAX }>;
 
-/// Ce que le cœur signale à la couche compagnon et à l'interface.
+/// What the core reports to the companion layer and the UI.
 #[derive(Debug, Clone)]
 pub enum Event {
-    /// Chaque trame reçue (notification `LOG_RX_DATA`).
+    /// Every received frame (`LOG_RX_DATA` notification).
     RxLog {
         snr4: i8,
         rssi: i8,
         raw: Text,
     },
-    /// Message d'un contact. `path_len` : celui de la trame si elle est arrivée par inondation,
-    /// 0xFF si directe. `author` : préfixe de l'auteur pour un message signé (type 2).
+    /// Message from a contact. `path_len`: the frame's own if it arrived by flood, 0xFF if
+    /// direct. `author`: author prefix for a signed message (type 2).
     ContactMsg {
         key: [u8; PUB_KEY_LEN],
         snr4: i8,
@@ -174,13 +174,13 @@ pub enum Event {
         data_type: u16,
         data: Text,
     },
-    /// Annonce d'un contact connu ou qu'on vient d'ajouter (`PUSH_CODE_ADVERT`). `raw` : la
-    /// trame telle qu'on la garde (route FLOOD, sans codes de transport, `BaseChatMesh.cpp:141`).
+    /// Advert from a known or just-added contact (`PUSH_CODE_ADVERT`). `raw`: the frame as we
+    /// keep it (FLOOD route, no transport codes, `BaseChatMesh.cpp:141`).
     Advert {
         key: [u8; PUB_KEY_LEN],
         raw: Text,
     },
-    /// Annonce d'un nœud qu'on n'a pas ajouté (`PUSH_CODE_NEW_ADVERT`).
+    /// Advert from a node we have not added (`PUSH_CODE_NEW_ADVERT`).
     NewAdvert {
         contact: crate::contacts::Contact,
     },
@@ -188,7 +188,7 @@ pub enum Event {
         key: [u8; PUB_KEY_LEN],
     },
     ContactsFull,
-    /// Annonce entendue (pour `GET_ADVERT_PATH` et l'écran Network).
+    /// Advert heard (for `GET_ADVERT_PATH` and the Network screen).
     AdvertHeard {
         key: [u8; PUB_KEY_LEN],
         kind: u8,
@@ -203,12 +203,12 @@ pub enum Event {
         ack: [u8; 4],
         rtt_ms: u32,
     },
-    /// Réponse d'un contact (connexion, état, télémétrie, binaire…), `data` commence par le tag.
+    /// Response from a contact (login, status, telemetry, binary…); `data` starts with the tag.
     Response {
         key: [u8; PUB_KEY_LEN],
         data: Text,
     },
-    /// Requête d'un contact (type REQ), à traiter par la couche compagnon.
+    /// Request from a contact (REQ type), to be handled by the companion layer.
     Request {
         key: [u8; PUB_KEY_LEN],
         ts: u32,
@@ -237,8 +237,8 @@ pub enum Event {
         snrs: heapless::Vec<u8, PATH_MAX>,
         final_snr4: i8,
     },
-    /// Réponse à une découverte de chemin (`PUSH_CODE_PATH_DISCOVERY_RESPONSE`) : le chemin
-    /// n'est pas retenu et aucun chemin réciproque ne part (`MyMesh.cpp:779-808`).
+    /// Response to a path discovery (`PUSH_CODE_PATH_DISCOVERY_RESPONSE`): the path is not
+    /// stored and no reciprocal path is sent (`MyMesh.cpp:779-808`).
     PathDiscovery {
         key: [u8; PUB_KEY_LEN],
         out_len: u8,
@@ -255,23 +255,23 @@ pub(crate) struct ExpectedAck {
     pub key: [u8; PUB_KEY_LEN],
 }
 
-/// Résultat d'un envoi de message (réponse `SENT`).
+/// Result of sending a message (`SENT` response).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Sent {
     pub flood: bool,
-    /// CRC d'accusé attendu (texte simple) ou tag.
+    /// Expected ack CRC (plain text) or tag.
     pub ack: u32,
     pub timeout_ms: u32,
 }
 
-/// Échec d'envoi, avec le code d'erreur du C++.
+/// Send failure, with the C++ error code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendError {
-    /// ERR 2 : contact ou canal inconnu.
+    /// ERR 2: unknown contact or channel.
     NotFound,
-    /// ERR 3 : trop long, file pleine, échec de construction.
+    /// ERR 3: too long, queue full, build failure.
     Failed,
-    /// ERR 1 : type non pris en charge.
+    /// ERR 1: unsupported type.
     Unsupported,
 }
 
@@ -286,13 +286,13 @@ pub struct Node {
     pub(crate) acks: [Option<ExpectedAck>; ACK_TABLE],
     pub(crate) next_ack: usize,
     pub(crate) events: heapless::Deque<Event, 32>,
-    /// Portée en RAM (`SET_FLOOD_SCOPE_KEY`) et demande d'envoi sans portée.
+    /// In-RAM scope (`SET_FLOOD_SCOPE_KEY`) and request to send unscoped.
     pub send_scope: [u8; 16],
     pub send_unscoped: bool,
     pub last_snr4: i8,
     pub last_rssi: i16,
     pub boot: Instant,
-    /// Tag d'une découverte de chemin en cours (`pending_discovery`).
+    /// Tag of a path discovery in progress (`pending_discovery`).
     pub pending_discovery: u32,
 }
 
@@ -312,8 +312,8 @@ impl Node {
         n
     }
 
-    /// Nœud vide, constructible à la compilation : sur l'appareil, il vit dans une statique
-    /// (87 Ko, plus que la pile) et [`Node::reset`] l'initialise sur place.
+    /// Empty node, constructible at compile time: on the device it lives in a static (87 KB,
+    /// more than the stack) and [`Node::reset`] initializes it in place.
     pub const fn empty() -> Self {
         Self {
             id: LocalIdentity::PLACEHOLDER,
@@ -335,7 +335,7 @@ impl Node {
         }
     }
 
-    /// (Ré)initialise le nœud sur place : identité, réglages, heure ; tables vidées.
+    /// (Re)initializes the node in place: identity, settings, time; tables cleared.
     pub fn reset(&mut self, id: LocalIdentity, prefs: Prefs, epoch: u32, now: Instant) {
         let af = prefs.airtime_factor_milli;
         self.id = id;
@@ -364,12 +364,12 @@ impl Node {
         let _ = self.events.push_back(e);
     }
 
-    /// Prochain événement pour la couche compagnon ou l'interface.
+    /// Next event for the companion layer or the UI.
     pub fn poll_event(&mut self) -> Option<Event> {
         self.events.pop_front()
     }
 
-    /// Prochaine trame à émettre maintenant. `busy` : la radio reçoit (écoute avant émission).
+    /// Next frame to transmit now. `busy`: the radio is receiving (listen before talk).
     pub fn poll_tx(&mut self, now: Instant, busy: bool, rng: &mut impl Rng) -> Option<TxFrame> {
         let radio = self.prefs.radio;
         self.disp
@@ -384,14 +384,14 @@ impl Node {
         self.disp.next_wakeup()
     }
 
-    /// Heure Unix courante.
+    /// Current Unix time.
     pub fn time(&self, now: Instant) -> u32 {
         self.rtc.now(now)
     }
 
-    // ----------------------------------------------------------------------------- émission
+    // ----------------------------------------------------------------------------- transmit
 
-    /// `sendFlood` : chemin vide aux hashes de la taille réglée, priorité 1 (PATH 2, ADVERT 3).
+    /// `sendFlood`: empty path with hashes of the configured size, priority 1 (PATH 2, ADVERT 3).
     pub(crate) fn send_flood(
         &mut self,
         mut pkt: PacketBuf,
@@ -422,8 +422,8 @@ impl Node {
             .queue(pkt, pri, now + Duration::from_millis(delay_ms));
     }
 
-    /// `sendFloodScoped` du compagnon : sans portée si demandé, sinon la portée en RAM, sinon la
-    /// portée par défaut, sinon sans portée (`MyMesh.cpp:491-525`).
+    /// The companion's `sendFloodScoped`: unscoped if requested, else the in-RAM scope, else the
+    /// default scope, else unscoped (`MyMesh.cpp:491-525`).
     pub(crate) fn send_flood_scoped(&mut self, pkt: PacketBuf, delay_ms: u64, now: Instant) {
         let key = if self.send_unscoped {
             None
@@ -443,7 +443,7 @@ impl Node {
         self.send_flood(pkt, transport, delay_ms, now);
     }
 
-    /// `sendDirect` : le chemin donné, priorité 0 (PATH 1).
+    /// `sendDirect`: the given path, priority 0 (PATH 1).
     pub(crate) fn send_direct(
         &mut self,
         mut pkt: PacketBuf,
@@ -455,7 +455,7 @@ impl Node {
         pkt.header.route = Route::Direct;
         pkt.transport = None;
         let pri = if pkt.header.ptype == PayloadType::TRACE {
-            // Le chemin d'une trace part en fin de charge utile ; path_len = 0.
+            // A trace's path goes at the end of the payload; path_len = 0.
             let mut payload = [0u8; mc_air::packet::PAYLOAD_MAX];
             let cur = pkt.payload();
             let total = cur.len() + path.len();
@@ -491,7 +491,7 @@ impl Node {
             .queue(pkt, pri, now + Duration::from_millis(delay_ms));
     }
 
-    /// `sendZeroHop` : route directe, chemin vide, priorité 0.
+    /// `sendZeroHop`: direct route, empty path, priority 0.
     pub(crate) fn send_zero_hop(
         &mut self,
         mut pkt: PacketBuf,
@@ -511,8 +511,8 @@ impl Node {
             .queue(pkt, 0, now + Duration::from_millis(delay_ms));
     }
 
-    /// Délai de relais en inondation (`MyMesh::getRetransmitDelay`) : `rand[0, 5t]`,
-    /// `t = airtime(chemin + charge + 2) × tx_delay`.
+    /// Flood retransmit delay (`MyMesh::getRetransmitDelay`): `rand[0, 5t]`,
+    /// `t = airtime(path + payload + 2) × tx_delay`.
     pub(crate) fn retransmit_delay(
         &self,
         pkt: &PacketBuf,

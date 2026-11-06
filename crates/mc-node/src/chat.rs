@@ -1,4 +1,4 @@
-//! Envois : messages directs, canaux, annonces, accusés (`BaseChatMesh.cpp`, `MyMesh.cpp`).
+//! Sending: direct messages, channels, adverts, acks (`BaseChatMesh.cpp`, `MyMesh.cpp`).
 
 use mc_air::crypto::PUB_KEY_LEN;
 use mc_air::{AppData, PacketBuf, PathLen, PayloadType, payload};
@@ -19,8 +19,8 @@ fn sat_u32(v: u64) -> u32 {
 }
 
 impl Node {
-    /// Délai d'envoi annoncé dans `SENT` : `t` = temps d'antenne de `2 + charge utile`
-    /// (`getRawLength` avant que la route soit fixée).
+    /// Send timeout reported in `SENT`: `t` = airtime of `2 + payload`
+    /// (`getRawLength` before the route is set).
     fn send_timeout(&self, pkt: &PacketBuf, out_path_len: u8) -> u32 {
         let t = self.prefs.radio.airtime_ms(2 + pkt.payload().len());
         if out_path_len == PATH_UNKNOWN {
@@ -31,8 +31,8 @@ impl Node {
         }
     }
 
-    /// Envoie un datagramme à un contact : direct si son chemin est connu, sinon inondation dans
-    /// la portée. Renvoie (inondation ?, délai annoncé).
+    /// Sends a datagram to a contact: direct if its path is known, otherwise flood within the
+    /// scope. Returns (flood?, reported timeout).
     pub(crate) fn send_to_contact(
         &mut self,
         now: Instant,
@@ -54,8 +54,8 @@ impl Node {
         }
     }
 
-    /// `SEND_TXT_MSG` (`MyMesh.cpp:1132-1177`). Le texte est coupé au premier 0x00, comme la
-    /// chaîne C du firmware. Types 1 et 3 : horodatage de l'appareil, pas d'accusé.
+    /// `SEND_TXT_MSG` (`MyMesh.cpp:1132-1177`). The text is cut at the first 0x00, like the
+    /// firmware's C string. Types 1 and 3: device timestamp, no ack.
     #[allow(clippy::too_many_arguments)]
     pub fn send_text(
         &mut self,
@@ -89,7 +89,7 @@ impl Node {
             payload::txt_plain(ts, 0, attempt_for_plain, text, id.pub_key(), &mut plain)
                 .map_err(|_| SendError::Failed)?
         } else {
-            // `sendCommandData` : ni queue d'essai étendu ni accusé.
+            // `sendCommandData`: neither extended-attempt tail nor ack.
             if text.len() > crate::node::TEXT_MAX {
                 return Err(SendError::Failed);
             }
@@ -128,7 +128,7 @@ impl Node {
         })
     }
 
-    /// `SEND_CHANNEL_TXT_MSG` : `"<nom>: <texte>"` en inondation dans la portée.
+    /// `SEND_CHANNEL_TXT_MSG`: `"<name>: <text>"` flooded within the scope.
     pub fn send_channel_text(
         &mut self,
         now: Instant,
@@ -156,8 +156,8 @@ impl Node {
         Ok(())
     }
 
-    /// `SEND_CHANNEL_DATA` : inondation dans la portée (`path` = `None`) ou chemin donné
-    /// (0 = zéro saut).
+    /// `SEND_CHANNEL_DATA`: flood within the scope (`path` = `None`) or given path
+    /// (0 = zero hop).
     pub fn send_channel_data(
         &mut self,
         now: Instant,
@@ -188,7 +188,7 @@ impl Node {
         Ok(())
     }
 
-    /// Notre annonce (`createSelfAdvert`) : type chat, nom, position si la politique le permet.
+    /// Our advert (`createSelfAdvert`): chat type, name, position if the policy allows it.
     pub fn self_advert(&self, now: Instant) -> Result<PacketBuf, SendError> {
         let name = self.prefs.name;
         let ad = AppData {
@@ -205,7 +205,7 @@ impl Node {
             .map_err(|_| SendError::Failed)
     }
 
-    /// `SEND_SELF_ADVERT` : en zéro saut, ou en inondation dans la portée par défaut seulement.
+    /// `SEND_SELF_ADVERT`: zero hop, or flood within the default scope only.
     pub fn send_self_advert(&mut self, now: Instant, flood: bool) -> Result<(), SendError> {
         let pkt = self.self_advert(now)?;
         if flood {
@@ -227,7 +227,7 @@ impl Node {
         Ok(())
     }
 
-    /// `RESET_PATH` : le prochain envoi au contact repartira en inondation.
+    /// `RESET_PATH`: the next send to the contact goes out as flood again.
     pub fn reset_path(&mut self, key: &[u8; PUB_KEY_LEN]) -> bool {
         let Some(s) = self.contacts.find(key) else {
             return false;
@@ -238,7 +238,7 @@ impl Node {
         true
     }
 
-    /// `SEND_RAW_PACKET` : trame émise telle quelle, avec la priorité donnée.
+    /// `SEND_RAW_PACKET`: frame transmitted as is, with the given priority.
     pub fn send_raw_packet(
         &mut self,
         now: Instant,
@@ -254,7 +254,7 @@ impl Node {
         }
     }
 
-    /// Valide un `path_len` venu de l'app.
+    /// Validates a `path_len` coming from the app.
     pub fn valid_path_len(b: u8) -> bool {
         PathLen::from_byte(b).is_ok()
     }

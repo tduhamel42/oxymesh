@@ -1,7 +1,7 @@
-//! Pilote SX1262 minimal, synchrone, sur esp-hal (datasheet SX1261/2 rév. 2.1, §13).
+//! Minimal synchronous SX1262 driver on esp-hal (SX1261/2 datasheet rev. 2.1, §13).
 //!
-//! Repris de loranet, complété pour MeshCore : régulateur DC-DC, limite de courant, PA à
-//! +22 dBm, émission, détection de préambule et d'en-tête (écoute avant émission).
+//! Taken from loranet, extended for MeshCore: DC-DC regulator, current limit, PA at +22 dBm,
+//! transmission, preamble and header detection (listen before talk).
 
 use esp_hal::Blocking;
 use esp_hal::delay::Delay;
@@ -11,13 +11,13 @@ use esp_hal::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
-    /// La broche BUSY est restée haute : la puce ne répond pas.
+    /// The BUSY pin stayed high: the chip is not responding.
     Busy,
     Spi,
     Param,
 }
 
-/// Interruptions (registre IRQ, §13.3.1).
+/// Interrupts (IRQ register, §13.3.1).
 pub mod irq {
     pub const TX_DONE: u16 = 1 << 0;
     pub const RX_DONE: u16 = 1 << 1;
@@ -30,17 +30,17 @@ pub mod irq {
     pub const TIMEOUT: u16 = 1 << 9;
 }
 
-/// Réglage LoRa.
+/// LoRa settings.
 #[derive(Debug, Clone, Copy)]
 pub struct LoRaConfig {
     pub freq_hz: u32,
     pub sf: u8,
-    /// Largeur de bande en Hz : 7_812 … 500_000.
+    /// Bandwidth in Hz: 7_812 … 500_000.
     pub bw_hz: u32,
-    /// 1 à 4 pour 4/5 à 4/8.
+    /// 1 to 4 for 4/5 to 4/8.
     pub cr: u8,
     pub preamble: u16,
-    /// Mot de synchro au sens SX127x (0x12 privé, 0x34 public, 0x2B Meshtastic).
+    /// Sync word in the SX127x sense (0x12 private, 0x34 public, 0x2B Meshtastic).
     pub sync_word: u8,
 }
 
@@ -61,19 +61,19 @@ impl LoRaConfig {
         })
     }
 
-    /// Optimisation bas débit : obligatoire quand le symbole dépasse 16 ms.
+    /// Low data rate optimization: mandatory when the symbol exceeds 16 ms.
     fn ldro(&self) -> bool {
         (1u64 << self.sf) * 1_000_000 / u64::from(self.bw_hz) > 16_000
     }
 }
 
-/// Paquet reçu.
+/// Received packet.
 #[derive(Debug, Clone, Copy)]
 pub struct RxInfo {
     pub len: usize,
-    /// Puissance du paquet, dBm.
+    /// Packet power, dBm.
     pub rssi_dbm: i16,
-    /// SNR en quarts de dB.
+    /// SNR in quarter dB.
     pub snr_qdb: i16,
     pub crc_error: bool,
 }
@@ -115,7 +115,7 @@ impl<'d> Sx126x<'d> {
         Ok(())
     }
 
-    /// Échange une commande complète (opcode, paramètres, octets de réponse) sur place.
+    /// Exchanges a complete command (opcode, parameters, response bytes) in place.
     fn xfer(&mut self, buf: &mut [u8]) -> Result<(), Error> {
         self.wait_busy()?;
         self.cs.set_low();
@@ -131,7 +131,7 @@ impl<'d> Sx126x<'d> {
         self.xfer(b)
     }
 
-    /// Réinitialisation matérielle.
+    /// Hardware reset.
     pub fn reset(&mut self) -> Result<(), Error> {
         self.reset.set_low();
         self.delay.delay_micros(500);
@@ -140,7 +140,7 @@ impl<'d> Sx126x<'d> {
         self.wait_busy()
     }
 
-    /// Octet d'état (§13.5.1) : mode de la puce (bits 6-4) et état de commande (bits 3-1).
+    /// Status byte (§13.5.1): chip mode (bits 6-4) and command status (bits 3-1).
     pub fn status(&mut self) -> Result<u8, Error> {
         let mut b = [0xC0, 0x00];
         self.xfer(&mut b)?;
@@ -170,7 +170,7 @@ impl<'d> Sx126x<'d> {
         self.xfer(b)
     }
 
-    /// Erreurs internes (§13.6.1) : bit 5 = démarrage de l'oscillateur, bits 0-6 = calibrations.
+    /// Internal errors (§13.6.1): bit 5 = oscillator start, bits 0-6 = calibrations.
     pub fn device_errors(&mut self) -> Result<u16, Error> {
         let mut b = [0x17, 0, 0, 0];
         self.xfer(&mut b)?;
@@ -181,7 +181,7 @@ impl<'d> Sx126x<'d> {
         self.cmd(&[0x07, 0x00, 0x00])
     }
 
-    /// Initialisation commune : veille, TCXO sur DIO3, calibration, régulateur, commutateur RF sur DIO2.
+    /// Common initialization: standby, TCXO on DIO3, calibration, regulator, RF switch on DIO2.
     pub fn init(&mut self, tcxo_millivolts: u16, dcdc: bool) -> Result<(), Error> {
         self.reset()?;
         self.cmd(&[0x80, 0x00])?; // SetStandby(STDBY_RC)
@@ -196,26 +196,26 @@ impl<'d> Sx126x<'d> {
             3300 => 0x07,
             _ => return Err(Error::Param),
         };
-        // Délai de démarrage du TCXO : 5 ms en pas de 15,625 µs = 320.
+        // TCXO startup delay: 5 ms in 15.625 µs steps = 320.
         self.cmd(&[0x97, v, 0x00, 0x01, 0x40])?; // SetDIO3AsTcxoCtrl
-        self.cmd(&[0x89, 0x7F])?; // Calibrate(tous les blocs)
+        self.cmd(&[0x89, 0x7F])?; // Calibrate(all blocks)
         self.delay.delay_millis(5);
         self.wait_busy()?;
         self.clear_device_errors()?;
-        self.cmd(&[0x96, u8::from(dcdc)])?; // SetRegulatorMode(LDO ou DC-DC)
+        self.cmd(&[0x96, u8::from(dcdc)])?; // SetRegulatorMode(LDO or DC-DC)
         self.cmd(&[0x9D, 0x01])?; // SetDIO2AsRfSwitchCtrl
         self.cmd(&[0x8A, 0x01])?; // SetPacketType(LoRa)
         Ok(())
     }
 
-    /// Règle fréquence, modulation, mot de synchro et gain ; la puce reste en veille.
+    /// Sets frequency, modulation, sync word and gain; the chip stays in standby.
     pub fn configure(&mut self, c: &LoRaConfig) -> Result<(), Error> {
         let bw = c.bw_code().ok_or(Error::Param)?;
         if !(5..=12).contains(&c.sf) || !(1..=4).contains(&c.cr) {
             return Err(Error::Param);
         }
         self.cmd(&[0x80, 0x00])?;
-        // Calibration d'image pour 863-870 MHz (§9.2.1).
+        // Image calibration for 863-870 MHz (§9.2.1).
         self.cmd(&[0x98, 0xD7, 0xDB])?;
         let f = ((u64::from(c.freq_hz) << 25) / 32_000_000) as u32;
         let fb = f.to_be_bytes();
@@ -223,24 +223,24 @@ impl<'d> Sx126x<'d> {
         self.cmd(&[0x8F, 0x00, 0x00])?; // SetBufferBaseAddress
         self.cmd(&[0x8B, c.sf, bw, c.cr, u8::from(c.ldro())])?; // SetModulationParams
         self.packet_params(c.preamble, 0xFF)?;
-        // Correctif d'errata (§15.4) : en IQ standard, le bit 2 du registre 0x0736 doit valoir 1.
+        // Errata fix (§15.4): with standard IQ, bit 2 of register 0x0736 must be 1.
         let mut iq = [0u8];
         self.read_reg(0x0736, &mut iq)?;
         self.write_reg(0x0736, &[iq[0] | 0x04])?;
         let s = c.sync_word;
         self.write_reg(0x0740, &[(s & 0xF0) | 0x04, ((s & 0x0F) << 4) | 0x04])?;
-        self.write_reg(0x08AC, &[0x96]) // gain de réception renforcé
+        self.write_reg(0x08AC, &[0x96]) // boosted RX gain
     }
 
-    /// SetPacketParams : préambule, en-tête explicite, longueur, CRC, IQ standard.
+    /// SetPacketParams: preamble, explicit header, length, CRC, standard IQ.
     fn packet_params(&mut self, preamble: u16, len: u8) -> Result<(), Error> {
         let p = preamble.to_be_bytes();
         self.cmd(&[0x8C, p[0], p[1], 0x00, len, 0x01, 0x00])
     }
 
-    /// Puissance d'émission du SX1262 (−9 à +22 dBm), limite de courant `ocp_ma`.
-    /// PA haute puissance : `SetPaConfig(0x04, 0x07, 0x00, 0x01)` (§13.1.14), rampe de 200 µs,
-    /// et le correctif de « clamping » du PA (errata §15.2, comme RadioLib).
+    /// SX1262 TX power (−9 to +22 dBm), current limit `ocp_ma`.
+    /// High-power PA: `SetPaConfig(0x04, 0x07, 0x00, 0x01)` (§13.1.14), 200 µs ramp, and the PA
+    /// clamping fix (errata §15.2, as in RadioLib).
     pub fn set_tx_power(&mut self, dbm: i8, ocp_ma: u16) -> Result<(), Error> {
         let dbm = dbm.clamp(-9, 22);
         self.cmd(&[0x95, 0x04, 0x07, 0x00, 0x01])?;
@@ -252,8 +252,8 @@ impl<'d> Sx126x<'d> {
         self.write_reg(0x08D8, &[clamp[0] | 0x1E])
     }
 
-    /// Réception continue. DIO1 signale fin de réception et erreurs ; préambule et en-tête sont
-    /// seulement lus dans le registre d'interruptions, pour l'écoute avant émission.
+    /// Continuous reception. DIO1 signals end of reception and errors; preamble and header are
+    /// only read from the IRQ register, for listen before talk.
     pub fn start_rx(&mut self, preamble: u16) -> Result<(), Error> {
         self.cmd(&[0x80, 0x00])?;
         self.packet_params(preamble, 0xFF)?;
@@ -268,10 +268,10 @@ impl<'d> Sx126x<'d> {
         let d = dio1.to_be_bytes();
         self.cmd(&[0x08, m[0], m[1], d[0], d[1], 0, 0, 0, 0])?; // SetDioIrqParams
         self.clear_irq()?;
-        self.cmd(&[0x82, 0xFF, 0xFF, 0xFF]) // SetRx(continu)
+        self.cmd(&[0x82, 0xFF, 0xFF, 0xFF]) // SetRx(continuous)
     }
 
-    /// Émet `data` (au plus 255 octets). La fin d'émission arrive sur DIO1 (TX_DONE).
+    /// Transmits `data` (at most 255 bytes). End of transmission is signalled on DIO1 (TX_DONE).
     pub fn transmit(&mut self, preamble: u16, data: &[u8]) -> Result<(), Error> {
         let len = u8::try_from(data.len()).map_err(|_| Error::Param)?;
         self.cmd(&[0x80, 0x00])?;
@@ -286,7 +286,7 @@ impl<'d> Sx126x<'d> {
         let m = (irq::TX_DONE | irq::TIMEOUT).to_be_bytes();
         self.cmd(&[0x08, m[0], m[1], m[0], m[1], 0, 0, 0, 0])?;
         self.clear_irq()?;
-        self.cmd(&[0x83, 0x00, 0x00, 0x00]) // SetTx sans délai de garde
+        self.cmd(&[0x83, 0x00, 0x00, 0x00]) // SetTx without timeout
     }
 
     pub fn dio1(&self) -> bool {
@@ -303,7 +303,7 @@ impl<'d> Sx126x<'d> {
         self.cmd(&[0x02, 0xFF, 0xFF])
     }
 
-    /// Lit le dernier paquet reçu dans `out` (au plus sa taille).
+    /// Reads the last received packet into `out` (up to its size).
     pub fn read_packet(&mut self, out: &mut [u8], crc_error: bool) -> Result<RxInfo, Error> {
         let mut st = [0x13, 0, 0, 0];
         self.xfer(&mut st)?;
@@ -325,7 +325,7 @@ impl<'d> Sx126x<'d> {
         })
     }
 
-    /// Puissance instantanée sur le canal, dBm.
+    /// Instantaneous channel power, dBm.
     pub fn rssi_inst(&mut self) -> Result<i16, Error> {
         let mut b = [0x15, 0, 0];
         self.xfer(&mut b)?;

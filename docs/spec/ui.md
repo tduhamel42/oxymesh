@@ -1,70 +1,70 @@
-# Interface du ThinkNode M5
+# ThinkNode M5 interface
 
-Source de vérité pour `mc-ui`. Textes affichés **en anglais**. Écran e-paper 200×200 noir et blanc, deux boutons, potentiomètre de luminosité, LED bleue, buzzer.
+Source of truth for `mc-ui`. On-screen text **in English**. 200×200 black and white e-paper screen, two buttons, brightness potentiometer, blue LED, buzzer.
 
-## 1. Principes
+## 1. Principles
 
-- **Les deux boutons gardent toujours le même sens**, rappelé par une barre d'aide en bas de l'écran.
-- **Tout l'écran sert** (la mise en page du C++ est un écran 128×64 agrandi, qui laisse 45 % de vide).
-- **Accents lisibles** (polices u8g2 avec Latin-1 et Latin étendu) ; un caractère sans glyphe s'affiche comme un losange, pas comme un pavé.
-- **L'écran ne bloque jamais la radio ni le Bluetooth** : l'attente de fin de rafraîchissement est asynchrone.
-- **Rien ne s'efface tout seul** de l'app : la file des messages en attente reste celle du protocole (`docs/spec/companion.md` §5).
+- **Both buttons always keep the same meaning**, recalled by a help bar at the bottom of the screen.
+- **The whole screen is used** (the C++ layout is an enlarged 128×64 screen, which leaves 45 % empty).
+- **Readable accents** (u8g2 fonts with Latin-1 and Latin Extended); a character without a glyph is shown as a diamond, not as a block.
+- **The screen never blocks the radio or Bluetooth**: waiting for a refresh to finish is asynchronous.
+- **Nothing disappears from the app on its own**: the offline message queue remains the protocol's (`docs/spec/companion.md` §5).
 
-## 2. Boutons
+## 2. Buttons
 
-| Bouton | Appui court | Appui long (≥ 600 ms) | Double appui (< 300 ms) |
+| Button | Short press | Long press (≥ 600 ms) | Double press (< 300 ms) |
 |---|---|---|---|
-| A (GPIO21, bas) | suivant / descendre | ouvrir / valider | précédent / monter |
-| B (GPIO14, haut) | retour (accueil depuis le premier niveau) | allume ou éteint l'éclairage | — |
+| A (GPIO21, bottom) | next / down | open / confirm | previous / up |
+| B (GPIO14, top) | back (home from the first level) | turns the backlight on or off | — |
 
-- Le premier appui quand l'écran est en veille d'éclairage ne fait que rallumer l'éclairage s'il était allumé avant.
-- Pendant 8 s après le démarrage, un appui long sur A ouvre l'écran de secours (réinitialisation des réglages, reprise de la migration).
+- The first press while the screen's backlight has timed out only turns the backlight back on, if it was on before.
+- For 8 s after boot, a long press on A opens the recovery screen (settings reset, migration restart).
 
-## 3. Éclairage et potentiomètre
+## 3. Backlight and potentiometer
 
-- L'éclairage reste allumé une fois activé, pour qu'on puisse régler sa luminosité au potentiomètre.
-- Le potentiomètre n'est pas lisible par le firmware (`docs/spec/m5.md`) : pas de zone morte possible en bas de course. L'extinction à 100 % est garantie par le bouton B et l'extinction automatique, qui coupent l'alimentation des LED (IO5), quelle que soit la position de la molette. L'en-tête montre toujours l'état de l'éclairage (Tanguy, 2026-11-06).
-- Extinction automatique réglable : 30 s, 2 min (défaut), jamais ; le délai repart à chaque appui.
-- Icône d'ampoule dans l'en-tête quand il est allumé.
+- The backlight stays on once enabled, so that its brightness can be adjusted with the potentiometer.
+- The potentiometer is not readable by the firmware (`docs/spec/m5.md`): no dead zone is possible at the bottom of its travel. Turning it 100 % off is guaranteed by button B and the auto-off, which cut the LED power (IO5), whatever the knob position. The header always shows the backlight state (Tanguy, 2026-11-06).
+- Adjustable auto-off: 30 s, 2 min (default), never; the timer restarts on each press.
+- Light bulb icon in the header while it is on.
 
-## 4. En-tête (tous les écrans)
+## 4. Header (all screens)
 
-`HH:MM` · non-lus (enveloppe + nombre) · Bluetooth (connecté, en attente, coupé) · éclairage · **batterie en pourcentage** (symbole de charge quand l'USB est branché ; `docs/spec/m5.md` §3).
+`HH:MM` · unread (envelope + count) · Bluetooth (connected, waiting, off) · backlight · **battery as a percentage** (charging symbol when USB is plugged in; `docs/spec/m5.md` §3).
 
-## 5. Écrans
+## 5. Screens
 
-| Écran | Contenu |
+| Screen | Content |
 |---|---|
-| **Home** | Grande horloge, date. Non-lus : DM et canaux. Aperçu du dernier message (expéditeur, début du texte, âge). Batterie en pourcentage et en tension. Bluetooth : nom de l'app connectée, ou « Pair: 123456 » pendant un appairage. Réseau : préréglage (ex. « EU Narrow · fr »), dernier relais entendu, plancher de bruit. GPS : fix et satellites si activé |
-| **Inbox** | Conversations (contacts et canaux), triées par dernier message, avec point de non-lu et aperçu d'une ligne |
-| **Conversation** | Bulles (reçues à gauche, envoyées à droite) avec retour à la ligne. Envoi : `sending…`, `delivered ✓ 2.4 s` (aller-retour), `failed`. Réception : sauts (`direct` ou `3 hops`) et SNR. A long = Quick reply |
-| **Quick reply** | 8 réponses prêtes (défaut : OK, Yes, No, On my way, Call me, Where are you?, Running late, Thanks) et « Send my position ». Modifiables par la commande CLI `set reply.N <texte>`. Envoi depuis l'appareil : 3 essais directs, puis `RESET_PATH` et inondation (écart volontaire 6) |
-| **Network** | Nœuds entendus (nom, type, sauts, SNR, âge), relais en tête. A long = découverte en zéro saut (au plus une fois par 5 s). Temps d'antenne de l'heure et duty cycle |
-| **My card** | QR `meshcore://contact/add?name=<nom>&public_key=<64 hexa>&type=1`, scannable par l'app officielle ; nom et clé abrégée dessous |
-| **Pairing** | Plein écran, PIN en très grands chiffres, dès que l'appairage commence ; disparaît à la fin |
-| **Settings** | Région (préréglages de `config/regions.toml`), Bluetooth, GPS, buzzer, durée d'éclairage, envoyer une annonce (zéro saut ou inondation), hibernation |
+| **Home** | Large clock, date. Unread: DMs and channels. Preview of the last message (sender, start of the text, age). Battery as a percentage and as a voltage. Bluetooth: name of the connected app, or "Pair: 123456" during pairing. Network: preset (e.g. "EU Narrow · fr"), last repeater heard, noise floor. GPS: fix and satellites if enabled |
+| **Inbox** | Conversations (contacts and channels), sorted by last message, with an unread dot and a one-line preview |
+| **Conversation** | Bubbles (received on the left, sent on the right) with line wrapping. Sending: `sending…`, `delivered ✓ 2.4 s` (round trip), `failed`. Receiving: hops (`direct` or `3 hops`) and SNR. A long = Quick reply |
+| **Quick reply** | 8 canned replies (default: OK, Yes, No, On my way, Call me, Where are you?, Running late, Thanks) and "Send my position". Editable with the CLI command `set reply.N <text>`. Sending from the device: 3 direct attempts, then `RESET_PATH` and flood (deliberate deviation 6) |
+| **Network** | Nodes heard (name, type, hops, SNR, age), repeaters first. A long = zero-hop discovery (at most once every 5 s). Airtime over the last hour and duty cycle |
+| **My card** | QR `meshcore://contact/add?name=<name>&public_key=<64 hex>&type=1`, scannable by the official app; name and shortened key below it |
+| **Pairing** | Full screen, PIN in very large digits, as soon as pairing starts; disappears when it ends |
+| **Settings** | Region (presets from `config/regions.toml`), Bluetooth, GPS, buzzer, backlight duration, send an advert (zero-hop or flood), hibernation |
 
-Navigation : Home → (A court) Inbox → Network → My card → Settings → Home ; A long ouvre l'élément choisi ; B revient.
+Navigation: Home → (A short) Inbox → Network → My card → Settings → Home; A long opens the selected item; B goes back.
 
 ## 6. Notifications
 
-- **LED bleue** : clignote brièvement toutes les 5 s tant qu'il reste un non-lu.
-- **Buzzer** : petite mélodie pour un DM, une autre pour un canal, un bip pour un accusé ; seulement quand aucune app n'est connectée (comme le C++) ; coupé par réglage.
-- Un nouveau DM affiche l'aperçu sur Home ; on ne change pas d'écran à la place de l'utilisateur pendant qu'il navigue.
+- **Blue LED**: blinks briefly every 5 s while something is unread.
+- **Buzzer**: a short tune for a DM, another one for a channel, a beep for an ACK; only when no app is connected (like the C++); can be muted in settings.
+- A new DM shows its preview on Home; we never switch screens on the user's behalf while they are navigating.
 
-## 7. Historique local et non-lus
+## 7. Local history and unread
 
-- Les 64 derniers messages (DM et canaux, reçus et envoyés depuis l'écran) sont gardés en flash, indépendamment de la file d'attente du protocole.
-- Un message devient lu quand on l'ouvre sur l'appareil **ou** quand l'app le récupère par `SYNC_NEXT_MESSAGE`.
+- The last 64 messages (DMs and channels, received and sent from the screen) are kept in flash, independently of the protocol's offline queue.
+- A message becomes read when it is opened on the device **or** when the app fetches it with `SYNC_NEXT_MESSAGE`.
 
-## 8. Rafraîchissement e-paper
+## 8. E-paper refresh
 
-- Rafraîchissement partiel pour la navigation et les mises à jour ; complet tous les 30 partiels, toutes les heures, et à chaque retour sur Home après plus de 10 min.
-- Horloge à la minute ; pas de compteur de secondes ; les âges s'affichent en minutes.
-- Pas de redessin si l'image n'a pas changé (hash du tampon).
-- Batterie : moyenne glissante, mise à jour au plus une fois par minute.
+- Partial refresh for navigation and updates; full refresh every 30 partials, every hour, and on each return to Home after more than 10 min.
+- Clock updated every minute; no seconds counter; ages are shown in minutes.
+- No redraw if the image has not changed (buffer hash).
+- Battery: moving average, updated at most once a minute.
 
-## 9. Vérification
+## 9. Verification
 
-- `mc ui --out <dir>` rend chaque écran, dans des états scriptés, en PNG ; ces images de référence sont comparées en test.
-- Sur l'appareil (MC7) : lecture d'un DM, réponse rapide avec coche de livraison, QR ajouté dans l'app officielle, éclairage maintenu et réglé au potentiomètre, pourcentage de batterie juste à ±5 %, aucune trame perdue pendant un rafraîchissement.
+- `mc ui --out <dir>` renders each screen, in scripted states, as PNG; these reference images are compared in tests.
+- On the device (MC7): reading a DM, quick reply with delivery tick, QR added in the official app, backlight kept on and adjusted with the potentiometer, battery percentage accurate to ±5 %, no packet lost during a refresh.

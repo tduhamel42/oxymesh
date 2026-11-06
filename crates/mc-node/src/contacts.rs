@@ -1,17 +1,17 @@
-//! Contacts et canaux (`ContactInfo.h`, `ChannelDetails.h`, `BaseChatMesh.cpp`).
+//! Contacts and channels (`ContactInfo.h`, `ChannelDetails.h`, `BaseChatMesh.cpp`).
 
 use mc_air::crypto::{ChannelSecret, LocalIdentity, PUB_KEY_LEN, SECRET_LEN};
 use mc_air::packet::PATH_MAX;
 
-/// Contacts du build M5 (`MAX_CONTACTS`).
+/// Contacts of the M5 build (`MAX_CONTACTS`).
 pub const MAX_CONTACTS: usize = 350;
-/// Créneaux temporaires pour les requêtes anonymes (`MAX_ANON_CONTACTS`).
+/// Temporary slots for anonymous requests (`MAX_ANON_CONTACTS`).
 pub const ANON_SLOTS: usize = 8;
-/// Canaux du build M5 (`MAX_GROUP_CHANNELS`).
+/// Channels of the M5 build (`MAX_GROUP_CHANNELS`).
 pub const MAX_CHANNELS: usize = 40;
-/// Contacts essayés pour un hash source (`MAX_SEARCH_RESULTS`).
+/// Contacts tried for a source hash (`MAX_SEARCH_RESULTS`).
 pub const MAX_SEARCH: usize = 24;
-/// « Chemin inconnu ».
+/// "Path unknown".
 pub const PATH_UNKNOWN: u8 = 0xFF;
 
 pub const TYPE_NONE: u8 = 0;
@@ -19,16 +19,16 @@ pub const TYPE_NONE: u8 = 0;
 #[derive(Clone)]
 pub struct Contact {
     pub pub_key: [u8; PUB_KEY_LEN],
-    /// Nom terminé par 0x00, complété de 0x00.
+    /// 0x00-terminated name, padded with 0x00.
     pub name: [u8; 32],
     pub kind: u8,
-    /// bit 0 favori, 1-3 télémétrie, 4 CLI à distance.
+    /// bit 0 favourite, 1-3 telemetry, 4 remote CLI.
     pub flags: u8,
     pub out_path_len: u8,
     pub out_path: [u8; PATH_MAX],
-    /// Horloge de l'émetteur.
+    /// Sender's clock.
     pub last_advert: u32,
-    /// Notre horloge.
+    /// Our clock.
     pub lastmod: u32,
     pub lat: i32,
     pub lon: i32,
@@ -73,7 +73,7 @@ impl Contact {
         self.flags & 0x01 != 0
     }
 
-    /// Secret partagé, calculé une fois puis gardé (`getSharedSecret`).
+    /// Shared secret, computed once then kept (`getSharedSecret`).
     pub fn secret(&mut self, me: &LocalIdentity) -> Option<[u8; SECRET_LEN]> {
         if self.secret.is_none() {
             self.secret = me.shared_secret(&self.pub_key);
@@ -97,7 +97,7 @@ impl Contact {
 
     pub fn set_name(&mut self, name: &[u8]) {
         self.name = [0; 32];
-        // `StrHelper::strncpy` : au plus 31 octets, puis 0x00.
+        // `StrHelper::strncpy`: at most 31 bytes, then 0x00.
         let name = name_str(name);
         for (o, b) in self.name.iter_mut().zip(name.iter().take(31)) {
             *o = *b;
@@ -105,14 +105,14 @@ impl Contact {
     }
 }
 
-/// La partie d'un nom avant le premier 0x00.
+/// The part of a name before the first 0x00.
 pub fn name_str(b: &[u8]) -> &[u8] {
     let n = b.iter().position(|&c| c == 0).unwrap_or(b.len());
     b.get(..n).unwrap_or(&[])
 }
 
-/// Table des contacts, dans l'ordre du C++ (ajouts en fin, retraits qui décalent, écrasement sur
-/// place), précédée des créneaux temporaires.
+/// Contact table, in the C++ order (appends at the end, removals that shift, overwrites in
+/// place), preceded by the temporary slots.
 #[derive(Debug)]
 pub struct Contacts {
     pub anon: [Option<Contact>; ANON_SLOTS],
@@ -134,7 +134,7 @@ impl Contacts {
     }
 }
 
-/// Où se trouve un contact.
+/// Where a contact lives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Slot {
     Anon(usize),
@@ -156,7 +156,7 @@ impl Contacts {
         }
     }
 
-    /// Recherche par clé complète, créneaux temporaires compris.
+    /// Lookup by full key, temporary slots included.
     pub fn find(&self, key: &[u8; PUB_KEY_LEN]) -> Option<Slot> {
         if let Some(i) = self
             .anon
@@ -171,8 +171,8 @@ impl Contacts {
             .map(Slot::List)
     }
 
-    /// Recherche par préfixe de clé (comparé sur `prefix.len()` octets), contacts ordinaires
-    /// d'abord comme `lookupContactByPubKey`.
+    /// Lookup by key prefix (compared over `prefix.len()` bytes), regular contacts first like
+    /// `lookupContactByPubKey`.
     pub fn find_prefix(&self, prefix: &[u8]) -> Option<Slot> {
         if let Some(i) = self.list.iter().position(|c| c.pub_key.starts_with(prefix)) {
             return Some(Slot::List(i));
@@ -183,8 +183,8 @@ impl Contacts {
             .map(Slot::Anon)
     }
 
-    /// Contacts dont le hash d'1 octet vaut `h`, dans l'ordre du tableau C++ (temporaires
-    /// d'abord), 24 au plus (`searchPeersByHash`).
+    /// Contacts whose 1-byte hash is `h`, in the C++ array order (temporary ones first), at most
+    /// 24 (`searchPeersByHash`).
     pub fn by_hash(&self, h: u8) -> heapless::Vec<Slot, MAX_SEARCH> {
         let mut out = heapless::Vec::new();
         let anon = self
@@ -207,7 +207,7 @@ impl Contacts {
         out
     }
 
-    /// Le non-favori le plus ancien (`lastmod`), pour un écrasement quand la table est pleine.
+    /// The oldest non-favourite (`lastmod`), to overwrite when the table is full.
     pub fn oldest_non_favourite(&self) -> Option<usize> {
         let mut best: Option<(usize, u32)> = None;
         for (i, c) in self.list.iter().enumerate() {
@@ -218,7 +218,7 @@ impl Contacts {
         best.map(|(i, _)| i)
     }
 
-    /// Un créneau temporaire libre, ou le plus ancien (`allocateContactSlot(true)`).
+    /// A free temporary slot, or the oldest one (`allocateContactSlot(true)`).
     pub fn anon_slot(&mut self) -> usize {
         if let Some(i) = self.anon.iter().position(Option::is_none) {
             return i;
@@ -235,7 +235,7 @@ impl Contacts {
     }
 }
 
-/// Un canal : nom (vide = créneau libre) et secret.
+/// A channel: name (empty = free slot) and secret.
 #[derive(Debug, Clone)]
 pub struct Channel {
     pub name: [u8; 32],
@@ -253,7 +253,7 @@ impl Channel {
     }
 }
 
-/// Les 40 canaux ; le canal 0 est préchargé « Public » (`MyMesh.cpp:1002-1003`).
+/// The 40 channels; channel 0 is preloaded as "Public" (`MyMesh.cpp:1002-1003`).
 #[derive(Debug, Clone)]
 pub struct Channels(pub [Channel; MAX_CHANNELS]);
 
@@ -275,7 +275,7 @@ impl Channels {
 }
 
 impl Channels {
-    /// Canaux non vides dont le hash vaut `h`, 4 au plus (`searchChannelsByHash`).
+    /// Non-empty channels whose hash is `h`, at most 4 (`searchChannelsByHash`).
     pub fn by_hash(&self, h: u8) -> heapless::Vec<usize, 4> {
         let mut out = heapless::Vec::new();
         for (i, c) in self.0.iter().enumerate() {

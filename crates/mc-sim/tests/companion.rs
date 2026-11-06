@@ -1,5 +1,5 @@
-//! La couche compagnon de bout en bout : deux appareils simulés pilotés par des trames
-//! `mc-proto`, comme le ferait l'app officielle.
+//! The companion layer end to end: two simulated devices driven by `mc-proto` frames, as the
+//! official app would do.
 
 use mc_core::Duration;
 use mc_proto::codec::{APP_VER, fixed_str, to_fixed};
@@ -12,13 +12,13 @@ fn enc(c: &Command<'_>) -> Vec<u8> {
     b[..n].to_vec()
 }
 
-/// Envoie une commande et rend les trames décodées (réponse puis notifications éventuelles).
+/// Sends a command and returns the frames (response, then any notifications).
 fn ask(w: &mut World, i: usize, c: &Command<'_>) -> Vec<Vec<u8>> {
     w.app(i, &enc(c)).into_iter().map(|f| f.to_vec()).collect()
 }
 
 fn first(w: &mut World, i: usize, c: &Command<'_>) -> Vec<u8> {
-    ask(w, i, c).into_iter().next().expect("une réponse")
+    ask(w, i, c).into_iter().next().expect("a response")
 }
 
 fn pushed(w: &World, i: usize, pred: impl Fn(&Response<'_>) -> bool) -> bool {
@@ -41,7 +41,7 @@ fn start(w: &mut World, i: usize) {
             assert_eq!(d.max_channels, 40);
             assert_eq!(fixed_str(&d.version), b"v1.18.0-oxymesh");
         }
-        other => panic!("DEVICE_INFO attendu : {other:?}"),
+        other => panic!("expected DEVICE_INFO: {other:?}"),
     }
     let r = first(
         w,
@@ -66,7 +66,7 @@ fn app_session_between_two_devices() {
     start(&mut w, a);
     start(&mut w, b);
 
-    // SELF_INFO de Bob : sa clé et son nom.
+    // Bob's SELF_INFO: his key and name.
     let kb = *w.node(b).id.pub_key();
     let ka = *w.node(a).id.pub_key();
     match Response::decode(&first(
@@ -87,7 +87,7 @@ fn app_session_between_two_devices() {
         r => panic!("{r:?}"),
     }
 
-    // Annonces en zéro saut : chacun pousse ADVERT et voit l'autre dans GET_CONTACTS.
+    // Zero-hop adverts: each pushes ADVERT and sees the other in GET_CONTACTS.
     assert_eq!(
         Response::decode(&first(
             &mut w,
@@ -122,7 +122,7 @@ fn app_session_between_two_devices() {
     );
     assert!(matches!(decoded[2], Response::EndOfContacts { .. }));
 
-    // Message direct : SENT (inondation), MSG_WAITING chez Bob, SYNC, puis SEND_CONFIRMED.
+    // Direct message: SENT (flood), MSG_WAITING at Bob, SYNC, then SEND_CONFIRMED.
     let now = w.now;
     let ts = w.node(a).time(now);
     let sent = first(
@@ -133,7 +133,7 @@ fn app_session_between_two_devices() {
             attempt: 0,
             timestamp: ts,
             prefix: kb[..6].try_into().unwrap(),
-            text: "salut Bob, ça va ?".as_bytes(),
+            text: "hi Bob — how are you?".as_bytes(),
         },
     );
     let Response::Sent {
@@ -161,9 +161,9 @@ fn app_session_between_two_devices() {
             ..
         } => {
             assert_eq!(prefix, ka[..6]);
-            assert_eq!(text, "salut Bob, ça va ?".as_bytes());
+            assert_eq!(text, "hi Bob — how are you?".as_bytes());
             assert_eq!(timestamp, ts);
-            assert_eq!(path_len, 0, "arrivé par inondation, 0 saut");
+            assert_eq!(path_len, 0, "arrived by flood, 0 hops");
         }
         r => panic!("{r:?}"),
     }
@@ -182,7 +182,7 @@ fn app_session_between_two_devices() {
         |r| matches!(r, Response::PathUpdated { key } if *key == kb)
     ));
 
-    // Canal privé « #test » sur les deux appareils, message de canal.
+    // Private channel "#test" on both devices, channel message.
     let secret: [u8; 16] = mc_air::ChannelSecret::from_hashtag("#test").0[..16]
         .try_into()
         .unwrap();
@@ -211,7 +211,7 @@ fn app_session_between_two_devices() {
                 txt_type: 0,
                 idx: 1,
                 timestamp: ts,
-                text: b"hello canal"
+                text: b"hello channel"
             }
         ))
         .unwrap(),
@@ -223,10 +223,10 @@ fn app_session_between_two_devices() {
         Response::MsgWaiting
     ))));
     match Response::decode(&first(&mut w, b, &Command::SyncNextMessage)).unwrap() {
-        Response::ChannelMsg { idx: 1, text, .. } => assert_eq!(text, b"alice: hello canal"),
+        Response::ChannelMsg { idx: 1, text, .. } => assert_eq!(text, b"alice: hello channel"),
         r => panic!("{r:?}"),
     }
-    // Le canal 0 est « Public ».
+    // Channel 0 is "Public".
     match Response::decode(&first(&mut w, a, &Command::GetChannel { idx: 0 })).unwrap() {
         Response::ChannelInfo { name, secret, .. } => {
             assert_eq!(fixed_str(&name), b"Public");
@@ -243,9 +243,9 @@ fn error_codes_match_cpp() {
     start(&mut w, a);
     let err = |w: &mut World, c: &Command<'_>| match Response::decode(&first(w, a, c)).unwrap() {
         Response::Err(code) => code,
-        r => panic!("ERR attendu : {r:?}"),
+        r => panic!("expected ERR: {r:?}"),
     };
-    // Contact inconnu : ERR 2.
+    // Unknown contact: ERR 2.
     assert_eq!(
         err(
             &mut w,
@@ -259,9 +259,9 @@ fn error_codes_match_cpp() {
         ),
         2
     );
-    // L'horloge ne recule pas : ERR 6.
+    // The clock does not go backwards: ERR 6.
     assert_eq!(err(&mut w, &Command::SetDeviceTime { unix_s: 1 }), 6);
-    // Canal hors limites : ERR 2 ; type de texte de canal ≠ 0 : ERR 1.
+    // Channel out of range: ERR 2; channel text type ≠ 0: ERR 1.
     assert_eq!(
         err(
             &mut w,
@@ -286,7 +286,7 @@ fn error_codes_match_cpp() {
         ),
         1
     );
-    // Puissance hors limites, réglage radio invalide : ERR 6.
+    // Power out of range, invalid radio setting: ERR 6.
     assert_eq!(err(&mut w, &Command::SetRadioTxPower { dbm: 23 }), 6);
     assert_eq!(
         err(
@@ -301,7 +301,7 @@ fn error_codes_match_cpp() {
         ),
         6
     );
-    // Relais demandé hors des fréquences permises : ERR 6.
+    // Repeat requested outside the allowed frequencies: ERR 6.
     assert_eq!(
         err(
             &mut w,
@@ -315,17 +315,17 @@ fn error_codes_match_cpp() {
         ),
         6
     );
-    // Trame trop courte pour sa commande : ERR 1 (précondition de longueur du C++).
+    // Frame too short for its command: ERR 1 (C++ length precondition).
     assert_eq!(
         Response::decode(&w.app(a, &[2, 0, 0])[0]).unwrap(),
         Response::Err(1)
     );
-    // Sans message en attente.
+    // No message waiting.
     assert_eq!(
         Response::decode(&first(&mut w, a, &Command::SyncNextMessage)).unwrap(),
         Response::NoMoreMessages
     );
-    // Clé privée : export puis import d'une autre clé, la clé publique suit.
+    // Private key: export then import of another key, the public key follows.
     let other = mc_sim::identity("carol");
     assert_eq!(
         Response::decode(&first(

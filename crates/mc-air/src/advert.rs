@@ -1,10 +1,10 @@
-//! Données d'une annonce (`app_data`, `docs/spec/air.md` §5 ; `AdvertDataHelpers.cpp:4-69`).
+//! Advert data (`app_data`, `docs/spec/air.md` §5; `AdvertDataHelpers.cpp:4-69`).
 
 use mc_core::Writer;
 
 use crate::Error;
 
-/// Au plus 32 octets de données d'annonce (`MAX_ADVERT_DATA_SIZE`).
+/// At most 32 bytes of advert data (`MAX_ADVERT_DATA_SIZE`).
 pub const APP_DATA_MAX: usize = 32;
 
 pub const TYPE_NONE: u8 = 0;
@@ -18,22 +18,22 @@ const FEAT1: u8 = 0x20;
 const FEAT2: u8 = 0x40;
 const NAME: u8 = 0x80;
 
-/// Données d'annonce décodées.
+/// Decoded advert data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct AppData<'a> {
-    /// Quartet bas des flags : 1 chat, 2 relais, 3 salon, 4 capteur.
+    /// Low nibble of the flags: 1 chat, 2 repeater, 3 room, 4 sensor.
     pub kind: u8,
-    /// Latitude et longitude en degrés × 1e6.
+    /// Latitude and longitude in degrees × 1e6.
     pub location: Option<(i32, i32)>,
     pub feat1: Option<u16>,
     pub feat2: Option<u16>,
-    /// Nom brut (UTF-8 attendu, non vérifié) ; jusqu'au premier NUL pour un usage en texte.
+    /// Raw name (UTF-8 expected, not checked); up to the first NUL when used as text.
     pub name: Option<&'a [u8]>,
 }
 
 impl<'a> AppData<'a> {
-    /// Décode comme `AdvertDataParser` : il faut au moins l'octet de flags et les champs qu'il
-    /// annonce ; le nom est le reste si son flag est présent, sinon le reste est ignoré.
+    /// Decodes like `AdvertDataParser`: requires at least the flags byte and the fields it
+    /// announces; the name is the remainder if its flag is set, otherwise the remainder is ignored.
     pub fn decode(app_data: &'a [u8]) -> Result<Self, Error> {
         let mut r = mc_core::Reader::new(app_data);
         let flags = r.u8().map_err(|_| Error::Truncated)?;
@@ -69,15 +69,15 @@ impl<'a> AppData<'a> {
         })
     }
 
-    /// Le nom jusqu'au premier NUL (le C++ en fait une chaîne C).
+    /// The name up to the first NUL (the C++ turns it into a C string).
     pub fn name_str(&self) -> &'a [u8] {
         let n = self.name.unwrap_or(&[]);
         let end = n.iter().position(|&b| b == 0).unwrap_or(n.len());
         n.get(..end).unwrap_or(&[])
     }
 
-    /// Encode comme `AdvertDataBuilder::encodeTo` : le nom est coupé au plus long préfixe UTF-8
-    /// valide qui tient dans les 32 octets ; un nom vide n'est pas écrit.
+    /// Encodes like `AdvertDataBuilder::encodeTo`: the name is cut to the longest valid UTF-8
+    /// prefix that fits in the 32 bytes; an empty name is not written.
     pub fn encode(&self, out: &mut [u8; APP_DATA_MAX]) -> Result<usize, Error> {
         let mut flags = self.kind & 0x0F;
         let mut w = Writer::new(out);
@@ -87,7 +87,7 @@ impl<'a> AppData<'a> {
             w.put_i32_le(lat).map_err(|_| Error::Overflow)?;
             w.put_i32_le(lon).map_err(|_| Error::Overflow)?;
         }
-        // Le C++ n'écrit feat1/feat2 que s'ils sont non nuls.
+        // The C++ writes feat1/feat2 only when they are non-zero.
         if let Some(f) = self.feat1.filter(|&f| f != 0) {
             flags |= FEAT1;
             w.put_u16_le(f).map_err(|_| Error::Overflow)?;
@@ -110,8 +110,8 @@ impl<'a> AppData<'a> {
     }
 }
 
-/// Plus long préfixe de `s` d'au plus `max` octets fait de caractères UTF-8 complets et valides
-/// (`validUtf8PrefixLength`, `UTF8Helpers.h:12` : mêmes règles que `core::str::from_utf8`).
+/// Longest prefix of `s`, at most `max` bytes, made of complete, valid UTF-8 characters
+/// (`validUtf8PrefixLength`, `UTF8Helpers.h:12`: same rules as `core::str::from_utf8`).
 pub fn utf8_prefix_len(s: &[u8], max: usize) -> usize {
     let s = s.get(..s.len().min(max)).unwrap_or(&[]);
     match core::str::from_utf8(s) {

@@ -1,21 +1,21 @@
-# Profil réglementaire UE 863-870 MHz, dispositifs à courte portée non spécifiques (France).
-# Vérifié le 2026-11-03 contre les sources primaires (détail et URL dans l’ADR-0006 de loranet, d’où vient ce fichier) :
-#   - CEPT ERC/REC 70-03, édition du 9 octobre 2026, annexe 1, table 1 (h1.3 à h1.9) ;
-#   - décision 2006/771/CE modifiée par la décision d'exécution (UE) 2025/105, annexe, table 2 ;
-#   - Arcep, décision n° 2014-1263 modifiée par n° 2023-1412 (mêmes valeurs pour 863-870 MHz).
-# Puissances en ERP. Duty cycle : par émetteur, par sous-bande, sur une période continue d'une
-# heure ; les sources ne précisent pas si la fenêtre est glissante, l'oracle utilise une fenêtre
-# glissante, plus stricte qu'une fenêtre fixe.
+# EU 863-870 MHz regulatory profile, non-specific short-range devices (France).
+# Checked on 2026-11-03 against the primary sources (details and URLs in loranet's ADR-0006, where this file comes from):
+#   - CEPT ERC/REC 70-03, edition of 9 October 2026, annex 1, table 1 (h1.3 to h1.9);
+#   - Decision 2006/771/EC as amended by Implementing Decision (EU) 2025/105, annex, table 2;
+#   - Arcep, decision no. 2014-1263 as amended by no. 2023-1412 (same values for 863-870 MHz).
+# Powers are ERP. Duty cycle: per transmitter, per sub-band, over a continuous one-hour
+# period; the sources do not say whether the window slides, so the oracle uses a sliding
+# window, which is stricter than a fixed one.
 #
-# `polite_access = true` : l'accès poli (LBT + AFA, EN 300 220-2 V3.3.1 §4.4.3) peut remplacer le
-# duty cycle. Il n'est pas encore modélisé : les nœuds respectent toujours le duty cycle.
+# `polite_access = true`: polite spectrum access (LBT + AFA, EN 300 220-2 V3.3.1 §4.4.3) may replace the
+# duty cycle. It is not modeled yet: nodes always honor the duty cycle.
 #
-# Une sous-bande à plusieurs régimes (h1.8/h1.9) donne plusieurs règles ; le simulateur et les
-# nœuds appliquent la plus permissive qui admet l'émission (fréquence et puissance).
+# A sub-band with several regimes (h1.8/h1.9) gives several rules; the simulator and the
+# nodes apply the most permissive one that allows the transmission (frequency and power).
 
 name = "eu868"
 window_s = 3600
-status = "vérifié le 2026-11-03"
+status = "checked on 2026-11-03"
 
 [[rule]]
 name = "h1.3"
@@ -25,7 +25,7 @@ max_erp_mw = 25
 duty_percent = 0.1
 polite_access = true
 verified = true
-source = "ERC/REC 70-03 annexe 1 h1.3 ; (UE) 2025/105"
+source = "ERC/REC 70-03 annex 1 h1.3; (EU) 2025/105"
 
 [[rule]]
 name = "h1.4"
@@ -35,7 +35,7 @@ max_erp_mw = 25
 duty_percent = 1.0
 polite_access = true
 verified = true
-source = "ERC/REC 70-03 annexe 1 h1.4 ; (UE) 2025/105"
+source = "ERC/REC 70-03 annex 1 h1.4; (EU) 2025/105"
 
 [[rule]]
 name = "g1"
@@ -45,7 +45,7 @@ max_erp_mw = 25
 duty_percent = 1.0
 polite_access = true
 verified = true
-source = "ERC/REC 70-03 annexe 1 h1.5 ; (UE) 2025/105"
+source = "ERC/REC 70-03 annex 1 h1.5; (EU) 2025/105"
 
 [[rule]]
 name = "g2"
@@ -55,7 +55,7 @@ max_erp_mw = 25
 duty_percent = 0.1
 polite_access = true
 verified = true
-source = "ERC/REC 70-03 annexe 1 h1.6 ; (UE) 2025/105"
+source = "ERC/REC 70-03 annex 1 h1.6; (EU) 2025/105"
 
 [[rule]]
 name = "g3"
@@ -65,7 +65,7 @@ max_erp_mw = 500
 duty_percent = 10.0
 polite_access = true
 verified = true
-source = "ERC/REC 70-03 annexe 1 h1.7 ; (UE) 2025/105"
+source = "ERC/REC 70-03 annex 1 h1.7; (EU) 2025/105"
 
 [[rule]]
 name = "g4-5mw"
@@ -75,7 +75,7 @@ max_erp_mw = 5
 duty_percent = 100.0
 polite_access = false
 verified = true
-source = "ERC/REC 70-03 annexe 1 h1.8 ; (UE) 2025/105 ; Arcep garde la clause voix, sans effet sur les données"
+source = "ERC/REC 70-03 annex 1 h1.8; (EU) 2025/105; Arcep keeps the voice clause, no effect on data"
 
 [[rule]]
 name = "g4-25mw"
@@ -85,4 +85,4 @@ max_erp_mw = 25
 duty_percent = 1.0
 polite_access = true
 verified = true
-source = "ERC/REC 70-03 annexe 1 h1.9 ; (UE) 2025/105"
+source = "ERC/REC 70-03 annex 1 h1.9; (EU) 2025/105"

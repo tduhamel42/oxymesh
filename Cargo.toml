@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-# fuzz/ et firmware/ ont leur propre workspace (toolchains différentes).
+# fuzz/ and firmware/ have their own workspace (different toolchains).
 exclude = ["fuzz", "firmware"]
 
 [workspace.package]
@@ -9,9 +9,10 @@ version = "0.0.0"
 edition = "2024"
 rust-version = "1.97"
 publish = false
+license = "MIT"
 
 [workspace.dependencies]
-# Internes
+# Internal
 mc-core = { path = "crates/mc-core" }
 mc-air = { path = "crates/mc-air" }
 mc-proto = { path = "crates/mc-proto" }
@@ -29,7 +30,7 @@ curve25519-dalek = { version = "5.0", default-features = false }
 
 rand_chacha = { version = "0.10", default-features = false, features = ["std"] }
 
-# std uniquement (simulateur, CLI, tests)
+# std only (simulator, CLI, tests)
 proptest = "1.12"
 serde = { version = "1.0", features = ["derive"] }
 toml = "1.1"

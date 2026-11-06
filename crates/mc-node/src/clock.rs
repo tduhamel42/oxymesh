@@ -1,8 +1,8 @@
-//! Horloge temps réel (secondes Unix) au-dessus de l'horloge monotone du runner.
+//! Real-time clock (Unix seconds) on top of the runner's monotonic clock.
 
 use mc_core::{Duration, Instant};
 
-/// Heure Unix courante, dérivée d'un point de calage et de l'horloge monotone.
+/// Current Unix time, derived from a sync point and the monotonic clock.
 #[derive(Debug, Clone)]
 pub struct Rtc {
     base_epoch: u32,
@@ -30,7 +30,7 @@ impl Rtc {
         self.base = now;
     }
 
-    /// Heure strictement croissante d'un appel à l'autre (`getCurrentTimeUnique`, MeshCore.h:119).
+    /// Time strictly increasing from one call to the next (`getCurrentTimeUnique`, MeshCore.h:119).
     pub fn unique(&mut self, now: Instant) -> u32 {
         let t = self.now(now);
         if t <= self.last_unique {
@@ -42,7 +42,7 @@ impl Rtc {
     }
 }
 
-/// Millisecondes depuis l'origine de l'horloge monotone (pour les durées « à la C++ »).
+/// Milliseconds since the origin of the monotonic clock (for C++-style durations).
 pub const fn ms(d: Duration) -> u64 {
     d.as_millis()
 }

@@ -5,7 +5,7 @@
 /fuzz/coverage
 /firmware/*/target
 node_modules/
-# Sauvegardes et images de flash d'un appareil : elles contiennent la clé privée.
+# Device backups and flash images: they contain the private key.
 *.flash.bin
 /local/
 .DS_Store

@@ -13,7 +13,7 @@ mc-core = { path = "../crates/mc-core" }
 mc-air = { path = "../crates/mc-air" }
 mc-proto = { path = "../crates/mc-proto" }
 
-# Workspace séparé : nightly et instrumentation propres au fuzz.
+# Separate workspace: nightly toolchain and instrumentation specific to fuzzing.
 [workspace]
 members = ["."]
 

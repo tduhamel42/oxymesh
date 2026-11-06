@@ -2,7 +2,7 @@
   "name": "oxymesh-proto-vectors",
   "private": true,
   "type": "module",
-  "description": "Générateur des vecteurs MeshCore ; meshcore.js sert d'oracle indépendant.",
+  "description": "MeshCore vector generator; meshcore.js serves as an independent oracle.",
   "devDependencies": {
     "@liamcottle/meshcore.js": "1.15.0"
   }

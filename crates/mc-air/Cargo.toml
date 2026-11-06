@@ -1,10 +1,11 @@
 [package]
 name = "mc-air"
-description = "Trames MeshCore sur l'air (docs/spec/air.md) : codec, charges utiles, crypto, hashes, portée, annonces"
+description = "MeshCore over-the-air frames (docs/spec/air.md): codec, payloads, crypto, hashes, scope, adverts"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 mc-core.workspace = true

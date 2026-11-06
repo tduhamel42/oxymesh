@@ -1,4 +1,4 @@
-//! Propriétés : canonicité du décodeur de trames, aller-retour des constructeurs, crypto.
+//! Properties: packet decoder canonicity, builder round trips, crypto.
 
 use mc_air::crypto::{self, ChannelSecret, LocalIdentity};
 use mc_air::payload::{self, GroupDataPlain, Payload, TxtPlain};
@@ -6,7 +6,7 @@ use mc_air::{AppData, Packet, PacketBuf, PathLen, PayloadType, Route};
 use proptest::prelude::*;
 
 proptest! {
-    /// Toute trame acceptée se réécrit à l'identique, et son découpage ne panique pas.
+    /// Every accepted packet re-encodes identically, and splitting its payload does not panic.
     #[test]
     fn decode_is_canonical(raw in proptest::collection::vec(any::<u8>(), 0..300)) {
         if let Ok(p) = Packet::decode(&raw) {
@@ -17,7 +17,7 @@ proptest! {
         }
     }
 
-    /// Une trame construite se décode en elle-même.
+    /// A built packet decodes back to itself.
     #[test]
     fn built_packets_roundtrip(
         route in 0u8..4,
@@ -47,8 +47,8 @@ proptest! {
         }
     }
 
-    /// seal puis open redonne le clair suivi de zéros ; tout autre secret échoue presque
-    /// toujours (MAC de 2 octets : une chance sur 65 536 de passer).
+    /// seal then open gives back the plaintext followed by zeros; any other secret almost always
+    /// fails (2-byte MAC: a 1 in 65 536 chance of passing).
     #[test]
     fn seal_open(secret in any::<[u8; 32]>(), plain in proptest::collection::vec(any::<u8>(), 1..170)) {
         let mut sealed = [0u8; 200];
@@ -60,7 +60,7 @@ proptest! {
         prop_assert!(opened[plain.len()..].iter().all(|&b| b == 0));
     }
 
-    /// Message direct de bout en bout entre deux identités quelconques.
+    /// End-to-end direct message between two arbitrary identities.
     #[test]
     fn direct_message_end_to_end(
         sa in any::<[u8; 32]>(),
@@ -77,7 +77,7 @@ proptest! {
         let (n, ack) = payload::txt_plain(ts, 0, attempt, text.as_bytes(), a.pub_key(), &mut plain).unwrap();
         let pkt = payload::datagram(PayloadType::TXT_MSG, b.hash(), a.hash(), &s_ab, &plain[..n]).unwrap();
         let Payload::Addressed { sealed, .. } = Payload::parse(PayloadType::TXT_MSG, pkt.payload()).unwrap() else {
-            panic!("datagramme");
+            panic!("datagram");
         };
         let mut out = [0u8; 200];
         let opened = crypto::open(&s_ab, sealed, &mut out).unwrap();
@@ -87,7 +87,7 @@ proptest! {
         prop_assert_eq!(t.ack_crc(a.pub_key()), ack);
     }
 
-    /// Données d'annonce : encode puis decode redonne les champs (nom coupé en UTF-8 valide).
+    /// Advert data: encode then decode gives back the fields (name cut to valid UTF-8).
     #[test]
     fn app_data_roundtrip(
         kind in 0u8..16,
@@ -104,14 +104,14 @@ proptest! {
         prop_assert!(core::str::from_utf8(back.name_str()).is_ok());
     }
 
-    /// Données de canal : aller-retour par le constructeur et l'analyseur.
+    /// Channel data: round trip through the builder and the parser.
     #[test]
     fn group_data_roundtrip(dt in 1u16.., data in proptest::collection::vec(any::<u8>(), 0..166)) {
         let mut plain = [0u8; 200];
         let n = payload::group_data_plain(dt, &data, &mut plain).unwrap();
         let pkt = payload::group_datagram(PayloadType::GRP_DATA, &ChannelSecret::PUBLIC, &plain[..n]).unwrap();
         let Payload::Group { sealed, channel, .. } = Payload::parse(PayloadType::GRP_DATA, pkt.payload()).unwrap() else {
-            panic!("canal");
+            panic!("channel");
         };
         prop_assert_eq!(channel, ChannelSecret::PUBLIC.hash());
         let mut out = [0u8; 200];
@@ -129,12 +129,12 @@ fn path_hops() {
         b.push_hop(&[i]).unwrap();
     }
     assert_eq!(b.path_len.hops(), 63);
-    // Le C++ déborde ici (0x40) ; nous refusons le 64e saut.
+    // The C++ overflows here (0x40); we reject the 64th hop.
     assert_eq!(b.push_hop(&[0xEE]), Err(mc_air::Error::PathTooLong));
     b.pop_front_hop().unwrap();
     assert_eq!(b.path()[0], 1);
     assert_eq!(b.path_len.hops(), 62);
-    // Hashes de 3 octets : 21 sauts au plus (63 octets).
+    // 3-byte hashes: at most 21 hops (63 bytes).
     let mut b = PacketBuf::new(Route::Flood, PayloadType::TXT_MSG);
     b.set_path(PathLen::new(3, 0).unwrap(), &[]).unwrap();
     for _ in 0..21 {
@@ -147,18 +147,18 @@ fn path_hops() {
 fn limits_match_cpp() {
     let a = LocalIdentity::from_seed(&[7; 32]);
     let s = [1u8; 32];
-    // 160 octets de texte passent, 161 non ; 158 au plus avec un essai étendu.
+    // 160 bytes of text pass, 161 do not; at most 158 with an extended attempt.
     let mut p = [0u8; 200];
     assert!(payload::txt_plain(0, 0, 0, &[b'a'; 160], a.pub_key(), &mut p).is_ok());
     assert!(payload::txt_plain(0, 0, 0, &[b'a'; 161], a.pub_key(), &mut p).is_err());
     assert!(payload::txt_plain(0, 0, 4, &[b'a'; 159], a.pub_key(), &mut p).is_err());
-    // Datagramme : clair + 2 + 15 ≤ 184.
+    // Datagram: plain + 2 + 15 ≤ 184.
     assert!(payload::datagram(PayloadType::TXT_MSG, 1, 2, &s, &[0; 167]).is_ok());
     assert!(payload::datagram(PayloadType::TXT_MSG, 1, 2, &s, &[0; 168]).is_err());
-    // Données de canal : 165 au plus.
+    // Channel data: at most 165.
     assert!(payload::group_data_plain(1, &[0; 165], &mut p).is_ok());
     assert!(payload::group_data_plain(1, &[0; 166], &mut p).is_err());
-    // Texte de canal : préfixe compris, 160 octets au plus.
+    // Channel text: prefix included, at most 160 bytes.
     let n = payload::group_txt_plain(0, b"Alice", &[b'x'; 200], &mut p).unwrap();
     assert_eq!(n, 5 + 160);
 }

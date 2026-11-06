@@ -1,9 +1,9 @@
-//! oxymesh sur le ThinkNode M5 — compagnon USB (MC4).
+//! oxymesh on the ThinkNode M5 — USB companion (MC4).
 //!
-//! `mc-node` (`Device`) pilote le SX1262 et parle le protocole compagnon de MeshCore sur l'UART0
-//! (pont CH340, 115 200 bauds, tramage `<`/`>`). Mémoire en flash dans la partition `mcdata`.
-//! Écran de mise en route, boutons, éclairage, batterie. Le journal est coupé par défaut :
-//! l'UART0 sert au protocole (feature `debug-log` pour la mise au point).
+//! `mc-node` (`Device`) drives the SX1262 and speaks the MeshCore companion protocol on UART0
+//! (CH340 bridge, 115,200 baud, `<`/`>` framing). Storage in flash, in the `mcdata` partition.
+//! Bring-up screen, buttons, backlight, battery. Logging is off by default: UART0 carries the
+//! protocol (`debug-log` feature for debugging).
 #![no_std]
 #![no_main]
 #![deny(clippy::mem_forget)]
@@ -54,7 +54,7 @@ const INFO: Info = Info {
     has_gps: true,
 };
 
-/// L'appareil (≈ 150 Ko) vit ici dès la compilation : la pile n'en a pas la place.
+/// The device (≈ 150 KB) lives here from compile time: the stack has no room for it.
 static DEVICE: ConstStaticCell<Device> = ConstStaticCell::new(Device::empty(INFO));
 static FRAMES: StaticCell<[Frame; 2]> = StaticCell::new();
 
@@ -62,7 +62,7 @@ fn mc_now() -> mc_core::Instant {
     mc_core::Instant::from_nanos(Instant::now().as_micros().saturating_mul(1000))
 }
 
-/// Réglage radio du SX1262 d'après les réglages du nœud (préambule 32 si SF ≤ 8, sinon 16).
+/// SX1262 radio settings from the node prefs (preamble 32 if SF ≤ 8, otherwise 16).
 fn lora_of(p: &Prefs) -> LoRaConfig {
     LoRaConfig {
         freq_hz: p.radio.freq_khz.saturating_mul(1000),
@@ -74,7 +74,7 @@ fn lora_of(p: &Prefs) -> LoRaConfig {
     }
 }
 
-/// Écran de mise en route : nom, batterie, radio. Textes en anglais.
+/// Bring-up screen: name, battery, radio. Texts in English.
 #[allow(clippy::too_many_arguments)]
 fn draw_status(
     f: &mut Frame,
@@ -147,7 +147,7 @@ fn draw_status(
     .draw(f);
 }
 
-#[allow(clippy::large_stack_frames, reason = "tampons de paquet dans main")]
+#[allow(clippy::large_stack_frames, reason = "packet buffers in main")]
 #[esp_rtos::main]
 async fn main(_spawner: Spawner) -> ! {
     #[cfg(feature = "debug-log")]
@@ -155,7 +155,7 @@ async fn main(_spawner: Spawner) -> ! {
     let p = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
     let timg0 = TimerGroup::new(p.TIMG0);
     esp_rtos::start(timg0.timer0, p.FROM_CPU_INTR0);
-    info!("oxymesh mc-m5 : compagnon USB");
+    info!("oxymesh mc-m5: USB companion");
 
     let out = OutputConfig::default();
     let _lora_en = Output::new(p.GPIO46, Level::High, out);
@@ -172,14 +172,14 @@ async fn main(_spawner: Spawner) -> ! {
     }
     Timer::after(Duration::from_millis(10)).await;
 
-    // Mémoire : partition `mcdata`.
+    // Storage: `mcdata` partition.
     let mut flash = FlashStorage::new(p.FLASH).multicore_auto_park();
     let mut table = [0u8; PARTITION_TABLE_MAX_LEN];
     let part = read_partition_table(&mut flash, &mut table)
         .ok()
         .and_then(|t| t.iter().find(|e| e.label_as_str() == "mcdata"));
     let Some(part) = part else {
-        panic!("pas de partition mcdata")
+        panic!("no mcdata partition")
     };
     let part_len = part.len();
     let mut region = part.as_flash_region(&mut flash);
@@ -187,7 +187,7 @@ async fn main(_spawner: Spawner) -> ! {
         panic!("flash")
     };
     let Some(mut store) = FlashStore::new(BlockingAsync::new(nor), part_len) else {
-        panic!("mcdata trop petite")
+        panic!("mcdata too small")
     };
 
     let hw = esp_hal::rng::Rng::new();
@@ -196,7 +196,7 @@ async fn main(_spawner: Spawner) -> ! {
     let id = match store.identity() {
         Some(prv) => LocalIdentity::from_private(&prv),
         None => {
-            // Première mise en route : nouvelle identité (la migration du C++ viendra en MC6).
+            // First boot: new identity (migration from the C++ firmware comes in MC6).
             let id = loop {
                 let mut seed = [0u8; 32];
                 for c in seed.chunks_exact_mut(4) {
@@ -215,7 +215,7 @@ async fn main(_spawner: Spawner) -> ! {
     let dev = DEVICE.take();
     dev.node.reset(id, prefs, 1_793_900_000, mc_now());
     store.load(&mut dev.node);
-    dev.connected = true; // USB : toujours connecté.
+    dev.connected = true; // USB: always connected.
 
     // Radio.
     let spi = Spi::new(
@@ -242,17 +242,17 @@ async fn main(_spawner: Spawner) -> ! {
         .and_then(|()| radio.set_tx_power(dev.node.prefs.radio.tx_power_dbm, m5::OCP_MA))
         .and_then(|()| radio.start_rx(cfg.preamble));
     if let Err(e) = init {
-        error!("SX1262 : {e:?}");
+        error!("SX1262: {e:?}");
     }
 
-    // Écran, boutons, batterie.
+    // Display, buttons, battery.
     let espi = Spi::new(
         p.SPI3,
         SpiConfig::default()
             .with_frequency(Rate::from_mhz(4))
             .with_mode(Mode::_0),
     )
-    .expect("SPI écran")
+    .expect("display SPI")
     .with_sck(p.GPIO38)
     .with_mosi(p.GPIO45);
     let mut epd = Ssd1681::new(
@@ -276,7 +276,7 @@ async fn main(_spawner: Spawner) -> ! {
     let mut adc = Adc::new(p.ADC1, adc_cfg);
     let mut bat = Smoother::new();
 
-    // Protocole compagnon sur l'UART0 (pont CH340).
+    // Companion protocol on UART0 (CH340 bridge).
     let mut uart = Uart::new(p.UART0, UartConfig::default())
         .expect("UART0")
         .with_tx(p.GPIO43)
@@ -299,7 +299,7 @@ async fn main(_spawner: Spawner) -> ! {
     loop {
         let now = mc_now();
 
-        // Trames de l'app.
+        // Frames from the app.
         while uart.read_ready() {
             let Ok(n) = uart.read(&mut rx_bytes) else {
                 break;
@@ -370,7 +370,7 @@ async fn main(_spawner: Spawner) -> ! {
         }
         dev.tick(now, &mut rng, &mut store);
 
-        // Actions demandées par l'app.
+        // Actions requested by the app.
         while let Some(a) = dev.poll_action() {
             match a {
                 Action::Reboot => {
@@ -397,7 +397,7 @@ async fn main(_spawner: Spawner) -> ! {
             }
         }
 
-        // Interface.
+        // User interface.
         while let Some(e) = dev.poll_ui() {
             if let Event::Advert { key, .. } = e
                 && let Some(c) = dev

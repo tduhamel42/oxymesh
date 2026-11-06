@@ -1,11 +1,11 @@
-//! Extenseur d'E/S PCA9557 du ThinkNode M5 (`docs/spec/m5.md` §2), sur I2C en 0x18.
+//! PCA9557 I/O expander of the ThinkNode M5 (`docs/spec/m5.md` §2), on I2C at 0x18.
 
 use esp_hal::Blocking;
 use esp_hal::i2c::master::I2c;
 
 pub const ADDR: u8 = 0x18;
 
-/// Broches de l'extenseur sur le M5.
+/// Expander pins on the M5.
 pub mod pin {
     pub const LED_NOTIFY: u8 = 1;
     pub const LED_ENABLE: u8 = 2;
@@ -26,8 +26,8 @@ pub struct Pca9557<'d> {
 }
 
 impl<'d> Pca9557<'d> {
-    /// IO1 à IO5 en sortie, les autres en entrée ; polarité normale (le PCA9557 inverse IO4-7
-    /// à la mise sous tension) ; périphériques alimentés, LED et éclairage éteints.
+    /// IO1 to IO5 as outputs, the others as inputs; normal polarity (the PCA9557 inverts IO4-7
+    /// at power-up); peripherals powered, LEDs and backlight off.
     pub fn new(i2c: I2c<'d, Blocking>) -> Result<Self, esp_hal::i2c::master::Error> {
         let mut p = Self {
             i2c,
@@ -48,7 +48,7 @@ impl<'d> Pca9557<'d> {
         self.i2c.write(ADDR, &[REG_OUTPUT, self.out])
     }
 
-    /// Registre d'entrée complet (les 8 broches).
+    /// Full input register (all 8 pins).
     pub fn inputs(&mut self) -> Result<u8, esp_hal::i2c::master::Error> {
         let mut b = [0u8];
         self.i2c.write_read(ADDR, &[REG_INPUT], &mut b)?;

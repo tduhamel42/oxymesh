@@ -4,8 +4,8 @@ name         = "oxymesh-esp32s3"
 rust-version = "1.95"
 version      = "0.1.0"
 
-# Firmware compatible MeshCore pour ESP32-S3 (ThinkNode M5 d'abord). Workspace séparé : chaîne
-# Xtensa `esp`. Repris de loranet (firmware/esp32s3) pour la base esp-hal et le pilote SX1262.
+# MeshCore-compatible firmware for the ESP32-S3 (ThinkNode M5 first). Separate workspace: Xtensa
+# `esp` toolchain. Taken from loranet (firmware/esp32s3) for the esp-hal base and the SX1262 driver.
 
 [[bin]]
 name = "mc-m5"
@@ -39,7 +39,7 @@ embedded-storage-async = "0.4"
 embassy-futures = "0.1"
 
 [features]
-# Journal sur l'UART0 : interfère avec le protocole compagnon, pour la mise au point seulement.
+# Log on UART0: interferes with the companion protocol, for debugging only.
 debug-log = []
 
 [profile.dev]

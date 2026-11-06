@@ -1,4 +1,4 @@
-//! Un compagnon MeshCore branché en USB série (`docs/spec/companion.md` §1.2).
+//! A MeshCore companion connected over USB serial (`docs/spec/companion.md` §1.2).
 
 use std::io::{Read, Write};
 use std::time::{Duration, Instant};
@@ -11,19 +11,19 @@ pub struct Port {
     pub name: String,
     port: Box<dyn serialport::SerialPort>,
     deframer: UsbDeframer,
-    /// Trames reçues mais pas encore consommées.
+    /// Frames received but not yet consumed.
     pending: Vec<Vec<u8>>,
     pub verbose: bool,
 }
 
 impl Port {
-    /// Ouvre le port. L'ouverture peut redémarrer la carte (pont USB-série) : on la laisse
-    /// démarrer, puis on vide ce qu'elle a écrit.
+    /// Opens the port. Opening may reset the board (USB-serial bridge): let it boot, then flush
+    /// what it wrote.
     pub fn open(path: &str, name: &str) -> Result<Self, String> {
         let port = serialport::new(path, 115_200)
             .timeout(Duration::from_secs(2))
             .open()
-            .map_err(|e| format!("{path} : {e}"))?;
+            .map_err(|e| format!("{path}: {e}"))?;
         std::thread::sleep(Duration::from_millis(2500));
         let _ = port.clear(serialport::ClearBuffer::Input);
         Ok(Self {
@@ -37,16 +37,16 @@ impl Port {
 
     pub fn send(&mut self, cmd: &Command<'_>) -> Result<(), String> {
         let mut frame = [0u8; FRAME_MAX];
-        let n = cmd.encode(&mut frame).map_err(|_| "commande trop longue")?;
+        let n = cmd.encode(&mut frame).map_err(|_| "command too long")?;
         if self.verbose {
             println!("  {} → {cmd}", self.name);
         }
         let mut buf = [0u8; USB_MAX];
-        let m = usb_frame(TO_DEVICE, &frame[..n], &mut buf).map_err(|_| "trame trop longue")?;
+        let m = usb_frame(TO_DEVICE, &frame[..n], &mut buf).map_err(|_| "frame too long")?;
         self.port.write_all(&buf[..m]).map_err(|e| e.to_string())
     }
 
-    /// Lit ce qui est arrivé, sans attendre.
+    /// Reads whatever has arrived, without waiting.
     pub fn poll(&mut self) -> Result<(), String> {
         let n = self.port.bytes_to_read().map_err(|e| e.to_string())? as usize;
         if n == 0 {
@@ -62,14 +62,14 @@ impl Port {
         Ok(())
     }
 
-    /// Prend les trames reçues jusqu'ici.
+    /// Takes the frames received so far.
     pub fn drain(&mut self) -> Result<Vec<Vec<u8>>, String> {
         self.poll()?;
         Ok(std::mem::take(&mut self.pending))
     }
 
-    /// Attend une trame qui satisfait `pred`, jusqu'à `secs` secondes. Les autres trames restent
-    /// en attente pour un appel suivant.
+    /// Waits up to `secs` seconds for a frame that satisfies `pred`. Other frames stay pending
+    /// for a later call.
     pub fn wait<T>(
         &mut self,
         secs: u64,
@@ -96,7 +96,7 @@ impl Port {
             }
             if Instant::now() >= end {
                 return Err(format!(
-                    "{} : pas de réponse attendue en {secs} s",
+                    "{}: expected response not received within {secs} s",
                     self.name
                 ));
             }
@@ -104,7 +104,7 @@ impl Port {
         }
     }
 
-    /// Envoie une commande et attend la première réponse (code < 0x80).
+    /// Sends a command and waits for the first response (code < 0x80).
     pub fn ask(&mut self, cmd: &Command<'_>) -> Result<Vec<u8>, String> {
         self.send(cmd)?;
         let end = Instant::now() + Duration::from_secs(5);
@@ -115,13 +115,13 @@ impl Port {
                 if self.verbose {
                     match Response::decode(&f) {
                         Ok(r) => println!("  {} ← {r}", self.name),
-                        Err(e) => println!("  {} ← illisible ({e:?}) {f:02x?}", self.name),
+                        Err(e) => println!("  {} ← unreadable ({e:?}) {f:02x?}", self.name),
                     }
                 }
                 return Ok(f);
             }
             if Instant::now() >= end {
-                return Err(format!("{} : pas de réponse à {cmd}", self.name));
+                return Err(format!("{}: no response to {cmd}", self.name));
             }
             std::thread::sleep(Duration::from_millis(10));
         }

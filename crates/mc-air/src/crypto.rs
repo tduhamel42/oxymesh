@@ -1,8 +1,8 @@
-//! Crypto de MeshCore (`docs/spec/air.md` §2) : AES-128-ECB, MAC HMAC-SHA256 de 2 octets placé
-//! devant, identités orlp à clé privée étendue de 64 octets, ECDH « à la orlp », hashes.
+//! MeshCore crypto (`docs/spec/air.md` §2): AES-128-ECB, 2-byte HMAC-SHA256 MAC placed in front,
+//! orlp identities with a 64-byte expanded private key, orlp-style ECDH, hashes.
 //!
-//! Ces primitives sont faibles (ECB, MAC de 2 octets, clés statiques) : on les reproduit pour la
-//! compatibilité (ADR-0001), pas parce qu'elles sont bonnes.
+//! These primitives are weak (ECB, 2-byte MAC, static keys): we reproduce them for compatibility
+//! (ADR-0001), not because they are good.
 
 use aes::Aes128;
 use aes::cipher::{BlockCipherDecrypt, BlockCipherEncrypt, KeyInit};
@@ -24,7 +24,7 @@ pub const BLOCK_LEN: usize = 16;
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// SHA-256 de plusieurs morceaux, tronqué à `N` octets.
+/// SHA-256 of several parts, truncated to `N` bytes.
 pub fn sha256_trunc<const N: usize>(parts: &[&[u8]]) -> [u8; N] {
     let mut h = Sha256::new();
     for p in parts {
@@ -39,7 +39,7 @@ pub fn sha256_trunc<const N: usize>(parts: &[&[u8]]) -> [u8; N] {
 }
 
 fn hmac_sha256(key: &[u8], data: &[&[u8]]) -> [u8; 32] {
-    // HMAC accepte une clé de toute longueur : `new_from_slice` ne peut pas échouer.
+    // HMAC accepts a key of any length: `new_from_slice` cannot fail.
     let mut m = match <HmacSha256 as KeyInit>::new_from_slice(key) {
         Ok(m) => m,
         Err(_) => return [0; 32],
@@ -53,13 +53,13 @@ fn hmac_sha256(key: &[u8], data: &[&[u8]]) -> [u8; 32] {
     out
 }
 
-/// Longueur du bloc chiffré (MAC + AES) pour `plain_len` octets de clair.
+/// Length of the sealed block (MAC + AES) for `plain_len` bytes of plaintext.
 pub const fn sealed_len(plain_len: usize) -> usize {
     MAC_LEN + plain_len.div_ceil(BLOCK_LEN) * BLOCK_LEN
 }
 
-/// `MAC(2) ‖ AES-128-ECB(clair complété par des zéros)` (`Utils.cpp:85-145`).
-/// Clé AES = `secret[0..16]`, clé HMAC = `secret[0..32]`. Renvoie la longueur écrite.
+/// `MAC(2) ‖ AES-128-ECB(zero-padded plaintext)` (`Utils.cpp:85-145`).
+/// AES key = `secret[0..16]`, HMAC key = `secret[0..32]`. Returns the length written.
 pub fn seal(secret: &[u8; SECRET_LEN], plain: &[u8], out: &mut [u8]) -> Result<usize, Error> {
     let n = sealed_len(plain.len());
     let out = out.get_mut(..n).ok_or(Error::Overflow)?;
@@ -81,8 +81,9 @@ pub fn seal(secret: &[u8; SECRET_LEN], plain: &[u8], out: &mut [u8]) -> Result<u
     Ok(n)
 }
 
-/// Vérifie le MAC puis déchiffre (`Utils.cpp:147-175`). Le clair garde le bourrage de zéros
-/// du dernier bloc, comme en C++. Refuse un chiffré vide ou non multiple de 16, ou un MAC faux.
+/// Checks the MAC, then decrypts (`Utils.cpp:147-175`). The plaintext keeps the zero padding of
+/// the last block, as in C++. Rejects a ciphertext that is empty or not a multiple of 16, or a
+/// wrong MAC.
 pub fn open<'o>(
     secret: &[u8; SECRET_LEN],
     sealed: &[u8],
@@ -93,7 +94,7 @@ pub fn open<'o>(
         return Err(Error::CipherLen);
     }
     let tag = hmac_sha256(secret, &[body]);
-    // Comparaison en temps constant (2 octets : par principe).
+    // Constant-time comparison (2 bytes: on principle).
     let diff = mac
         .iter()
         .zip(tag.iter())
@@ -123,7 +124,7 @@ fn aes_key(secret: &[u8; SECRET_LEN]) -> Aes128 {
     Aes128::new(&k.into())
 }
 
-/// Vérifie une signature Ed25519 (vérification non stricte, comme rweather `Ed25519::verify`).
+/// Verifies an Ed25519 signature (non-strict verification, like rweather's `Ed25519::verify`).
 pub fn verify(pub_key: &[u8; PUB_KEY_LEN], message: &[&[u8]], sig: &[u8; SIG_LEN]) -> bool {
     let Ok(vk) = VerifyingKey::from_bytes(pub_key) else {
         return false;
@@ -142,8 +143,8 @@ pub fn verify(pub_key: &[u8; PUB_KEY_LEN], message: &[&[u8]], sig: &[u8; SIG_LEN
     ed25519_dalek::Verifier::verify(&vk, msg, &sig).is_ok()
 }
 
-/// Identité locale au format de MeshCore : clé privée orlp « étendue » de 64 octets
-/// (`scalaire(32) ‖ préfixe de nonce(32)`, la graine n'est pas gardée) et clé publique.
+/// Local identity in MeshCore's format: 64-byte "expanded" orlp private key
+/// (`scalar(32) ‖ nonce prefix(32)`, the seed is not kept) and public key.
 #[derive(Clone)]
 pub struct LocalIdentity {
     prv: [u8; PRV_KEY_LEN],
@@ -157,15 +158,15 @@ impl core::fmt::Debug for LocalIdentity {
 }
 
 impl LocalIdentity {
-    /// Identité vide (clés nulles), seulement pour réserver une place statique avant de la
-    /// remplacer par une vraie identité. Elle ne signe ni ne déchiffre rien d'utile.
+    /// Empty identity (all-zero keys), only to reserve a static slot before replacing it with a
+    /// real identity. It neither signs nor decrypts anything useful.
     pub const PLACEHOLDER: Self = Self {
         prv: [0; PRV_KEY_LEN],
         pub_key: [0; PUB_KEY_LEN],
     };
 
-    /// Identité tirée d'une graine de 32 octets, comme `ed25519_create_keypair` d'orlp :
-    /// `SHA512(graine)`, scalaire clampé.
+    /// Identity derived from a 32-byte seed, like orlp's `ed25519_create_keypair`:
+    /// `SHA512(seed)`, clamped scalar.
     pub fn from_seed(seed: &[u8; 32]) -> Self {
         let h = Sha512::digest(seed);
         let mut prv = [0u8; PRV_KEY_LEN];
@@ -180,8 +181,8 @@ impl LocalIdentity {
         Self::from_private(&prv)
     }
 
-    /// Identité à partir d'une clé privée étendue (fichier `_main.id`, `IMPORT_PRIVATE_KEY`).
-    /// Comme orlp, le scalaire est pris tel quel (réduit modulo l'ordre), sans clamp.
+    /// Identity from an expanded private key (`_main.id` file, `IMPORT_PRIVATE_KEY`).
+    /// As in orlp, the scalar is taken as is (reduced modulo the order), without clamping.
     pub fn from_private(prv: &[u8; PRV_KEY_LEN]) -> Self {
         let esk = expanded(prv);
         let pub_key = VerifyingKey::from(&esk).to_bytes();
@@ -196,17 +197,17 @@ impl LocalIdentity {
         &self.prv
     }
 
-    /// Hash d'1 octet de l'identité (`pub[0]`).
+    /// 1-byte hash of the identity (`pub[0]`).
     pub const fn hash(&self) -> u8 {
         self.pub_key[0]
     }
 
-    /// MeshCore refuse les clés publiques commençant par 0x00 ou 0xFF (`Identity.cpp:71-72`).
+    /// MeshCore rejects public keys starting with 0x00 or 0xFF (`Identity.cpp:71-72`).
     pub const fn is_reserved(&self) -> bool {
         self.pub_key[0] == 0x00 || self.pub_key[0] == 0xFF
     }
 
-    /// Signature Ed25519 de la concaténation des morceaux (`sign.c`), sans copie du message.
+    /// Ed25519 signature of the concatenated parts (`sign.c`), without copying the message.
     pub fn sign(&self, message: &[&[u8]]) -> Result<[u8; SIG_LEN], Error> {
         let esk = expanded(&self.prv);
         let vk = VerifyingKey::from(&esk);
@@ -224,9 +225,9 @@ impl LocalIdentity {
         Ok(sig.to_bytes())
     }
 
-    /// Secret partagé avec un pair (`key_exchange.c`) : X25519 entre le scalaire clampé et la
-    /// forme Montgomery `u = (1+y)/(1-y)` de la clé Ed25519 du pair. `None` si la clé du pair ne se
-    /// décompresse pas (une telle clé ne peut pas signer d'annonce : aucun pair réel n'en a).
+    /// Secret shared with a peer (`key_exchange.c`): X25519 between the clamped scalar and the
+    /// Montgomery form `u = (1+y)/(1-y)` of the peer's Ed25519 key. `None` if the peer's key does
+    /// not decompress (such a key cannot sign an advert: no real peer has one).
     pub fn shared_secret(&self, peer: &[u8; PUB_KEY_LEN]) -> Option<[u8; SECRET_LEN]> {
         let vk = VerifyingKey::from_bytes(peer).ok()?;
         let u: MontgomeryPoint = vk.to_montgomery();
@@ -248,7 +249,7 @@ fn expanded(prv: &[u8; PRV_KEY_LEN]) -> ExpandedSecretKey {
     }
 }
 
-/// Secret d'un canal : PSK de 16 ou 32 octets, complétée par des zéros jusqu'à 32.
+/// Channel secret: 16- or 32-byte PSK, zero-padded to 32.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct ChannelSecret(pub [u8; SECRET_LEN]);
 
@@ -259,7 +260,7 @@ impl core::fmt::Debug for ChannelSecret {
 }
 
 impl ChannelSecret {
-    /// Canal « Public » préchargé (`8b3387e9c5cdea6ac9e5edbaa115cd72`, comp:114).
+    /// Preloaded "Public" channel (`8b3387e9c5cdea6ac9e5edbaa115cd72`, comp:114).
     pub const PUBLIC: Self = Self::from_psk16(&[
         0x8b, 0x33, 0x87, 0xe9, 0xc5, 0xcd, 0xea, 0x6a, 0xc9, 0xe5, 0xed, 0xba, 0xa1, 0x15, 0xcd,
         0x72,
@@ -272,15 +273,15 @@ impl ChannelSecret {
         Self(s)
     }
 
-    /// Canal « #nom » : `SHA256("#nom")[0..16]` (dérivé par l'app, `companion_protocol.md:462-466`).
+    /// "#name" channel: `SHA256("#name")[0..16]` (derived by the app, `companion_protocol.md:462-466`).
     pub fn from_hashtag(name: &str) -> Self {
         let name = name.strip_prefix('#').unwrap_or(name);
         let k: [u8; 16] = sha256_trunc(&[b"#", name.as_bytes()]);
         Self::from_psk16(&k)
     }
 
-    /// Hash d'1 octet du canal : `SHA256(secret[0..16])[0]` si les 16 derniers octets sont nuls,
-    /// sinon `SHA256(secret[0..32])[0]` (`BaseChatMesh.cpp:933-946`).
+    /// 1-byte channel hash: `SHA256(secret[0..16])[0]` if the last 16 bytes are zero,
+    /// otherwise `SHA256(secret[0..32])[0]` (`BaseChatMesh.cpp:933-946`).
     pub fn hash(&self) -> u8 {
         let (lo, hi) = self.0.split_at(16);
         let key = if hi.iter().all(|&b| b == 0) {
@@ -293,22 +294,22 @@ impl ChannelSecret {
     }
 }
 
-/// CRC d'accusé d'un message texte : `SHA256(ts ‖ flags ‖ texte ‖ pub de l'émetteur)[0..4]`,
-/// lu comme un u32 petit-boutiste (`BaseChatMesh.cpp:245, 462`).
+/// Ack CRC of a text message: `SHA256(ts ‖ flags ‖ text ‖ sender pub)[0..4]`,
+/// read as a little-endian u32 (`BaseChatMesh.cpp:245, 462`).
 pub fn ack_crc(ts: u32, flags: u8, text: &[u8], sender_pub: &[u8; PUB_KEY_LEN]) -> u32 {
     let h: [u8; 4] = sha256_trunc(&[&ts.to_le_bytes(), &[flags], text, sender_pub]);
     u32::from_le_bytes(h)
 }
 
-/// Clé d'une région : `SHA256("#" ‖ nom)[0..16]` ; « fr » et « #fr » donnent la même clé
+/// Region key: `SHA256("#" ‖ name)[0..16]`; "fr" and "#fr" give the same key
 /// (`RegionMap.cpp:173-188`).
 pub fn region_key(name: &str) -> [u8; 16] {
     let name = name.strip_prefix('#').unwrap_or(name);
     sha256_trunc(&[b"#", name.as_bytes()])
 }
 
-/// Code de transport (portée) : `HMAC-SHA256(clé16, type ‖ charge utile)[0..2]` en u16
-/// petit-boutiste ; 0 devient 1 et 0xFFFF devient 0xFFFE (`TransportKeyStore.cpp:4-18`).
+/// Transport (scope) code: `HMAC-SHA256(key16, type ‖ payload)[0..2]` as a little-endian u16;
+/// 0 becomes 1 and 0xFFFF becomes 0xFFFE (`TransportKeyStore.cpp:4-18`).
 pub fn transport_code(key: &[u8; 16], ptype: u8, payload: &[u8]) -> u16 {
     let h = hmac_sha256(key, &[&[ptype], payload]);
     let [a, b, ..] = h;

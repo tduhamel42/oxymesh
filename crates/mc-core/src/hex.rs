@@ -1,8 +1,8 @@
-//! Affichage hexadécimal sans allocation.
+//! Allocation-free hexadecimal display.
 
 use core::fmt;
 
-/// Affiche des octets en hexadécimal minuscule, sans séparateur.
+/// Displays bytes as lowercase hexadecimal, without separators.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Hex<'a>(pub &'a [u8]);
 
@@ -21,9 +21,9 @@ impl fmt::Debug for Hex<'_> {
     }
 }
 
-/// Décode une chaîne hexadécimale dans `out`. Renvoie le nombre d'octets écrits.
+/// Decodes a hexadecimal string into `out`. Returns the number of bytes written.
 ///
-/// Les espaces et les tirets bas sont ignorés, ce qui permet d'aérer les vecteurs de test.
+/// Whitespace and underscores are ignored, so test vectors can be spaced out for readability.
 pub fn decode_into(s: &str, out: &mut [u8]) -> Option<usize> {
     let mut n = 0usize;
     let mut high: Option<u8> = None;

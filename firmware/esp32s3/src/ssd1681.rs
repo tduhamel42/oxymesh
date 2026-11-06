@@ -1,10 +1,10 @@
-//! Écran e-paper SSD1681, 200×200 noir et blanc (panneau GDEY0154D67 du ThinkNode M5).
+//! SSD1681 e-paper display, 200×200 black and white (GDEY0154D67 panel of the ThinkNode M5).
 //!
-//! Écrit d'après la datasheet SSD1681 (Solomon Systech, rév. 1.0), sans rien reprendre de GxEPD2
-//! (GPL, ADR-0007). Deux modes : rafraîchissement complet (forme d'onde de l'OTP, ~2 s, efface la
-//! rémanence) et partiel (« display mode 2 », ~0,5 s), qui compare la nouvelle image (RAM 0x24) à
-//! l'ancienne (RAM 0x26). La broche BUSY reste haute pendant un rafraîchissement : le pilote ne
-//! l'attend pas, il expose [`Ssd1681::busy`] pour que la boucle principale continue (radio, BLE).
+//! Written from the SSD1681 datasheet (Solomon Systech, rev. 1.0), without taking anything from
+//! GxEPD2 (GPL, ADR-0007). Two modes: full refresh (OTP waveform, ~2 s, clears ghosting) and
+//! partial ("display mode 2", ~0.5 s), which compares the new image (RAM 0x24) with the old one
+//! (RAM 0x26). The BUSY pin stays high during a refresh: the driver does not wait for it, it
+//! exposes [`Ssd1681::busy`] so that the main loop keeps running (radio, BLE).
 
 use embedded_graphics::pixelcolor::BinaryColor;
 use embedded_graphics::prelude::*;
@@ -20,11 +20,11 @@ pub const BUF: usize = (WIDTH * HEIGHT / 8) as usize;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     Spi,
-    /// L'écran n'a pas fini une commande à temps.
+    /// The display did not finish a command in time.
     Timeout,
 }
 
-/// Image en mémoire : 1 bit par pixel, 1 = blanc (convention du SSD1681).
+/// In-memory image: 1 bit per pixel, 1 = white (SSD1681 convention).
 pub struct Frame {
     pub bits: [u8; BUF],
 }
@@ -69,7 +69,7 @@ impl DrawTarget for Frame {
             let i = (y * (WIDTH / 8) + x / 8) as usize;
             let bit = 0x80u8 >> (x % 8);
             if let Some(b) = self.bits.get_mut(i) {
-                // BinaryColor::On = encre noire.
+                // BinaryColor::On = black ink.
                 if c.is_on() {
                     *b &= !bit;
                 } else {
@@ -108,7 +108,7 @@ impl<'d> Ssd1681<'d> {
         }
     }
 
-    /// L'écran travaille encore (BUSY haute).
+    /// The display is still working (BUSY high).
     pub fn busy(&self) -> bool {
         self.busy.is_high()
     }
@@ -141,8 +141,8 @@ impl<'d> Ssd1681<'d> {
         r
     }
 
-    /// Réinitialisation et réglages (§8 de la datasheet) : 200 lignes, adresses croissantes,
-    /// fenêtre plein écran, capteur de température interne.
+    /// Reset and settings (datasheet §8): 200 lines, increasing addresses, full-screen window,
+    /// internal temperature sensor.
     pub fn init(&mut self) -> Result<(), Error> {
         self.rst.set_low();
         self.delay.delay_millis(10);
@@ -151,12 +151,12 @@ impl<'d> Ssd1681<'d> {
         self.wait(100)?;
         self.command(0x12, &[])?; // SWRESET
         self.wait(100)?;
-        self.command(0x01, &[0xC7, 0x00, 0x00])?; // Driver output control : MUX = 199
-        self.command(0x11, &[0x03])?; // Data entry mode : X+, Y+
-        self.command(0x44, &[0x00, 0x18])?; // RAM X : octets 0 à 24
-        self.command(0x45, &[0x00, 0x00, 0xC7, 0x00])?; // RAM Y : lignes 0 à 199
+        self.command(0x01, &[0xC7, 0x00, 0x00])?; // Driver output control: MUX = 199
+        self.command(0x11, &[0x03])?; // Data entry mode: X+, Y+
+        self.command(0x44, &[0x00, 0x18])?; // RAM X: bytes 0 to 24
+        self.command(0x45, &[0x00, 0x00, 0xC7, 0x00])?; // RAM Y: lines 0 to 199
         self.command(0x3C, &[0x05])?; // Border waveform
-        self.command(0x18, &[0x80])?; // Capteur de température interne
+        self.command(0x18, &[0x80])?; // Internal temperature sensor
         Ok(())
     }
 
@@ -166,28 +166,28 @@ impl<'d> Ssd1681<'d> {
         self.command(cmd, &frame.bits)
     }
 
-    /// Rafraîchissement complet : l'image va dans les deux RAM (nouvelle et ancienne) pour que le
-    /// prochain partiel parte d'elle. Rend la main tout de suite ; BUSY tombe à la fin (~2 s).
+    /// Full refresh: the image goes into both RAMs (new and old) so that the next partial
+    /// refresh starts from it. Returns immediately; BUSY drops at the end (~2 s).
     pub fn show_full(&mut self, frame: &Frame) -> Result<(), Error> {
         self.wait(5000)?;
         self.write_ram(0x24, frame)?;
         self.write_ram(0x26, frame)?;
-        self.command(0x22, &[0xF7])?; // horloge, température, LUT de l'OTP, mode 1
+        self.command(0x22, &[0xF7])?; // clock, temperature, OTP LUT, mode 1
         self.command(0x20, &[])
     }
 
-    /// Rafraîchissement partiel (mode 2) depuis l'image précédente, puis l'image devient la
-    /// référence du prochain partiel.
+    /// Partial refresh (mode 2) from the previous image; the image then becomes the reference
+    /// for the next partial refresh.
     pub fn show_partial(&mut self, frame: &Frame, previous: &Frame) -> Result<(), Error> {
         self.wait(5000)?;
-        self.command(0x3C, &[0x80])?; // bord inchangé en partiel
+        self.command(0x3C, &[0x80])?; // border unchanged in partial mode
         self.write_ram(0x26, previous)?;
         self.write_ram(0x24, frame)?;
-        self.command(0x22, &[0xFF])?; // mode 2 : partiel
+        self.command(0x22, &[0xFF])?; // mode 2: partial
         self.command(0x20, &[])
     }
 
-    /// Sommeil profond (consommation quasi nulle, l'image reste).
+    /// Deep sleep (near-zero consumption, the image stays).
     pub fn sleep(&mut self) -> Result<(), Error> {
         self.wait(5000)?;
         self.command(0x10, &[0x01])

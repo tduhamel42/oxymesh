@@ -1,9 +1,10 @@
-//! Temps en nanosecondes entières (repris de loranet, où ce choix est son ADR-0002). Les opérations saturent au lieu de paniquer.
+//! Time in integer nanoseconds (taken from loranet, where this choice is its ADR-0002).
+//! Operations saturate instead of panicking.
 
 use core::fmt;
 use core::ops::{Add, Sub};
 
-/// Durée en nanosecondes.
+/// Duration in nanoseconds.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Duration(u64);
 
@@ -75,7 +76,7 @@ impl fmt::Display for Duration {
     }
 }
 
-/// Instant d'une horloge (locale au nœud, ou temps vrai dans le simulateur), en nanosecondes.
+/// Instant of a clock (local to the node, or true time in the simulator), in nanoseconds.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Instant(u64);
 
@@ -101,7 +102,7 @@ impl Instant {
     pub const fn saturating_sub(self, d: Duration) -> Self {
         Self(self.0.saturating_sub(d.0))
     }
-    /// Durée écoulée depuis `earlier`, nulle si `earlier` est dans le futur.
+    /// Time elapsed since `earlier`; zero if `earlier` is in the future.
     pub const fn saturating_duration_since(self, earlier: Self) -> Duration {
         Duration(self.0.saturating_sub(earlier.0))
     }

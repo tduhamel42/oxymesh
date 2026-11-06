@@ -1,5 +1,5 @@
-//! Anti-doublon (`SimpleMeshTables.h`) : anneau de 160 hashes de 8 octets, vérifié avant tout
-//! déchiffrement ; nos propres émissions y sont inscrites.
+//! Duplicate filter (`SimpleMeshTables.h`): a ring of 160 8-byte hashes, checked before any
+//! decryption; our own transmissions are recorded in it.
 
 use mc_air::packet::PACKET_HASH_LEN;
 
@@ -50,7 +50,7 @@ impl Seen {
         self.next = (self.next + 1) % SEEN_MAX;
     }
 
-    /// Vérifie et inscrit d'un coup ; vrai si la trame est nouvelle.
+    /// Checks and records in one go; true if the frame is new.
     pub fn check_and_mark(&mut self, hash: &[u8; PACKET_HASH_LEN], direct: bool) -> bool {
         if self.was_seen(hash, direct) {
             return false;

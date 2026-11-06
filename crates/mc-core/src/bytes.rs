@@ -1,14 +1,14 @@
-//! Lecture et écriture vérifiées sur des tampons d'octets, sans panic ni allocation.
+//! Checked reading and writing on byte buffers, without panics or allocation.
 
-/// L'entrée est plus courte que la structure annoncée.
+/// The input is shorter than the announced structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Truncated;
 
-/// Le tampon de sortie est trop petit.
+/// The output buffer is too small.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Overflow;
 
-/// Curseur de lecture zéro-copie. Toutes les méthodes échouent proprement en fin de tampon.
+/// Zero-copy read cursor. Every method fails cleanly at the end of the buffer.
 #[derive(Debug, Clone)]
 pub struct Reader<'a> {
     buf: &'a [u8],
@@ -19,7 +19,7 @@ impl<'a> Reader<'a> {
         Self { buf }
     }
 
-    /// Nombre d'octets restant à lire.
+    /// Number of bytes left to read.
     pub const fn remaining(&self) -> usize {
         self.buf.len()
     }
@@ -28,31 +28,31 @@ impl<'a> Reader<'a> {
         self.buf.is_empty()
     }
 
-    /// Ce qui reste, sans le consommer.
+    /// What is left, without consuming it.
     pub const fn peek_rest(&self) -> &'a [u8] {
         self.buf
     }
 
-    /// Consomme tout ce qui reste.
+    /// Consumes everything that is left.
     pub fn rest(&mut self) -> &'a [u8] {
         core::mem::take(&mut self.buf)
     }
 
-    /// Consomme `n` octets.
+    /// Consumes `n` bytes.
     pub fn take(&mut self, n: usize) -> Result<&'a [u8], Truncated> {
         let (head, tail) = self.buf.split_at_checked(n).ok_or(Truncated)?;
         self.buf = tail;
         Ok(head)
     }
 
-    /// Consomme un tableau de taille fixe.
+    /// Consumes a fixed-size array.
     pub fn array<const N: usize>(&mut self) -> Result<&'a [u8; N], Truncated> {
         let (head, tail) = self.buf.split_first_chunk::<N>().ok_or(Truncated)?;
         self.buf = tail;
         Ok(head)
     }
 
-    /// Consomme les `N` derniers octets.
+    /// Consumes the last `N` bytes.
     pub fn array_back<const N: usize>(&mut self) -> Result<&'a [u8; N], Truncated> {
         let (head, tail) = self.buf.split_last_chunk::<N>().ok_or(Truncated)?;
         self.buf = head;
@@ -77,14 +77,14 @@ impl<'a> Reader<'a> {
         self.array::<4>().map(|a| i32::from_le_bytes(*a))
     }
 
-    /// Un octet de longueur suivi d'autant d'octets.
+    /// A length byte followed by that many bytes.
     pub fn len8(&mut self) -> Result<&'a [u8], Truncated> {
         let n = self.u8()?;
         self.take(usize::from(n))
     }
 }
 
-/// Curseur d'écriture sur un tampon fourni par l'appelant.
+/// Write cursor over a caller-provided buffer.
 #[derive(Debug)]
 pub struct Writer<'a> {
     buf: &'a mut [u8],
@@ -96,12 +96,12 @@ impl<'a> Writer<'a> {
         Self { buf, pos: 0 }
     }
 
-    /// Nombre d'octets écrits.
+    /// Number of bytes written.
     pub const fn position(&self) -> usize {
         self.pos
     }
 
-    /// Les octets écrits jusqu'ici.
+    /// The bytes written so far.
     pub fn written(&self) -> &[u8] {
         self.buf.get(..self.pos).unwrap_or(&[])
     }
@@ -130,21 +130,21 @@ impl<'a> Writer<'a> {
         self.put(&v.to_le_bytes())
     }
 
-    /// Un octet de longueur puis les octets. Échoue si `src` dépasse 255 octets.
+    /// A length byte, then the bytes. Fails if `src` exceeds 255 bytes.
     pub fn put_len8(&mut self, src: &[u8]) -> Result<(), Overflow> {
         let n = u8::try_from(src.len()).map_err(|_| Overflow)?;
         self.put_u8(n)?;
         self.put(src)
     }
 
-    /// Réserve un octet à remplir plus tard avec [`Writer::patch_u8`]. Renvoie sa position.
+    /// Reserves a byte to fill in later with [`Writer::patch_u8`]. Returns its position.
     pub fn reserve_u8(&mut self) -> Result<usize, Overflow> {
         let at = self.pos;
         self.put_u8(0)?;
         Ok(at)
     }
 
-    /// Réécrit un octet déjà écrit.
+    /// Overwrites a byte that has already been written.
     pub fn patch_u8(&mut self, at: usize, v: u8) -> Result<(), Overflow> {
         if at >= self.pos {
             return Err(Overflow);

@@ -1,11 +1,12 @@
-//! Modulations et temps d'antenne en entiers exacts (repris de loranet, où ce choix est son ADR-0002).
+//! Modulations and airtime in exact integers (taken from loranet, where this choice is its
+//! ADR-0002).
 //!
-//! LoRa : formule Semtech AN1200.13 pour SF7 à SF12, variante de la datasheet SX1261/2
-//! (§6.1.4) pour SF5 et SF6. FSK : bits émis divisés par le débit.
+//! LoRa: Semtech AN1200.13 formula for SF7 to SF12, SX1261/2 datasheet variant (§6.1.4) for SF5
+//! and SF6. FSK: transmitted bits divided by the bit rate.
 
 use crate::Duration;
 
-/// Largeurs de bande LoRa du SX126x, avec leur valeur exacte en Hz.
+/// SX126x LoRa bandwidths, with their exact value in Hz.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Bandwidth {
     Bw7_8,
@@ -21,7 +22,7 @@ pub enum Bandwidth {
 }
 
 impl Bandwidth {
-    /// Toutes les largeurs, de la plus étroite à la plus large.
+    /// All bandwidths, from narrowest to widest.
     pub const ALL: [Bandwidth; 10] = [
         Bandwidth::Bw7_8,
         Bandwidth::Bw10_4,
@@ -35,7 +36,7 @@ impl Bandwidth {
         Bandwidth::Bw500,
     ];
 
-    /// Largeur exacte en Hz sous forme `(numérateur, dénominateur)`.
+    /// Exact bandwidth in Hz as `(numerator, denominator)`.
     pub const fn hz_ratio(self) -> (u64, u64) {
         match self {
             Bandwidth::Bw7_8 => (15_625, 2),
@@ -51,13 +52,13 @@ impl Bandwidth {
         }
     }
 
-    /// Largeur arrondie au Hz inférieur (pour les recouvrements de canaux).
+    /// Bandwidth rounded down to the Hz (for channel overlap checks).
     pub const fn hz_floor(self) -> u32 {
         let (n, d) = self.hz_ratio();
         (n / d) as u32
     }
 
-    /// Largeur dont la valeur nominale en Hz est la plus proche de `hz`.
+    /// Bandwidth whose nominal value in Hz is closest to `hz`.
     pub fn from_hz(hz: u32) -> Option<Self> {
         Self::ALL
             .iter()
@@ -66,7 +67,7 @@ impl Bandwidth {
     }
 }
 
-/// Rendement de codage LoRa 4/5 à 4/8.
+/// LoRa coding rate, 4/5 to 4/8.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CodingRate {
     Cr4_5,
@@ -76,7 +77,7 @@ pub enum CodingRate {
 }
 
 impl CodingRate {
-    /// Valeur `CR` de la formule (1 à 4).
+    /// `CR` value in the formula (1 to 4).
     pub const fn value(self) -> u64 {
         match self {
             CodingRate::Cr4_5 => 1,
@@ -87,23 +88,23 @@ impl CodingRate {
     }
 }
 
-/// Réglage de l'optimisation bas débit (LDRO).
+/// Low data rate optimisation (LDRO) setting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Ldro {
-    /// Activée quand la durée de symbole dépasse 16 ms, comme le recommande Semtech.
+    /// Enabled when the symbol duration exceeds 16 ms, as Semtech recommends.
     Auto,
     On,
     Off,
 }
 
-/// Paramètres d'une modulation LoRa.
+/// LoRa modulation parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LoRa {
-    /// Facteur d'étalement, 5 à 12.
+    /// Spreading factor, 5 to 12.
     pub sf: u8,
     pub bw: Bandwidth,
     pub cr: CodingRate,
-    /// Longueur du préambule programmé, en symboles.
+    /// Programmed preamble length, in symbols.
     pub preamble: u16,
     pub explicit_header: bool,
     pub crc: bool,
@@ -111,7 +112,7 @@ pub struct LoRa {
 }
 
 impl LoRa {
-    /// Réglage par défaut du projet : préambule 8, en-tête explicite, CRC, LDRO automatique.
+    /// Project default: preamble 8, explicit header, CRC, automatic LDRO.
     pub const fn new(sf: u8, bw: Bandwidth) -> Self {
         Self {
             sf,
@@ -124,14 +125,14 @@ impl LoRa {
         }
     }
 
-    /// Durée d'un symbole en nanosecondes, arrondie vers le haut.
+    /// Symbol duration in nanoseconds, rounded up.
     pub const fn symbol_ns(&self) -> u64 {
         let (num, den) = self.bw.hz_ratio();
         let t = (1u128 << self.sf) * 1_000_000_000 * den as u128;
         t.div_ceil(num as u128) as u64
     }
 
-    /// LDRO effectivement appliquée.
+    /// Whether LDRO is actually applied.
     pub const fn ldro_on(&self) -> bool {
         match self.ldro {
             Ldro::On => true,
@@ -140,14 +141,14 @@ impl LoRa {
         }
     }
 
-    /// Nombre de symboles de la trame, en quarts de symbole (le préambule en compte 4,25 ou 6,25 de plus).
+    /// Number of symbols in the frame, in quarter symbols (the preamble adds 4.25 or 6.25 more).
     pub const fn quarter_symbols(&self, payload_len: usize) -> u64 {
         let pl = payload_len as i64;
         let sf = self.sf as i64;
         let cr = self.cr.value() as i64;
         let crc = if self.crc { 16 } else { 0 };
         let (num, den, extra_quarters) = if sf <= 6 {
-            // SX126x, SF5/SF6 : pas de « +8 », préambule + 6,25.
+            // SX126x, SF5/SF6: no "+8", preamble + 6.25.
             let header = if self.explicit_header { 20 } else { 0 };
             (8 * pl + crc - 4 * sf + header, 4 * sf, 25)
         } else {
@@ -160,7 +161,7 @@ impl LoRa {
         (4 * self.preamble as i64 + extra_quarters + 4 * n_payload) as u64
     }
 
-    /// Temps d'antenne d'une trame de `payload_len` octets, arrondi vers le haut à la nanoseconde.
+    /// Airtime of a `payload_len`-byte frame, rounded up to the nanosecond.
     pub const fn airtime(&self, payload_len: usize) -> Duration {
         let (num, den) = self.bw.hz_ratio();
         let q = self.quarter_symbols(payload_len) as u128;
@@ -170,21 +171,21 @@ impl LoRa {
     }
 }
 
-/// Paramètres d'une modulation FSK (paquets à longueur variable).
+/// FSK modulation parameters (variable-length packets).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Fsk {
     pub bitrate_bps: u32,
-    /// Déviation de fréquence en Hz.
+    /// Frequency deviation in Hz.
     pub fdev_hz: u32,
     pub preamble_bytes: u16,
     pub sync_bytes: u8,
-    /// Octet de longueur (1) en paquets variables.
+    /// Length byte (1) in variable-length packets.
     pub header_bytes: u8,
     pub crc_bytes: u8,
 }
 
 impl Fsk {
-    /// Réglage par défaut : préambule 5 octets, synchro 3 octets, longueur 1 octet, CRC 2 octets.
+    /// Default: 5-byte preamble, 3-byte sync word, 1-byte length, 2-byte CRC.
     pub const fn new(bitrate_bps: u32, fdev_hz: u32) -> Self {
         Self {
             bitrate_bps,
@@ -196,7 +197,7 @@ impl Fsk {
         }
     }
 
-    /// Largeur occupée approchée par la règle de Carson : `2·(fdev + débit/2)`.
+    /// Occupied bandwidth approximated by Carson's rule: `2·(fdev + bitrate/2)`.
     pub const fn occupied_hz(&self) -> u32 {
         2 * self.fdev_hz + self.bitrate_bps
     }
@@ -212,7 +213,7 @@ impl Fsk {
     }
 }
 
-/// Modulation d'une émission ou d'une écoute.
+/// Modulation of a transmission or a reception.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Modulation {
     LoRa(LoRa),
@@ -227,7 +228,7 @@ impl Modulation {
         }
     }
 
-    /// Largeur occupée en Hz, arrondie au Hz inférieur.
+    /// Occupied bandwidth in Hz, rounded down to the Hz.
     pub const fn occupied_hz(&self) -> u32 {
         match self {
             Modulation::LoRa(l) => l.bw.hz_floor(),
@@ -235,7 +236,7 @@ impl Modulation {
         }
     }
 
-    /// Deux réglages se démodulent-ils l'un l'autre ? (même modulation, mêmes paramètres de forme d'onde)
+    /// Can the two settings demodulate each other? (same modulation, same waveform parameters)
     pub const fn compatible(&self, other: &Modulation) -> bool {
         match (self, other) {
             (Modulation::LoRa(a), Modulation::LoRa(b)) => {
@@ -252,7 +253,7 @@ impl Modulation {
     }
 }
 
-/// Réglage radio complet : fréquence centrale et modulation.
+/// Complete radio setting: centre frequency and modulation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RadioConfig {
     pub freq_hz: u32,
@@ -260,7 +261,7 @@ pub struct RadioConfig {
 }
 
 impl RadioConfig {
-    /// Bornes de la bande occupée `[bas, haut]` en Hz.
+    /// Bounds of the occupied band `[low, high]` in Hz.
     pub const fn span_hz(&self) -> (u32, u32) {
         let half = self.modulation.occupied_hz() / 2;
         (
@@ -269,7 +270,7 @@ impl RadioConfig {
         )
     }
 
-    /// Les deux réglages occupent-ils des fréquences qui se recouvrent ?
+    /// Do the two settings occupy overlapping frequencies?
     pub const fn overlaps(&self, other: &RadioConfig) -> bool {
         let (a0, a1) = self.span_hz();
         let (b0, b1) = other.span_hz();
@@ -283,7 +284,7 @@ mod tests {
 
     #[test]
     fn claude_md_vectors() {
-        // BW 125 kHz, CR 4/5, préambule 8, en-tête explicite, CRC, 20 octets.
+        // BW 125 kHz, CR 4/5, preamble 8, explicit header, CRC, 20 bytes.
         let sf7 = LoRa::new(7, Bandwidth::Bw125);
         assert!(!sf7.ldro_on());
         assert_eq!(sf7.airtime(20), Duration::from_micros(56_576));
@@ -294,8 +295,8 @@ mod tests {
 
     #[test]
     fn ldro_threshold() {
-        assert!(LoRa::new(11, Bandwidth::Bw125).ldro_on()); // 16,384 ms
-        assert!(!LoRa::new(10, Bandwidth::Bw125).ldro_on()); // 8,192 ms
+        assert!(LoRa::new(11, Bandwidth::Bw125).ldro_on()); // 16.384 ms
+        assert!(!LoRa::new(10, Bandwidth::Bw125).ldro_on()); // 8.192 ms
         assert!(LoRa::new(12, Bandwidth::Bw250).ldro_on());
         assert!(!LoRa::new(11, Bandwidth::Bw250).ldro_on());
         assert!(LoRa::new(10, Bandwidth::Bw62_5).ldro_on());
@@ -303,20 +304,20 @@ mod tests {
 
     #[test]
     fn sf5_sf6_variant() {
-        // Calcul à la main depuis la datasheet SX1261/2 §6.1.4 (à recouper avec le calculateur Semtech).
-        // SF5, BW 125, CR 4/5, préambule 8, en-tête explicite, CRC, 20 octets :
-        // préambule 8 + 6,25 ; charge 8 + ceil((160 + 16 - 20 + 20) / 20) * 5 = 8 + 9*5 = 53
-        // total 67,25 symboles de 256 µs = 17,216 ms.
+        // Computed by hand from the SX1261/2 datasheet §6.1.4 (to cross-check with the Semtech
+        // calculator). SF5, BW 125, CR 4/5, preamble 8, explicit header, CRC, 20 bytes:
+        // preamble 8 + 6.25; payload 8 + ceil((160 + 16 - 20 + 20) / 20) * 5 = 8 + 9*5 = 53
+        // total 67.25 symbols of 256 µs = 17.216 ms.
         let sf5 = LoRa::new(5, Bandwidth::Bw125);
         assert_eq!(sf5.airtime(20), Duration::from_micros(17_216));
-        // SF6 : charge 8 + ceil((160 + 16 - 24 + 20) / 24) * 5 = 8 + 8*5 = 48 ; total 62,25 × 512 µs.
+        // SF6: payload 8 + ceil((160 + 16 - 24 + 20) / 24) * 5 = 8 + 8*5 = 48; total 62.25 × 512 µs.
         let sf6 = LoRa::new(6, Bandwidth::Bw125);
         assert_eq!(sf6.airtime(20), Duration::from_micros(31_872));
     }
 
     #[test]
     fn fractional_bandwidths_are_exact() {
-        // 10,4 kHz = 31250/3 Hz : T_sym(SF7) = 128 · 3 / 31250 s = 12,288 ms exactement.
+        // 10.4 kHz = 31250/3 Hz: T_sym(SF7) = 128 · 3 / 31250 s = 12.288 ms exactly.
         let l = LoRa::new(7, Bandwidth::Bw10_4);
         assert_eq!(l.symbol_ns(), 12_288_000);
         assert_eq!(Bandwidth::from_hz(125_000), Some(Bandwidth::Bw125));
@@ -326,7 +327,7 @@ mod tests {
 
     #[test]
     fn implicit_header_and_no_crc_are_shorter() {
-        // À 31 octets, SF9 : 8 blocs avec en-tête explicite, 7 sans (à 30 octets, 7 dans les deux cas).
+        // At 31 bytes, SF9: 8 blocks with an explicit header, 7 without (at 30 bytes, 7 in both cases).
         let mut l = LoRa::new(9, Bandwidth::Bw125);
         let base = l.airtime(31);
         l.explicit_header = false;
@@ -341,7 +342,7 @@ mod tests {
 
     #[test]
     fn fsk_airtime() {
-        // 50 kbit/s, 5 + 3 + 1 + 20 + 2 = 31 octets = 248 bits → 4,96 ms.
+        // 50 kbit/s, 5 + 3 + 1 + 20 + 2 = 31 bytes = 248 bits → 4.96 ms.
         assert_eq!(
             Fsk::new(50_000, 25_000).airtime(20),
             Duration::from_micros(4_960)

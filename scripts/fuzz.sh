@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Lance chaque cible de fuzz pendant N secondes (défaut 60). Usage : scripts/fuzz.sh [N] [cible…]
+# Runs each fuzz target for N seconds (default 60). Usage: scripts/fuzz.sh [N] [target…]
 set -euo pipefail
 cd "$(dirname "$0")/.."
-if [ ! -f fuzz/Cargo.toml ]; then echo "pas de cibles de fuzz"; exit 0; fi
+if [ ! -f fuzz/Cargo.toml ]; then echo "no fuzz targets"; exit 0; fi
 secs="${1:-60}"; shift || true
 targets=("$@")
 if [ "${#targets[@]}" -eq 0 ]; then

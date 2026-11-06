@@ -1,9 +1,9 @@
-//! Mémoire de l'appareil dans la partition `mcdata` (ADR-0006), en `sequential-storage`
-//! (tolérant aux coupures). Implémente le trait `Storage` de `mc-node`.
+//! Device storage in the `mcdata` partition (ADR-0006), using `sequential-storage`
+//! (power-loss tolerant). Implements the `Storage` trait of `mc-node`.
 //!
-//! Clés (u32) : 1 identité (96 o), 2 réglages, 3 nombre de contacts, `0x0001_0000 + i` contact i
-//! (enregistrement `/contacts3` du C++), `0x0002_0000 + i` canal i, `0x8000_0000 | préfixe de clé`
-//! annonce gardée (précédée de la clé complète, vérifiée à la lecture).
+//! Keys (u32): 1 identity (96 B), 2 prefs, 3 contact count, `0x0001_0000 + i` contact i
+//! (C++ `/contacts3` record), `0x0002_0000 + i` channel i, `0x8000_0000 | key prefix` stored
+//! advert (preceded by the full key, checked on read).
 
 use embassy_futures::block_on;
 use embedded_storage_async::nor_flash::NorFlash;
@@ -22,7 +22,7 @@ const CHANNEL_BASE: u32 = 0x0002_0000;
 const BLOB_BASE: u32 = 0x8000_0000;
 const BUF: usize = 512;
 
-/// CRC-32 (IEEE) d'un enregistrement, pour n'écrire que les contacts modifiés.
+/// CRC-32 (IEEE) of a record, so that only modified contacts are written.
 fn crc32(data: &[u8]) -> u32 {
     let mut c = 0xFFFF_FFFFu32;
     for &b in data {
@@ -45,7 +45,7 @@ fn blob_key(key: &[u8; 32]) -> u32 {
 pub struct FlashStore<S: NorFlash> {
     map: MapStorage<u32, S, Cache<Uncached, Uncached, Uncached, u32>>,
     buf: [u8; BUF],
-    /// CRC des contacts écrits, par indice ; 0 = absent.
+    /// CRC of the written contacts, by index; 0 = absent.
     saved: [u32; mc_node::contacts::MAX_CONTACTS],
     saved_count: usize,
     len_kb: u32,
@@ -72,8 +72,8 @@ impl<S: NorFlash> FlashStore<S> {
         }
     }
 
-    /// Efface une entrée en la remplaçant par une valeur vide (pierre tombale) : `remove_item`
-    /// exigerait une flash multi-écriture. Une entrée vide est ignorée au chargement.
+    /// Deletes an entry by replacing it with an empty value (tombstone): `remove_item` would
+    /// require a multiwrite flash. An empty entry is ignored on load.
     fn remove(&mut self, key: u32) {
         self.put(key, &[]);
     }
@@ -85,7 +85,7 @@ impl<S: NorFlash> FlashStore<S> {
         Some(v.len())
     }
 
-    /// Identité gardée : clé privée étendue (64) puis publique (32).
+    /// Stored identity: expanded private key (64) then public key (32).
     pub fn identity(&mut self) -> Option<[u8; 64]> {
         let mut b = [0u8; 96];
         (self.get(KEY_IDENTITY, &mut b)? == 96).then(|| {
@@ -95,7 +95,7 @@ impl<S: NorFlash> FlashStore<S> {
         })
     }
 
-    /// Recharge réglages, contacts (dans l'ordre de leurs indices) et canaux dans `node`.
+    /// Reloads prefs, contacts (in index order) and channels into `node`.
     pub fn load(&mut self, node: &mut Node) {
         let mut b = [0u8; PREFS_RECORD];
         if self.get(KEY_PREFS, &mut b) == Some(PREFS_RECORD)
@@ -131,7 +131,7 @@ impl<S: NorFlash> FlashStore<S> {
         }
     }
 
-    /// Efface toute la partition (`FACTORY_RESET`).
+    /// Erases the whole partition (`FACTORY_RESET`).
     pub fn erase_all(&mut self) {
         if block_on(self.map.erase_all()).is_err() {
             self.errors += 1;
@@ -205,7 +205,7 @@ impl<S: NorFlash> mc_node::Storage for FlashStore<S> {
     }
 
     fn usage_kb(&self) -> (u32, u32) {
-        // Estimation : contacts et annonces gardées.
+        // Estimate: contacts and stored adverts.
         let used = (self.saved_count * (CONTACT_RECORD + 64 + 128)) as u32 / 1024;
         (used, self.len_kb)
     }

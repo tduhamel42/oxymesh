@@ -1,10 +1,11 @@
-//! Protocole compagnon (`docs/spec/companion.md`) : commandes de l'app dans les deux modes de
-//! décodage, et réponses de l'appareil.
+//! Companion protocol (`docs/spec/companion.md`): app commands in both decoding modes, and
+//! device responses.
 //!
-//! Oracle : jamais de panic ; toute trame acceptée en strict (commande ou réponse) se réécrit à
-//! l'identique et passe aussi côté appareil avec le même sens ; toute commande acceptée côté
-//! appareil se réécrit en une forme canonique que le strict relit à l'identique (ADR-0002) ; un
-//! refus côté appareil est ERR 1 ou ERR 6, ou une trame que les porteurs ne remettent jamais.
+//! Oracle: never panic; every frame accepted in strict mode (command or response) re-encodes
+//! identically and also passes on the device side with the same meaning; every command accepted
+//! on the device side re-encodes into a canonical form that strict mode reads back identically
+//! (ADR-0002); a device-side rejection is ERR 1 or ERR 6, or a frame the carriers never hand
+//! over.
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;

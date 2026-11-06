@@ -1,38 +1,39 @@
-//! Règles réglementaires et budget de duty cycle tenu par le nœud (repris de loranet, ADR-0002 et ADR-0006 de loranet ; valeurs dans config/eu868.toml).
+//! Regulatory rules and the duty-cycle budget kept by the node (taken from loranet, loranet's
+//! ADR-0002 and ADR-0006; values in config/eu868.toml).
 //!
-//! Les valeurs ne sont jamais écrites ici : elles viennent de `config/regulatory/*.toml`.
+//! Values are never hard-coded here: they come from `config/eu868.toml`.
 
 use crate::{Duration, Instant, RadioConfig};
 
-/// Un régime d'émission autorisé : plage de fréquences, puissance maximale, duty cycle.
+/// One permitted transmission regime: frequency range, maximum power, duty cycle.
 ///
-/// Une sous-bande à plusieurs régimes (g4 : 5 mW sans limite ou 25 mW à 1 %) donne plusieurs règles.
+/// A sub-band with several regimes (g4: 5 mW unlimited or 25 mW at 1 %) yields several rules.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rule {
     pub low_hz: u32,
     pub high_hz: u32,
-    /// Puissance apparente rayonnée maximale, en centièmes de dBm.
+    /// Maximum effective radiated power, in hundredths of a dBm.
     pub max_erp_cdbm: i32,
-    /// Fraction du temps d'émission autorisée sur la fenêtre, en millionièmes (1 % = 10 000).
+    /// Fraction of the window allowed for transmitting, in millionths (1 % = 10 000).
     pub duty_ppm: u32,
-    /// Fenêtre glissante (1 h dans l'UE).
+    /// Sliding window (1 h in the EU).
     pub window: Duration,
 }
 
 impl Rule {
-    /// L'émission tient-elle entièrement dans la plage, à une puissance autorisée ?
+    /// Does the transmission fit entirely within the range, at a permitted power?
     pub const fn admits(&self, cfg: &RadioConfig, erp_cdbm: i32) -> bool {
         let (lo, hi) = cfg.span_hz();
         lo >= self.low_hz && hi <= self.high_hz && erp_cdbm <= self.max_erp_cdbm
     }
 
-    /// Temps d'émission autorisé par fenêtre, en nanosecondes.
+    /// Transmit time allowed per window, in nanoseconds.
     pub const fn budget_ns(&self) -> u64 {
         ((self.window.as_nanos() as u128 * self.duty_ppm as u128) / 1_000_000) as u64
     }
 }
 
-/// Règle applicable à une émission : parmi celles qui l'admettent, la plus permissive.
+/// Rule that applies to a transmission: the most permissive among those that admit it.
 pub fn applicable_rule(rules: &[Rule], cfg: &RadioConfig, erp_cdbm: i32) -> Option<usize> {
     let mut best: Option<(usize, u32)> = None;
     for (i, r) in rules.iter().enumerate() {
@@ -43,20 +44,20 @@ pub fn applicable_rule(rules: &[Rule], cfg: &RadioConfig, erp_cdbm: i32) -> Opti
     best.map(|(i, _)| i)
 }
 
-/// Nombre de seaux de la fenêtre du budget.
+/// Number of buckets in the budget window.
 pub const BUCKETS: usize = 62;
 
-/// Budget de duty cycle tenu par le nœud, à seaux, **conservateur** : il ne sous-estime jamais
-/// l'usage sur une fenêtre glissante exacte.
+/// Bucketed duty-cycle budget kept by the node, **conservative**: it never underestimates usage
+/// over an exact sliding window.
 ///
-/// La fenêtre `W` est découpée en seaux de `W / (BUCKETS − 2)`. Une émission est comptée en
-/// entier dans le seau de son début ; les `BUCKETS` derniers seaux couvrent toujours au moins
-/// `W` plus la durée d'une émission, à condition qu'aucune émission ne dépasse un seau
-/// (vérifié par [`DutyBudget::can_transmit`]).
+/// The window `W` is split into buckets of `W / (BUCKETS − 2)`. A transmission is counted in full
+/// in the bucket where it starts; the last `BUCKETS` buckets always cover at least `W` plus the
+/// duration of one transmission, provided no transmission is longer than a bucket (checked by
+/// [`DutyBudget::can_transmit`]).
 ///
-/// Les instants passés aux méthodes doivent être **croissants** : interroger un instant futur fait
-/// avancer les seaux, et une question posée ensuite sur un instant antérieur verrait un budget
-/// vidé. Pour sonder l'avenir, travailler sur une copie (`clone`).
+/// Instants passed to the methods must be **non-decreasing**: querying a future instant advances
+/// the buckets, and a later query at an earlier instant would see an emptied budget. To probe the
+/// future, work on a copy (`clone`).
 #[derive(Debug, Clone)]
 pub struct DutyBudget {
     bucket_ns: u64,
@@ -66,8 +67,8 @@ pub struct DutyBudget {
 }
 
 impl DutyBudget {
-    /// `margin_ppm` retire une marge de sécurité du budget (10 000 = 1 %), pour couvrir la
-    /// dérive d'horloge et les arrondis.
+    /// `margin_ppm` subtracts a safety margin from the budget (10 000 = 1 %), to cover clock
+    /// drift and rounding.
     pub fn new(rule: &Rule, margin_ppm: u32) -> Self {
         let bucket_ns = (rule.window.as_nanos() / (BUCKETS as u64 - 2)).max(1);
         let keep = 1_000_000u128.saturating_sub(u128::from(margin_ppm));
@@ -105,24 +106,24 @@ impl DutyBudget {
         airtime.as_nanos().div_ceil(1_000)
     }
 
-    /// Temps d'émission compté sur la fenêtre courante, en microsecondes.
+    /// Transmit time counted over the current window, in microseconds.
     pub fn used_us(&mut self, now: Instant) -> u64 {
         self.advance(now);
         self.used_us.iter().map(|&u| u64::from(u)).sum()
     }
 
-    /// Budget total par fenêtre, marge déduite, en microsecondes.
+    /// Total budget per window, margin deducted, in microseconds.
     pub const fn limit_us(&self) -> u64 {
         self.limit_us
     }
 
-    /// Une émission de durée `airtime` commençant à `now` respecte-t-elle le budget ?
+    /// Does a transmission of duration `airtime` starting at `now` fit in the budget?
     pub fn can_transmit(&mut self, now: Instant, airtime: Duration) -> bool {
         airtime.as_nanos() <= self.bucket_ns
             && self.used_us(now) + Self::need_us(airtime) <= self.limit_us
     }
 
-    /// Compte une émission commençant à `now`.
+    /// Records a transmission starting at `now`.
     pub fn record(&mut self, now: Instant, airtime: Duration) {
         self.advance(now);
         let need = u32::try_from(Self::need_us(airtime)).unwrap_or(u32::MAX);
@@ -132,8 +133,8 @@ impl DutyBudget {
         }
     }
 
-    /// Premier instant `≥ now` où une émission de durée `airtime` sera permise, ou `None` si elle
-    /// ne le sera jamais (plus longue qu'un seau ou que le budget).
+    /// First instant `≥ now` at which a transmission of duration `airtime` will be allowed, or
+    /// `None` if it never will be (longer than a bucket or than the budget).
     pub fn next_opportunity(&mut self, now: Instant, airtime: Duration) -> Option<Instant> {
         if airtime.as_nanos() > self.bucket_ns || Self::need_us(airtime) > self.limit_us {
             return None;
@@ -143,7 +144,7 @@ impl DutyBudget {
         if used + need <= self.limit_us {
             return Some(now);
         }
-        // Au début du seau `current + k`, le seau `current + k − BUCKETS` sort de la fenêtre.
+        // At the start of bucket `current + k`, bucket `current + k − BUCKETS` leaves the window.
         for k in 1..=BUCKETS as u64 {
             let leaving = self.current + k;
             let freed = self
@@ -187,11 +188,8 @@ mod tests {
         let r = g1();
         assert!(r.admits(&cfg(868_100_000), 1398));
         assert!(!r.admits(&cfg(868_100_000), 1399));
-        assert!(!r.admits(&cfg(868_050_000), 1000), "déborde sous 868,0 MHz");
-        assert!(
-            !r.admits(&cfg(868_550_000), 1000),
-            "déborde au-dessus de 868,6 MHz"
-        );
+        assert!(!r.admits(&cfg(868_050_000), 1000), "spills below 868.0 MHz");
+        assert!(!r.admits(&cfg(868_550_000), 1000), "spills above 868.6 MHz");
         assert_eq!(r.budget_ns(), 36_000_000_000);
     }
 
@@ -226,7 +224,7 @@ mod tests {
         let next = b.next_opportunity(t, air).unwrap();
         assert!(next > t);
         assert!(b.can_transmit(next, air));
-        // La première émission (t = 0) doit avoir quitté toute fenêtre d'une heure.
+        // The first transmission (t = 0) must have left every one-hour window.
         assert!(next.as_nanos() >= Duration::from_secs(3600).as_nanos() + air.as_nanos());
         assert_eq!(b.next_opportunity(t, Duration::from_secs(120)), None);
     }

@@ -1,12 +1,12 @@
-//! Réponses (codes 0..29) et notifications (0x80..0x90) de l'appareil (`docs/spec/companion.md`
-//! §3 à §5). Décodage strict et canonique ; un code hors de v1.18 devient [`Response::Other`].
+//! Device responses (codes 0..29) and notifications (0x80..0x90) (`docs/spec/companion.md` §3 to
+//! §5). Strict, canonical decoding; a code outside v1.18 becomes [`Response::Other`].
 
 use core::fmt;
 use mc_core::{Hex, Overflow, Reader, Writer};
 
 use crate::codec::{DecodeError, FRAME_MAX, Text, end, fixed_str, i8_of, read_path, resp};
 
-/// Contact d'appareil (CONTACT, NEW_ADVERT), §3.2.
+/// Device contact (CONTACT, NEW_ADVERT), §3.2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Contact<'a> {
     pub key: [u8; 32],
@@ -19,7 +19,7 @@ pub struct Contact<'a> {
     pub lat: i32,
     pub lon: i32,
     pub lastmod: u32,
-    /// Champs ajoutés par un firmware plus récent, gardés tels quels.
+    /// Fields added by a newer firmware, kept as is.
     pub ext: &'a [u8],
 }
 
@@ -90,18 +90,18 @@ pub struct SelfInfo<'a> {
     pub node_name: &'a [u8],
 }
 
-/// Fin de LOGIN_SUCCESS au nouveau format (14 octets, M:700-713).
+/// Tail of LOGIN_SUCCESS in the new format (14 bytes, M:700-713).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LoginServer {
-    /// Heure du serveur (le « tag » de sa réponse).
+    /// Server time (the "tag" of its response).
     pub server_time: u32,
     /// Permissions ACL (v7+).
     pub acl: u8,
-    /// `FIRMWARE_VER_LEVEL` du serveur.
+    /// The server's `FIRMWARE_VER_LEVEL`.
     pub fw_level: u8,
 }
 
-/// Corps de STATS (24), selon le type demandé (M:1914-1964).
+/// STATS (24) body, depending on the requested type (M:1914-1964).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stats {
     /// Type 0.
@@ -131,29 +131,29 @@ pub enum Stats {
     },
 }
 
-/// Une réponse ou une notification de l'appareil.
+/// A device response or notification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Response<'a> {
-    /// Réponse 0.
+    /// Response 0.
     Ok,
-    /// Réponse 1, avec le code d'erreur.
+    /// Response 1, with the error code.
     Err(u8),
-    /// Réponse 2 : nombre total de contacts (non filtré).
+    /// Response 2: total number of contacts (unfiltered).
     ContactsStart { total: u32 },
-    /// Réponse 3.
+    /// Response 3.
     Contact(Contact<'a>),
-    /// Réponse 4 : plus grand `lastmod` envoyé.
+    /// Response 4: largest `lastmod` sent.
     EndOfContacts { lastmod: u32 },
-    /// Réponse 5.
+    /// Response 5.
     SelfInfo(SelfInfo<'a>),
-    /// Réponse 6. `ack` : accusé attendu, ou tag d'une requête.
+    /// Response 6. `ack`: expected ack, or tag of a request.
     Sent {
         flood: bool,
         ack: [u8; 4],
         timeout_ms: u32,
     },
-    /// Réponse 7 : message direct, ancien format (`app_target_ver` < 3), comme 16 sans `[1..3]`.
-    /// Pour `txt_type` 2, `text` commence par les 4 octets du préfixe de l'auteur.
+    /// Response 7: direct message, old format (`app_target_ver` < 3), like 16 without `[1..3]`.
+    /// For `txt_type` 2, `text` starts with the 4 bytes of the author's prefix.
     ContactMsgLegacy {
         prefix: [u8; 6],
         path_len: u8,
@@ -161,7 +161,7 @@ pub enum Response<'a> {
         timestamp: u32,
         text: &'a [u8],
     },
-    /// Réponse 8 : message de canal, ancien format : comme 17 sans `[1..3]`.
+    /// Response 8: channel message, old format: like 17 without `[1..3]`.
     ChannelMsgLegacy {
         idx: u8,
         path_len: u8,
@@ -169,26 +169,26 @@ pub enum Response<'a> {
         timestamp: u32,
         text: &'a [u8],
     },
-    /// Réponse 9.
+    /// Response 9.
     CurrTime { unix_s: u32 },
-    /// Réponse 10.
+    /// Response 10.
     NoMoreMessages,
-    /// Réponse 11 : trame d'annonce brute (§3.3).
+    /// Response 11: raw advert packet (§3.3).
     ExportContact { raw: &'a [u8] },
-    /// Réponse 12.
+    /// Response 12.
     BattAndStorage {
         battery_mv: u16,
         used_kb: u32,
         total_kb: u32,
     },
-    /// Réponse 13.
+    /// Response 13.
     DeviceInfo(DeviceInfo<'a>),
-    /// Réponse 14.
+    /// Response 14.
     PrivateKey { key: [u8; 64] },
-    /// Réponse 15 : fonction désactivée à la compilation (export ou import de clé).
+    /// Response 15: feature disabled at compile time (key export or import).
     Disabled,
-    /// Réponse 16 : message direct (V3). Pour `txt_type` 2, `text` commence par les 4 octets du
-    /// préfixe de l'auteur.
+    /// Response 16: direct message (V3). For `txt_type` 2, `text` starts with the 4 bytes of the
+    /// author's prefix.
     ContactMsg {
         snr4: i8,
         reserved: [u8; 2],
@@ -198,7 +198,7 @@ pub enum Response<'a> {
         timestamp: u32,
         text: &'a [u8],
     },
-    /// Réponse 17 : message de canal (V3), `"Nom: texte"`.
+    /// Response 17: channel message (V3), `"Name: text"`.
     ChannelMsg {
         snr4: i8,
         reserved: [u8; 2],
@@ -208,33 +208,33 @@ pub enum Response<'a> {
         timestamp: u32,
         text: &'a [u8],
     },
-    /// Réponse 18.
+    /// Response 18.
     ChannelInfo {
         idx: u8,
         name: [u8; 32],
         secret: [u8; 16],
     },
-    /// Réponse 19 : taille maximale des données à signer.
+    /// Response 19: maximum size of the data to sign.
     SignStart { reserved: u8, max_len: u32 },
-    /// Réponse 20.
+    /// Response 20.
     Signature { signature: [u8; 64] },
-    /// Réponse 21 : `"nom:valeur,nom:valeur"`.
+    /// Response 21: `"name:value,name:value"`.
     CustomVars { vars: &'a [u8] },
-    /// Réponse 22 : heure de réception (horloge de l'appareil) et chemin de l'annonce.
+    /// Response 22: reception time (device clock) and path of the advert.
     AdvertPath {
         recv_ts: u32,
         path_len: u8,
         path: &'a [u8],
     },
-    /// Réponse 23 : valeurs × 1000.
+    /// Response 23: values × 1000.
     TuningParams { rx_delay: u32, airtime_factor: u32 },
-    /// Réponse 24.
+    /// Response 24.
     Stats(Stats),
-    /// Réponse 25.
+    /// Response 25.
     AutoaddConfig { config: u8, max_hops: u8 },
-    /// Réponse 26 : paires `(bas u32, haut u32)` en kHz, voir [`freq_ranges`].
+    /// Response 26: `(low u32, high u32)` pairs in kHz, see [`freq_ranges`].
     AllowedRepeatFreq { ranges: &'a [u8] },
-    /// Réponse 27.
+    /// Response 27.
     ChannelData {
         snr4: i8,
         reserved: [u8; 2],
@@ -243,9 +243,9 @@ pub enum Response<'a> {
         data_type: u16,
         data: &'a [u8],
     },
-    /// Réponse 28. `None` : pas de portée par défaut.
+    /// Response 28. `None`: no default scope.
     DefaultFloodScope { scope: Option<([u8; 31], [u8; 16])> },
-    /// Réponse 29.
+    /// Response 29.
     CliReply { text: &'a [u8] },
     /// Notification 0x80.
     Advert { key: [u8; 32] },
@@ -255,14 +255,14 @@ pub enum Response<'a> {
     SendConfirmed { ack: [u8; 4], rtt_ms: u32 },
     /// Notification 0x83.
     MsgWaiting,
-    /// Notification 0x84. `reserved` vaut 0xFF.
+    /// Notification 0x84. `reserved` is 0xFF.
     RawData {
         snr4: i8,
         rssi: i8,
         reserved: u8,
         payload: &'a [u8],
     },
-    /// Notification 0x85. Ancien format (8 octets) : `server` absent et `permissions` à 0.
+    /// Notification 0x85. Old format (8 bytes): `server` absent and `permissions` set to 0.
     LoginSuccess {
         permissions: u8,
         prefix: [u8; 6],
@@ -276,9 +276,9 @@ pub enum Response<'a> {
         prefix: [u8; 6],
         data: &'a [u8],
     },
-    /// Notification 0x88 : chaque trame reçue par la radio.
+    /// Notification 0x88: every packet received by the radio.
     LogRxData { snr4: i8, rssi: i8, raw: &'a [u8] },
-    /// Notification 0x89. `hashes` (`path_len` octets), puis `path_len >> (flags & 3)` SNR × 4.
+    /// Notification 0x89. `hashes` (`path_len` bytes), then `path_len >> (flags & 3)` SNR × 4.
     TraceData {
         reserved: u8,
         flags: u8,
@@ -290,7 +290,7 @@ pub enum Response<'a> {
     },
     /// Notification 0x8A.
     NewAdvert(Contact<'a>),
-    /// Notification 0x8B : données CayenneLPP.
+    /// Notification 0x8B: CayenneLPP data.
     TelemetryResponse {
         reserved: u8,
         prefix: [u8; 6],
@@ -322,12 +322,12 @@ pub enum Response<'a> {
     ContactDeleted { key: [u8; 32] },
     /// Notification 0x90.
     ContactsFull,
-    /// Code hors de v1.18 : ignoré par la session.
+    /// Code outside v1.18: ignored by the session.
     Other { code: u8, body: &'a [u8] },
 }
 
-/// Les paires `(bas, haut)` en kHz d'ALLOWED_REPEAT_FREQ. Un reste de moins de 8 octets est
-/// ignoré (le décodage strict le refuse).
+/// The `(low, high)` pairs in kHz of ALLOWED_REPEAT_FREQ. A remainder shorter than 8 bytes is
+/// ignored (strict decoding rejects it).
 pub fn freq_ranges(ranges: &[u8]) -> impl Iterator<Item = (u32, u32)> + '_ {
     ranges.as_chunks::<8>().0.iter().map(|c| {
         let mut r = Reader::new(c);
@@ -340,12 +340,12 @@ fn put_i8(w: &mut Writer<'_>, v: i8) -> Result<(), Overflow> {
 }
 
 impl<'a> Response<'a> {
-    /// Vrai pour une notification (code ≥ 0x80), qui ne répond à aucune commande.
+    /// True for a notification (code ≥ 0x80), which answers no command.
     pub fn is_push(frame: &[u8]) -> bool {
         frame.first().is_some_and(|c| *c >= 0x80)
     }
 
-    /// Décodage strict et canonique.
+    /// Strict, canonical decoding.
     pub fn decode(frame: &'a [u8]) -> Result<Self, DecodeError> {
         if frame.len() > FRAME_MAX {
             return Err(DecodeError::Length);
@@ -633,11 +633,11 @@ impl<'a> Response<'a> {
         Ok(v)
     }
 
-    /// Écrit la trame dans `out`. Renvoie sa longueur.
+    /// Writes the frame into `out`. Returns its length.
     ///
-    /// Échoue si `out` est trop petit, ou si la valeur n'a pas de forme canonique (le décodage
-    /// strict de la trame écrite la refuserait ou lirait autre chose : [`Response::Other`] d'un
-    /// code connu, SNR d'un TRACE en nombre faux, trame de plus de 176 octets…).
+    /// Fails if `out` is too small, or if the value has no canonical form (strict decoding of
+    /// the written frame would reject it or read something else: [`Response::Other`] with a
+    /// known code, wrong number of SNRs in a TRACE, frame longer than 176 bytes…).
     pub fn encode(&self, out: &mut [u8]) -> Result<usize, Overflow> {
         let n = self.write(out)?;
         match out.get(..n).map(Response::decode) {
@@ -989,7 +989,7 @@ impl<'a> Response<'a> {
         Ok(w.position())
     }
 
-    /// Code de la réponse.
+    /// Response code.
     pub const fn code(&self) -> u8 {
         match self {
             Response::Ok => resp::OK,
@@ -1044,7 +1044,7 @@ impl<'a> Response<'a> {
     }
 }
 
-// ------------------------------------------------------------------------------------ affichage
+// -------------------------------------------------------------------------------------- display
 
 impl fmt::Display for Contact<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1106,7 +1106,7 @@ impl fmt::Display for Stats {
     }
 }
 
-/// ` reserved=N` seulement si l'octet réservé n'est pas nul.
+/// ` reserved=N` only if the reserved byte is non-zero.
 fn reserved(f: &mut fmt::Formatter<'_>, r: u8) -> fmt::Result {
     if r != 0 {
         write!(f, " reserved={r}")?;
@@ -1200,7 +1200,7 @@ impl fmt::Display for Response<'_> {
                 }
                 Ok(())
             }
-            Response::PrivateKey { .. } => f.write_str("PRIVATE_KEY <64 octets>"),
+            Response::PrivateKey { .. } => f.write_str("PRIVATE_KEY <64 bytes>"),
             Response::Disabled => f.write_str("DISABLED"),
             Response::ContactMsg {
                 snr4,

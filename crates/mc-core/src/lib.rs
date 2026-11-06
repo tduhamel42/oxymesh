@@ -1,7 +1,7 @@
-//! Types communs à toutes les crates du cœur : lecture et écriture d'octets sans panic, temps en
-//! nanosecondes entières, modulations et temps d'antenne exacts, budget de duty cycle.
+//! Types shared by all core crates: panic-free byte reading and writing, time in integer
+//! nanoseconds, modulations and exact airtime, duty-cycle budget.
 //!
-//! Repris de `ln-core` (loranet). `no_std`, sans allocation, sans flottants.
+//! Taken from `ln-core` (loranet). `no_std`, no allocation, no floats.
 #![no_std]
 #![deny(clippy::float_arithmetic)]
 #![cfg_attr(
@@ -26,5 +26,5 @@ pub use radio::{Bandwidth, CodingRate, Fsk, Ldro, LoRa, Modulation, RadioConfig}
 pub use regulatory::{DutyBudget, Rule, applicable_rule};
 pub use time::{Duration, Instant};
 
-/// Trame radio la plus longue (SX126x, et `MAX_TRANS_UNIT` de MeshCore).
+/// Longest radio frame (SX126x, and MeshCore's `MAX_TRANS_UNIT`).
 pub const FRAME_MAX: usize = 255;

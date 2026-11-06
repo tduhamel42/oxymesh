@@ -1,7 +1,7 @@
-//! La machine sans IO d'un compagnon MeshCore (ADR-0003) : dispatcher, mesh, contacts,
-//! messages, compagnon. Le runner (firmware, simulateur, appareil virtuel) lui passe les trames
-//! reçues, les trames de l'app, l'heure et l'aléa ; elle rend les trames à émettre, les trames
-//! vers l'app et les écritures à persister.
+//! The IO-free state machine of a MeshCore companion (ADR-0003): dispatcher, mesh, contacts,
+//! messages, companion. The runner (firmware, simulator, virtual device) feeds it received
+//! frames, app frames, the time and randomness; it returns frames to transmit, frames for the
+//! app and writes to persist.
 #![no_std]
 #![deny(clippy::float_arithmetic)]
 #![cfg_attr(

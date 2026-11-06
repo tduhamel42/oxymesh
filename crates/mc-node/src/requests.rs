@@ -1,5 +1,5 @@
-//! Requêtes vers les relais et serveurs (`BaseChatMesh.cpp:603-715`), traces, contrôle et
-//! données brutes.
+//! Requests to repeaters and servers (`BaseChatMesh.cpp:603-715`), traces, control and raw
+//! data.
 
 use mc_air::{PacketBuf, PathLen, PayloadType, Route, payload};
 use mc_core::Instant;
@@ -9,7 +9,7 @@ use crate::contacts::{Contact, PATH_UNKNOWN, Slot, TYPE_NONE};
 use crate::node::{Node, SendError, Sent};
 
 impl Node {
-    /// `sendRequest` : `tag ‖ données` en REQ ; tag = heure unique de l'appareil.
+    /// `sendRequest`: `tag ‖ data` as REQ; tag = the device's unique time.
     pub fn send_request(
         &mut self,
         now: Instant,
@@ -35,7 +35,7 @@ impl Node {
         )
     }
 
-    /// `sendRequest(type)` : requête de 13 octets `tag, type, 0000, aléa(4)`.
+    /// `sendRequest(type)`: 13-byte request `tag, type, 0000, random(4)`.
     pub fn send_typed_request(
         &mut self,
         now: Instant,
@@ -98,8 +98,8 @@ impl Node {
         })
     }
 
-    /// `sendLogin` : `ts ‖ [sync_since si salon] ‖ mot de passe (15 octets au plus)`, en
-    /// ANON_REQ. Le tag rapporté par le compagnon est le préfixe de la clé (`MyMesh.cpp:1577`).
+    /// `sendLogin`: `ts ‖ [sync_since if room server] ‖ password (at most 15 bytes)`, as
+    /// ANON_REQ. The tag reported by the companion is the key prefix (`MyMesh.cpp:1577`).
     pub fn send_login(
         &mut self,
         now: Instant,
@@ -129,7 +129,7 @@ impl Node {
         self.send_anon(now, slot, plain.get(..n).unwrap_or(&[]), tag)
     }
 
-    /// `sendAnonReq` : `tag ‖ données` en ANON_REQ.
+    /// `sendAnonReq`: `tag ‖ data` as ANON_REQ.
     pub fn send_anon_req(
         &mut self,
         now: Instant,
@@ -146,8 +146,8 @@ impl Node {
         self.send_anon(now, slot, plain.get(..n).unwrap_or(&[]), tag)
     }
 
-    /// Contact temporaire pour une requête anonyme vers une clé inconnue (v13+) : type 0,
-    /// chemin zéro saut (`MyMesh.cpp:1599-1629`).
+    /// Temporary contact for an anonymous request to an unknown key (v13+): type 0, zero-hop
+    /// path (`MyMesh.cpp:1599-1629`).
     pub fn temp_contact(&mut self, now: Instant, key: &[u8; 32]) -> Slot {
         let i = self.contacts.anon_slot();
         let mut c = Contact::new(*key);
@@ -160,7 +160,7 @@ impl Node {
         Slot::Anon(i)
     }
 
-    /// `SEND_TRACE_PATH` : TRACE en direct, hashes en fin de charge utile (`createTrace`).
+    /// `SEND_TRACE_PATH`: direct TRACE, hashes at the end of the payload (`createTrace`).
     pub fn send_trace(
         &mut self,
         now: Instant,
@@ -175,7 +175,7 @@ impl Node {
         head[4..8].copy_from_slice(&auth.to_le_bytes());
         head[8] = flags;
         b.set_payload(&head).map_err(|_| SendError::Failed)?;
-        // Délai annoncé : direct, autant de sauts que d'entrées (`calcDirectTimeoutMillisFor`).
+        // Reported timeout: direct, as many hops as entries (`calcDirectTimeoutMillisFor`).
         let entry = 1usize << (flags & 3);
         let hops = u8::try_from(path.len() / entry.max(1))
             .unwrap_or(63)
@@ -187,7 +187,7 @@ impl Node {
         Ok(u32::try_from(timeout).unwrap_or(u32::MAX))
     }
 
-    /// `SEND_CONTROL_DATA` : CONTROL en zéro saut.
+    /// `SEND_CONTROL_DATA`: zero-hop CONTROL.
     pub fn send_control(&mut self, now: Instant, data: &[u8]) -> Result<(), SendError> {
         let mut b = PacketBuf::new(Route::Direct, PayloadType::CONTROL);
         b.set_payload(data).map_err(|_| SendError::Failed)?;
@@ -195,7 +195,7 @@ impl Node {
         Ok(())
     }
 
-    /// `SEND_RAW_DATA` : RAW_CUSTOM en direct le long du chemin donné.
+    /// `SEND_RAW_DATA`: direct RAW_CUSTOM along the given path.
     pub fn send_raw_data(
         &mut self,
         now: Instant,
@@ -212,7 +212,7 @@ impl Node {
         Ok(())
     }
 
-    /// Remplace l'identité (`IMPORT_PRIVATE_KEY`) ; les secrets partagés sont recalculés.
+    /// Replaces the identity (`IMPORT_PRIVATE_KEY`); shared secrets are recomputed.
     pub fn set_identity(&mut self, id: mc_air::LocalIdentity) {
         self.id = id;
         for c in self.contacts.list.iter_mut() {

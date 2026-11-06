@@ -1,7 +1,7 @@
-//! Trames MeshCore sur l'air (`docs/spec/air.md`) : codec, charges utiles, crypto, hashes,
-//! codes de portée, données d'annonce. Compatibles octet pour octet avec MeshCore v1.18.
+//! MeshCore over-the-air packets (`docs/spec/air.md`): codec, payloads, crypto, hashes, scope
+//! codes, advert data. Byte-for-byte compatible with MeshCore v1.18.
 //!
-//! `no_std`, sans allocation, sans flottants ; décodeurs zéro-copie qui ne paniquent jamais.
+//! `no_std`, no allocation, no floats; zero-copy decoders that never panic.
 #![no_std]
 #![deny(clippy::float_arithmetic)]
 #![cfg_attr(
@@ -24,35 +24,35 @@ pub use crypto::{ChannelSecret, LocalIdentity};
 pub use packet::{Header, Packet, PacketBuf, PathLen, PayloadType, Route};
 pub use payload::Payload;
 
-/// Erreurs de décodage, de construction et de crypto.
+/// Decoding, building and crypto errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
-    /// Trame ou champ plus court qu'annoncé.
+    /// Packet or field shorter than announced.
     Truncated,
-    /// Version d'en-tête différente de 0.
+    /// Header version other than 0.
     Version,
-    /// Taille de hash de chemin réservée (4 octets) ou hors de 1..3.
+    /// Reserved path hash size (4 bytes) or outside 1..3.
     PathHashSize,
-    /// Chemin de plus de 64 octets ou de plus de 63 sauts.
+    /// Path longer than 64 bytes or more than 63 hops.
     PathTooLong,
-    /// Longueur du chemin incohérente avec `path_len`.
+    /// Path length inconsistent with `path_len`.
     PathMismatch,
-    /// Codes de transport présents sans route qui les porte, ou l'inverse.
+    /// Transport codes present without a route type that carries them, or the reverse.
     Transport,
-    /// Charge utile de plus de 184 octets.
+    /// Payload longer than 184 bytes.
     PayloadTooLong,
-    /// Trame de plus de 255 octets.
+    /// Packet longer than 255 bytes.
     FrameTooLong,
-    /// Tampon de sortie trop petit.
+    /// Output buffer too small.
     Overflow,
-    /// Chiffré vide ou non multiple de 16.
+    /// Ciphertext empty or not a multiple of 16.
     CipherLen,
-    /// MAC faux.
+    /// Wrong MAC.
     Mac,
-    /// Échec de signature.
+    /// Signature failure.
     Signature,
-    /// Texte trop long ou contenant un NUL.
+    /// Text too long or containing a NUL.
     TextTooLong,
-    /// Type ou variante non pris en charge.
+    /// Unsupported type or variant.
     Unsupported,
 }

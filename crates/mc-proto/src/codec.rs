@@ -1,12 +1,12 @@
-//! Éléments communs du protocole compagnon MeshCore (`docs/spec/companion.md`) : codes, erreurs,
-//! champs de taille fixe, chemins. Les trames elles-mêmes sont dans [`crate::command`] (app →
-//! appareil) et [`crate::response`] (appareil → app).
+//! Common parts of the MeshCore companion protocol (`docs/spec/companion.md`): codes, errors,
+//! fixed-size fields, paths. The frames themselves live in [`crate::command`] (app → device) and
+//! [`crate::response`] (device → app).
 //!
-//! Décodage zéro-copie. Le décodage **strict** est canonique : `encode(decode(x)) == x` pour toute
-//! trame acceptée, et `encode` n'écrit que des trames que `decode` relit à l'identique. Les champs
-//! de taille fixe sont gardés tels quels (fin d'un nom, octets réservés), même quand l'appareil y
-//! laisse des octets sans signification. Le décodage **côté appareil** des commandes
-//! ([`crate::Command::decode_device`]) reproduit les tolérances du C++ (§10, ADR-0002).
+//! Zero-copy decoding. **Strict** decoding is canonical: `encode(decode(x)) == x` for every
+//! accepted frame, and `encode` only writes frames that `decode` reads back identically. Fixed-size
+//! fields are kept as is (tail of a name, reserved bytes), even when the device leaves meaningless
+//! bytes there. **Device-side** command decoding ([`crate::Command::decode_device`]) reproduces the
+//! C++ tolerances (§10, ADR-0002).
 
 use core::fmt;
 use mc_core::{Reader, Truncated};
@@ -16,18 +16,18 @@ pub use crate::response::{
     Contact, DeviceInfo, LoginServer, Response, SelfInfo, Stats, freq_ranges,
 };
 
-/// Taille maximale d'une trame (`MAX_FRAME_SIZE` du firmware).
+/// Maximum frame size (the firmware's `MAX_FRAME_SIZE`).
 pub const FRAME_MAX: usize = 176;
-/// Version du protocole annoncée dans DEVICE_QUERY : messages reçus au format V3.
+/// Protocol version announced in DEVICE_QUERY: received messages in V3 format.
 pub const APP_VER: u8 = 3;
-/// `path_len` d'un chemin inconnu, ou d'une inondation.
+/// `path_len` of an unknown path, or of a flood.
 pub const PATH_UNKNOWN: u8 = 0xFF;
-/// Type d'un contact « compagnon » (`ADV_TYPE_CHAT`).
+/// Type of a "companion" contact (`ADV_TYPE_CHAT`).
 pub const ADV_TYPE_CHAT: u8 = 1;
-/// Taille maximale d'un chemin en octets (`MAX_PATH_SIZE`, `src/MeshCore.h:22`).
+/// Maximum path size in bytes (`MAX_PATH_SIZE`, `src/MeshCore.h:22`).
 pub const MAX_PATH: usize = 64;
 
-/// Codes des commandes (app → appareil), M:9-73. 44 à 49 et 53 sont libres (ERR 1).
+/// Command codes (app → device), M:9-73. 44 to 49 and 53 are unassigned (ERR 1).
 pub mod cmd {
     pub const APP_START: u8 = 1;
     pub const SEND_TXT_MSG: u8 = 2;
@@ -90,7 +90,7 @@ pub mod cmd {
     pub const RUN_CLI_COMMAND: u8 = 66;
 }
 
-/// Codes des réponses (0..29) et des notifications (0x80..0x90), M:76-134.
+/// Response codes (0..29) and notification codes (0x80..0x90), M:76-134.
 pub mod resp {
     pub const OK: u8 = 0;
     pub const ERR: u8 = 1;
@@ -141,13 +141,13 @@ pub mod resp {
     pub const CONTACT_DELETED: u8 = 0x8F;
     pub const CONTACTS_FULL: u8 = 0x90;
 
-    /// Vrai pour un code de v1.18 (les autres deviennent [`crate::Response::Other`]).
+    /// True for a v1.18 code (the others become [`crate::Response::Other`]).
     pub const fn is_known(code: u8) -> bool {
         code <= CLI_REPLY || (code >= ADVERT && code <= CONTACTS_FULL)
     }
 }
 
-/// Codes d'erreur de l'appareil (réponse ERR), M:135-140.
+/// Device error codes (ERR response), M:135-140.
 pub mod err {
     pub const UNSUPPORTED: u8 = 1;
     pub const NOT_FOUND: u8 = 2;
@@ -157,16 +157,16 @@ pub mod err {
     pub const ILLEGAL_ARG: u8 = 6;
 }
 
-/// Trame refusée par le décodage strict.
+/// Frame rejected by strict decoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecodeError {
-    /// Plus courte que son corps fixe, ou vide.
+    /// Shorter than its fixed body, or empty.
     Truncated,
-    /// Octets en trop, ou longueur annoncée fausse.
+    /// Extra bytes, or wrong announced length.
     Length,
-    /// Valeur hors de ce que décrit la spec.
+    /// Value outside what the spec describes.
     Value,
-    /// Code de commande inconnu (une réponse de code inconnu, elle, est [`Response::Other`]).
+    /// Unknown command code (a response with an unknown code, by contrast, is [`Response::Other`]).
     Code,
 }
 
@@ -176,25 +176,25 @@ impl From<Truncated> for DecodeError {
     }
 }
 
-/// Refus de [`Command::decode_device`] : ce que répond `MyMesh::handleCmdFrame` à ce stade.
+/// Rejection by [`Command::decode_device`]: what `MyMesh::handleCmdFrame` replies at that point.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceReject {
-    /// Trame vide ou de plus de 176 octets : les porteurs ne la remettent jamais au C++ (§1),
-    /// pas de réponse.
+    /// Empty frame or longer than 176 bytes: the carriers never hand it to the C++ (§1), no
+    /// response.
     Ignored,
-    /// Réponse `ERR code` (le plus souvent 1, UNSUPPORTED_CMD : code inconnu ou précondition de
-    /// longueur ratée).
+    /// `ERR code` response (most often 1, UNSUPPORTED_CMD: unknown code or failed length
+    /// precondition).
     Err(u8),
 }
 
 impl DeviceReject {
-    /// Code inconnu ou précondition de longueur ratée (dernier `else`, M:2059-2061).
+    /// Unknown code or failed length precondition (final `else`, M:2059-2061).
     pub const UNSUPPORTED: Self = DeviceReject::Err(err::UNSUPPORTED);
-    /// Précondition ratée sur la forme de la trame quand le C++ répond ILLEGAL_ARG.
+    /// Failed precondition on the frame's shape where the C++ replies ILLEGAL_ARG.
     pub const ILLEGAL_ARG: Self = DeviceReject::Err(err::ILLEGAL_ARG);
 }
 
-/// Rien ne doit rester à lire.
+/// Nothing must be left to read.
 pub(crate) fn end(r: &Reader<'_>) -> Result<(), DecodeError> {
     if r.is_empty() {
         Ok(())
@@ -203,13 +203,13 @@ pub(crate) fn end(r: &Reader<'_>) -> Result<(), DecodeError> {
     }
 }
 
-/// Un nom de taille fixe (UTF-8 terminé par 0x00, complété de 0x00) : la partie avant le 0x00.
+/// A fixed-size name (UTF-8, 0x00-terminated, 0x00-padded): the part before the 0x00.
 pub fn fixed_str(b: &[u8]) -> &[u8] {
     let n = b.iter().position(|&c| c == 0).unwrap_or(b.len());
     b.get(..n).unwrap_or(&[])
 }
 
-/// Écrit `s` dans un champ de taille fixe : tronqué pour garder un 0x00, complété de 0x00.
+/// Writes `s` into a fixed-size field: truncated to keep a 0x00, padded with 0x00.
 pub fn to_fixed<const N: usize>(s: &[u8]) -> [u8; N] {
     let mut out = [0u8; N];
     for (o, b) in out.iter_mut().zip(s.iter().take(N.saturating_sub(1))) {
@@ -218,9 +218,9 @@ pub fn to_fixed<const N: usize>(s: &[u8]) -> [u8; N] {
     out
 }
 
-/// Octets d'un chemin d'après son `path_len` : `(path_len & 63) × ((path_len >> 6) + 1)`.
-/// `None` si la taille de hash vaut 4 (réservée) ou si le chemin dépasse 64 octets
-/// (`Packet::isValidPathLen` et `Packet::writePath`, `src/Packet.cpp:13-30`).
+/// Path bytes according to its `path_len`: `(path_len & 63) × ((path_len >> 6) + 1)`.
+/// `None` if the hash size is 4 (reserved) or if the path exceeds 64 bytes
+/// (`Packet::isValidPathLen` and `Packet::writePath`, `src/Packet.cpp:13-30`).
 pub const fn path_bytes(path_len: u8) -> Option<usize> {
     let size = (path_len >> 6) as usize + 1;
     let n = (path_len & 63) as usize * size;
@@ -231,7 +231,7 @@ pub const fn path_bytes(path_len: u8) -> Option<usize> {
     }
 }
 
-/// Lit `path_len` puis le chemin qu'il annonce ; `Value` si `path_len` est invalide.
+/// Reads `path_len`, then the path it announces; `Value` if `path_len` is invalid.
 pub(crate) fn read_path<'a>(r: &mut Reader<'a>) -> Result<(u8, &'a [u8]), DecodeError> {
     let path_len = r.u8()?;
     let n = path_bytes(path_len).ok_or(DecodeError::Value)?;
@@ -242,7 +242,7 @@ pub(crate) fn i8_of(b: u8) -> i8 {
     i8::from_le_bytes([b])
 }
 
-/// Octets affichés comme une chaîne (caractères échappés, octets invalides en `\xNN`).
+/// Bytes displayed as a string (characters escaped, invalid bytes as `\xNN`).
 pub(crate) struct Text<'a>(pub(crate) &'a [u8]);
 
 impl fmt::Display for Text<'_> {

@@ -1,4 +1,4 @@
-//! `mc` : outils autour d'un compagnon MeshCore branché en USB.
+//! `mc`: tools around a MeshCore companion connected over USB.
 
 mod airtest;
 mod describe;
@@ -13,7 +13,7 @@ use crate::describe::{Keys, describe};
 use crate::port::Port;
 
 #[derive(Parser)]
-#[command(name = "mc", about = "Outils oxymesh pour compagnons MeshCore")]
+#[command(name = "mc", about = "oxymesh tools for MeshCore companions")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -21,26 +21,26 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Interroge l'appareil : version, réglages, portée.
+    /// Query the device: version, settings, scope.
     Info { port: String },
-    /// Affiche, décodées, les trames que l'appareil entend (LOG_RX_DATA).
+    /// Print, decoded, the frames the device hears (LOG_RX_DATA).
     Sniff {
         port: String,
-        /// Durée en secondes (sans fin par défaut).
+        /// Duration in seconds (endless by default).
         #[arg(long)]
         secs: Option<u64>,
-        /// Canal à déchiffrer en plus du canal Public : `#nom` ou `nom=secret hex (16 octets)`.
+        /// Channel to decrypt in addition to the Public channel: `#name` or `name=hex secret (16 bytes)`.
         #[arg(long)]
         channel: Vec<String>,
     },
-    /// Fait émettre une trame brute par l'appareil (SEND_RAW_PACKET).
+    /// Make the device transmit a raw frame (SEND_RAW_PACKET).
     Inject {
         port: String,
         hex: String,
         #[arg(long, default_value_t = 0)]
         prio: u8,
     },
-    /// Éprouve mc-air contre un firmware C++ : `--ref` émet et écoute, `--dut` est sous test.
+    /// Test mc-air against a C++ firmware: `--ref` transmits and listens, `--dut` is under test.
     Airtest {
         #[arg(long = "ref")]
         ref_port: String,
@@ -68,13 +68,13 @@ fn main() {
         } => airtest::run(&ref_port, &dut, verbose),
     };
     if let Err(e) = res {
-        eprintln!("erreur : {e}");
+        eprintln!("error: {e}");
         std::process::exit(1);
     }
 }
 
 fn info(path: &str) -> Result<(), String> {
-    let mut p = Port::open(path, "appareil")?;
+    let mut p = Port::open(path, "device")?;
     p.verbose = true;
     p.ask(&Command::DeviceQuery { app_ver: APP_VER })?;
     p.ask(&Command::AppStart {
@@ -92,9 +92,9 @@ fn sniff(path: &str, secs: Option<u64>, channels: &[String]) -> Result<(), Strin
     for c in channels {
         if let Some((name, hex)) = c.split_once('=') {
             let mut k = [0u8; 16];
-            let n = mc_core::hex::decode_into(hex, &mut k).ok_or("secret hexadécimal invalide")?;
+            let n = mc_core::hex::decode_into(hex, &mut k).ok_or("invalid hex secret")?;
             if n != 16 {
-                return Err("le secret fait 16 octets".into());
+                return Err("the secret must be 16 bytes".into());
             }
             keys.channels
                 .push((name.into(), ChannelSecret::from_psk16(&k)));
@@ -103,7 +103,7 @@ fn sniff(path: &str, secs: Option<u64>, channels: &[String]) -> Result<(), Strin
                 .push((c.clone(), ChannelSecret::from_hashtag(c)));
         }
     }
-    let mut p = Port::open(path, "appareil")?;
+    let mut p = Port::open(path, "device")?;
     p.ask(&Command::DeviceQuery { app_ver: APP_VER })?;
     let end = secs.map(|s| std::time::Instant::now() + std::time::Duration::from_secs(s));
     while end.is_none_or(|e| std::time::Instant::now() < e) {
@@ -123,9 +123,9 @@ fn sniff(path: &str, secs: Option<u64>, channels: &[String]) -> Result<(), Strin
 
 fn inject(path: &str, hex: &str, prio: u8) -> Result<(), String> {
     let mut raw = [0u8; 255];
-    let n = mc_core::hex::decode_into(hex, &mut raw).ok_or("hexadécimal invalide")?;
-    mc_air::Packet::decode(&raw[..n]).map_err(|e| format!("trame invalide : {e:?}"))?;
-    let mut p = Port::open(path, "appareil")?;
+    let n = mc_core::hex::decode_into(hex, &mut raw).ok_or("invalid hex")?;
+    mc_air::Packet::decode(&raw[..n]).map_err(|e| format!("invalid frame: {e:?}"))?;
+    let mut p = Port::open(path, "device")?;
     p.verbose = true;
     p.ask(&Command::SendRawPacket {
         priority: prio,

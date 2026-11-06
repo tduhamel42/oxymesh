@@ -1,9 +1,9 @@
-//! Persistance (`docs/spec/companion.md` §8) : enregistrements binaires et opérations d'écriture.
+//! Persistence (`docs/spec/companion.md` §8): binary records and write operations.
 //!
-//! Contacts et canaux reprennent les enregistrements du firmware C++ (`/contacts3`,
-//! `/channels2`, `DataStore.cpp:259-366`) : la migration (MC6) les lit tels quels. Les réglages ont
-//! leur propre format versionné. Le runner range chaque enregistrement sous une clé ; l'ordre
-//! des contacts est rétabli au chargement par leur indice.
+//! Contacts and channels reuse the C++ firmware records (`/contacts3`, `/channels2`,
+//! `DataStore.cpp:259-366`): the migration (MC6) reads them as is. Settings have their own
+//! versioned format. The runner stores each record under a key; the contact order is restored
+//! on load from their index.
 
 use mc_core::{Reader, Writer};
 
@@ -16,19 +16,19 @@ pub const CHANNEL_RECORD: usize = 68;
 pub const PREFS_RECORD: usize = 128;
 const PREFS_VERSION: u8 = 1;
 
-/// Écriture demandée au runner.
+/// Write requested from the runner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StoreOp {
-    /// Identité : clé privée étendue (64) puis publique (32), comme `/identity/_main.id` inversé.
+    /// Identity: expanded private key (64) then public key (32), like `/identity/_main.id` reversed.
     Identity,
     Prefs,
-    /// Toute la table des contacts (écriture différée de 5 s, comme le C++).
+    /// The whole contact table (write deferred by 5 s, like the C++).
     Contacts,
-    /// Un canal (indice).
+    /// One channel (index).
     Channel(u8),
 }
 
-/// `/contacts3` : pub 32, nom 32, type, flags, inutilisé, sync_since, out_path_len,
+/// `/contacts3`: pub 32, name 32, type, flags, unused, sync_since, out_path_len,
 /// last_advert, out_path 64, lastmod, lat, lon.
 pub fn encode_contact(c: &Contact) -> [u8; CONTACT_RECORD] {
     let mut out = [0u8; CONTACT_RECORD];
@@ -68,7 +68,7 @@ pub fn decode_contact(b: &[u8]) -> Option<Contact> {
     Some(c)
 }
 
-/// `/channels2` : 4 octets nuls, nom 32, secret 32.
+/// `/channels2`: 4 zero bytes, name 32, secret 32.
 pub fn encode_channel(c: &Channel) -> [u8; CHANNEL_RECORD] {
     let mut out = [0u8; CHANNEL_RECORD];
     let mut w = Writer::new(&mut out);
@@ -91,7 +91,7 @@ pub fn decode_channel(b: &[u8]) -> Option<Channel> {
     })
 }
 
-/// Réglages, version 1 (128 octets).
+/// Settings, version 1 (128 bytes).
 pub fn encode_prefs(p: &Prefs) -> [u8; PREFS_RECORD] {
     let mut out = [0u8; PREFS_RECORD];
     let mut w = Writer::new(&mut out);
@@ -129,7 +129,7 @@ pub fn encode_prefs(p: &Prefs) -> [u8; PREFS_RECORD] {
     out
 }
 
-/// Relit des réglages ; `None` si la version est inconnue (on garde alors les réglages d'usine).
+/// Reads settings back; `None` if the version is unknown (factory settings are then kept).
 pub fn decode_prefs(b: &[u8], defaults: &Prefs) -> Option<Prefs> {
     let mut r = Reader::new(b);
     if r.u8().ok()? != PREFS_VERSION {

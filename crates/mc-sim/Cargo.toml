@@ -1,10 +1,11 @@
 [package]
 name = "mc-sim"
-description = "Radio simulée simple (liens, demi-duplex, collisions) qui relie plusieurs mc-node"
+description = "Simple simulated radio (links, half duplex, collisions) that connects several mc-node instances"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 mc-core.workspace = true

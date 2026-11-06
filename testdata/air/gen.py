@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Oracle indépendant des trames MeshCore sur l'air (docs/spec/air.md).
+"""Independent oracle for MeshCore over-the-air packets (docs/spec/air.md).
 
-Python pur, sans dépendance hors de la bibliothèque standard : AES-128 d'après FIPS-197,
-Ed25519 d'après RFC 8032 (signature avec clé privée « étendue » à la orlp), X25519 d'après
-RFC 7748, SHA-256/512 et HMAC de hashlib/hmac. Chaque primitive est d'abord vérifiée contre les
-vecteurs de sa norme. Le résultat, testdata/air/vectors.toml, est relu par
-crates/mc-air/tests/vectors.rs.
+Pure Python, no dependencies outside the standard library: AES-128 per FIPS-197, Ed25519 per
+RFC 8032 (signing with an orlp-style "expanded" private key), X25519 per RFC 7748, SHA-256/512
+and HMAC from hashlib/hmac. Each primitive is first checked against its standard's test vectors.
+The output, testdata/air/vectors.toml, is read by crates/mc-air/tests/vectors.rs.
 
-Usage : python3 -I testdata/air/gen.py > testdata/air/vectors.toml
+Usage: python3 -I testdata/air/gen.py > testdata/air/vectors.toml
 """
 
 import hashlib
@@ -115,7 +114,7 @@ def aes_decrypt_block(key, block):
 
 
 # ---------------------------------------------------------------------------------------------
-# Ed25519 (RFC 8032 §5.1) et X25519 (RFC 7748)
+# Ed25519 (RFC 8032 §5.1) and X25519 (RFC 7748)
 
 P = 2**255 - 19
 Q = 2**252 + 27742317777372353535851937790883648493
@@ -187,7 +186,7 @@ def _sha512_modq(b):
 
 
 def expanded_from_seed(seed):
-    """Clé privée orlp de 64 octets : SHA512(graine), scalaire clampé."""
+    """64-byte orlp private key: SHA512(seed), clamped scalar."""
     h = bytearray(hashlib.sha512(seed).digest())
     h[0] &= 248
     h[31] &= 63
@@ -201,7 +200,7 @@ def public_from_expanded(prv):
 
 
 def sign_expanded(prv, msg):
-    """Signature orlp (sign.c) : scalaire pris tel quel, préfixe de nonce = prv[32..64]."""
+    """orlp signature (sign.c): scalar taken as is, nonce prefix = prv[32..64]."""
     a = int.from_bytes(prv[:32], "little")
     A = public_from_expanded(prv)
     r = _sha512_modq(prv[32:] + msg)
@@ -259,14 +258,14 @@ def x25519(k, u):
 
 
 def ecdh_orlp(prv, peer_pub):
-    """key_exchange.c : u = (1+y)/(1-y) depuis le y Ed25519 du pair, X25519 avec prv[0..32]."""
+    """key_exchange.c: u = (1+y)/(1-y) from the peer's Ed25519 y, X25519 with prv[0..32]."""
     y = int.from_bytes(peer_pub, "little") & ((1 << 255) - 1)
     u = (1 + y) * pow((1 - y) % P, P - 2, P) % P
     return x25519(prv[:32], int.to_bytes(u, 32, "little"))
 
 
 # ---------------------------------------------------------------------------------------------
-# Auto-vérification des primitives contre leurs normes
+# Self-test of the primitives against their standards
 
 
 def _selftest():
@@ -285,7 +284,7 @@ def _selftest():
     out = x25519(bytes.fromhex("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4"),
                  bytes.fromhex("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c"))
     assert out.hex() == "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552"  # RFC 7748 §5.2
-    # L'ECDH est symétrique.
+    # ECDH is symmetric.
     a = expanded_from_seed(b"\x01" * 32)
     b = expanded_from_seed(b"\x02" * 32)
     assert ecdh_orlp(a, public_from_expanded(b)) == ecdh_orlp(b, public_from_expanded(a))
@@ -296,7 +295,7 @@ def _selftest():
 
 
 def seal(secret, plain):
-    """MAC(2) ‖ AES-128-ECB(clair complété par des zéros) ; clé AES = secret[0..16]."""
+    """MAC(2) ‖ AES-128-ECB(zero-padded plaintext); AES key = secret[0..16]."""
     padded = plain + b"\x00" * (-len(plain) % 16)
     body = b"".join(aes_encrypt_block(secret[:16], padded[i:i + 16]) for i in range(0, len(padded), 16))
     mac = hmac.new(secret, body, hashlib.sha256).digest()[:2]
@@ -362,7 +361,7 @@ def app_data(kind, name=None, loc=None):
 
 
 # ---------------------------------------------------------------------------------------------
-# Sortie TOML
+# TOML output
 
 
 def h(b):
@@ -370,8 +369,8 @@ def h(b):
 
 
 def ident(label):
-    """Identité de test : la première graine dérivée du libellé dont la clé ne commence ni par
-    0x00 ni par 0xFF (clés refusées par MeshCore)."""
+    """Test identity: the first seed derived from the label whose key starts with neither 0x00
+    nor 0xFF (keys rejected by MeshCore)."""
     i = 0
     while True:
         seed = hashlib.sha256(f"oxymesh-test-{label}-{i}".encode()).digest()
@@ -386,8 +385,8 @@ def main():
     _selftest()
     out = []
     w = out.append
-    w("# Vecteurs MeshCore sur l'air, produits par testdata/air/gen.py (oracle indépendant).")
-    w("# Ne pas éditer à la main : relancer `python3 -I testdata/air/gen.py > testdata/air/vectors.toml`.")
+    w("# MeshCore over-the-air vectors, produced by testdata/air/gen.py (independent oracle).")
+    w("# Do not edit by hand: rerun `python3 -I testdata/air/gen.py > testdata/air/vectors.toml`.")
     w("")
 
     ids = {k: ident(k) for k in ("alice", "bob", "relay")}
@@ -436,7 +435,7 @@ def main():
         w(f'hash = "{h(packet_hash(ptype, path_len, payload))}"')
         w("")
 
-    # Annonces
+    # Adverts
     ts = 1793900000
     for name, who, ad, path_len, path in (
         ("advert_alice", "alice", app_data(1, "Alice"), 0, b""),
@@ -463,7 +462,7 @@ def main():
         w(f'adv_name = "{h(name_bytes)}"')
         w("")
 
-    # Messages directs
+    # Direct messages
     for name, attempt, text, route, path_len, path in (
         ("txt_flood", 0, "Hello Bob", 1, 0, b""),
         ("txt_attempt5", 5, "Salut, ça va ?", 1, 0, b""),
@@ -488,7 +487,7 @@ def main():
         w(f"ack = {ack_crc(ts, flags, t, a_pub)}")
         w("")
 
-    # Canaux
+    # Channels
     public = bytes.fromhex("8b3387e9c5cdea6ac9e5edbaa115cd72") + b"\x00" * 16
     test_ch = hashlib.sha256(b"#test").digest()[:16] + b"\x00" * 16
     fr = region_key("fr")
@@ -515,7 +514,7 @@ def main():
             w(f'region_key = "{h(region_key(transport_region))}"')
         w("")
 
-    # PATH de retour, avec accusé de 6 octets, chemin de 2 sauts en hashes de 2 octets
+    # Returned PATH, with a 6-byte ack, 2-hop path with 2-byte hashes
     ack6 = ack_crc(ts, 0, b"Hello Bob", a_pub).to_bytes(4, "little") + b"\x00\x5a"
     in_path_len = (1 << 6) | 2
     in_path = b"\x12\x34\x56\x78"
@@ -532,12 +531,12 @@ def main():
     w(f'plain = "{h(plain)}"')
     w("")
 
-    # ACK direct de 6 octets, puis MULTIPART-ACK
+    # 6-byte direct ACK, then MULTIPART-ACK
     packet("ack_direct", frame(2, 3, 1, b"\xa1", ack6), 2, 3, 1, b"\xa1", ack6)
     mp = bytes([(1 << 4) | 3]) + ack6[:4]
     packet("multipart_ack", frame(2, 0xA, 0, b"", mp), 2, 0xA, 0, b"", mp)
 
-    # ANON_REQ : connexion à un relais
+    # ANON_REQ: login to a repeater
     plain = ts.to_bytes(4, "little") + b"password"
     payload = bytes([r_pub[0]]) + a_pub + seal(ar, plain)
     packet("anon_login", frame(1, 7, 0, b"", payload), 1, 7, 0, b"", payload)
@@ -549,16 +548,16 @@ def main():
     w(f'plain = "{h(plain)}"')
     w("")
 
-    # TRACE : le hash couvre path_len
+    # TRACE: the hash covers path_len
     trace = (0x01020304).to_bytes(4, "little") + (0xA0B0C0D0).to_bytes(4, "little") + b"\x00" + b"\x11\x22\x33"
     packet("trace_one_snr", frame(2, 9, 1, b"\x28", trace), 2, 9, 1, b"\x28", trace,
-           note="1 saut parcouru, SNR 10 dB")
+           note="1 hop travelled, SNR 10 dB")
 
-    # CONTROL : découverte zéro saut
+    # CONTROL: zero-hop discovery
     ctrl = bytes([0x80, 1 << 2]) + (0xDEADBEEF).to_bytes(4, "little")
     packet("control_discover", frame(2, 0xB, 0, b"", ctrl), 2, 0xB, 0, b"", ctrl)
 
-    # Codes de portée sur des charges arbitraires
+    # Scope codes over arbitrary payloads
     for region in ("fr", "#fr", "be"):
         for ptype, payload in ((5, b"\x01\x02\x03"), (4, bytes(range(100)))):
             w("[[transport]]")
@@ -568,7 +567,7 @@ def main():
             w(f"code = {transport_code(region_key(region), ptype, payload)}")
             w("")
 
-    # Trames refusées par Dispatcher::tryParsePacket
+    # Packets rejected by Dispatcher::tryParsePacket
     for name, raw in (
         ("version_1", bytes([0x40 | (2 << 2) | 1, 0]) + b"x"),
         ("path_hash_size_4", bytes([(2 << 2) | 1, 0xC1, 0, 0, 0, 0, 0])),

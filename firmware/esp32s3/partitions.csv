@@ -1,6 +1,6 @@
-# Table de partitions d'oxymesh pour un ESP32-S3 à 4 Mo (ADR-0006).
-# nvs, otadata, spiffs et coredump restent ceux du firmware MeshCore C++ (lus sur le M5 le
-# 2026-11-05) : un retour au C++ retrouve ses appairages Bluetooth et son SPIFFS intacts.
+# oxymesh partition table for a 4 MB ESP32-S3 (ADR-0006).
+# nvs, otadata, spiffs and coredump stay those of the MeshCore C++ firmware (read on the M5 on
+# 2026-11-05): going back to the C++ firmware finds its Bluetooth pairings and SPIFFS intact.
 # Name,    Type, SubType,  Offset,   Size
 nvs,       data, nvs,      0x9000,   0x5000
 otadata,   data, ota,      0xe000,   0x2000

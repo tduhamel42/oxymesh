@@ -1,15 +1,15 @@
-//! Description lisible d'une trame sur l'air, avec déchiffrement si l'on a la clé.
+//! Human-readable description of an air frame, decrypted when we have the key.
 
 use mc_air::crypto::{self, ChannelSecret, LocalIdentity};
 use mc_air::payload::{Advert, GroupDataPlain, GroupTxtPlain, PathPlain, Payload, TxtPlain};
 use mc_air::{AppData, Packet, PayloadType};
 use mc_core::Hex;
 
-/// Ce qu'on sait déchiffrer.
+/// What we can decrypt.
 #[derive(Default)]
 pub struct Keys {
     pub identities: Vec<(String, LocalIdentity)>,
-    /// Clés publiques connues (contacts), pour les messages directs vers nos identités.
+    /// Known public keys (contacts), for direct messages to our identities.
     pub peers: Vec<[u8; 32]>,
     pub channels: Vec<(String, ChannelSecret)>,
 }
@@ -37,11 +37,11 @@ fn text(b: &[u8]) -> String {
     String::from_utf8_lossy(b).into_owned()
 }
 
-/// Une ligne qui décrit la trame `raw`.
+/// One line describing the frame `raw`.
 pub fn describe(raw: &[u8], keys: &Keys) -> String {
     let p = match Packet::decode(raw) {
         Ok(p) => p,
-        Err(e) => return format!("illisible ({e:?}) {}", Hex(raw)),
+        Err(e) => return format!("unreadable ({e:?}) {}", Hex(raw)),
     };
     let mut s = format!(
         "{:?} {} hops={}x{}B{} hash={}",
@@ -55,7 +55,7 @@ pub fn describe(raw: &[u8], keys: &Keys) -> String {
         Hex(&p.hash()),
     );
     let Ok(pl) = Payload::parse(p.header.ptype, p.payload) else {
-        s.push_str(&format!(" charge illisible {}", Hex(p.payload)));
+        s.push_str(&format!(" unreadable payload {}", Hex(p.payload)));
         return s;
     };
     match pl {
@@ -71,7 +71,7 @@ pub fn describe(raw: &[u8], keys: &Keys) -> String {
                 if let Ok(plain) = crypto::open(&secret.0, sealed, &mut buf) {
                     if ptype == PayloadType::GRP_TXT {
                         if let Ok(g) = GroupTxtPlain::parse(plain) {
-                            s.push_str(&format!(" [{name}] ts={} « {} »", g.ts, text(g.text)));
+                            s.push_str(&format!(" [{name}] ts={} \"{}\"", g.ts, text(g.text)));
                         }
                     } else if let Ok(g) = GroupDataPlain::parse(plain) {
                         s.push_str(&format!(
@@ -99,11 +99,11 @@ pub fn describe(raw: &[u8], keys: &Keys) -> String {
                     let Ok(plain) = crypto::open(&secret, sealed, &mut buf) else {
                         continue;
                     };
-                    s.push_str(&format!(" [pour {name}, de {}]", Hex(&peer[..4])));
+                    s.push_str(&format!(" [to {name}, from {}]", Hex(&peer[..4])));
                     if ptype == PayloadType::TXT_MSG {
                         if let Ok(t) = TxtPlain::parse(plain) {
                             s.push_str(&format!(
-                                " ts={} type={} essai={} « {} » ack={:08x}",
+                                " ts={} type={} attempt={} \"{}\" ack={:08x}",
                                 t.ts,
                                 t.txt_type(),
                                 t.attempt(),
@@ -122,14 +122,14 @@ pub fn describe(raw: &[u8], keys: &Keys) -> String {
                             ));
                         }
                     } else {
-                        s.push_str(&format!(" clair={}", Hex(plain)));
+                        s.push_str(&format!(" plain={}", Hex(plain)));
                     }
                 }
             }
         }
-        Payload::Ack { crc, rest } => s.push_str(&format!(" ack={crc:08x} reste={}", Hex(rest))),
+        Payload::Ack { crc, rest } => s.push_str(&format!(" ack={crc:08x} rest={}", Hex(rest))),
         Payload::AnonReq { dest, sender, .. } => {
-            s.push_str(&format!(" de {} → {dest:02x}", Hex(&sender[..4])))
+            s.push_str(&format!(" from {} → {dest:02x}", Hex(&sender[..4])))
         }
         Payload::Trace {
             tag, flags, hashes, ..
@@ -146,7 +146,7 @@ pub fn describe(raw: &[u8], keys: &Keys) -> String {
             inner,
             body,
         } => s.push_str(&format!(
-            " restants={remaining} type={} {}",
+            " remaining={remaining} type={} {}",
             type_name(inner),
             Hex(body)
         )),
@@ -159,11 +159,11 @@ pub fn advert(a: &Advert<'_>) -> String {
     let ok = if a.verify() {
         "signature ok"
     } else {
-        "SIGNATURE FAUSSE"
+        "BAD SIGNATURE"
     };
     match AppData::decode(a.app_data) {
         Ok(ad) => format!(
-            " key={} ts={} kind={} name=« {} »{} {ok}",
+            " key={} ts={} kind={} name=\"{}\"{} {ok}",
             Hex(&a.pub_key[..4]),
             a.ts,
             ad.kind,
@@ -172,9 +172,6 @@ pub fn advert(a: &Advert<'_>) -> String {
                 .map(|(la, lo)| format!(" pos={la},{lo}"))
                 .unwrap_or_default(),
         ),
-        Err(e) => format!(
-            " key={} données illisibles ({e:?}) {ok}",
-            Hex(&a.pub_key[..4])
-        ),
+        Err(e) => format!(" key={} unreadable data ({e:?}) {ok}", Hex(&a.pub_key[..4])),
     }
 }

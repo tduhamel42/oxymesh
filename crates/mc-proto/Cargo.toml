@@ -1,10 +1,11 @@
 [package]
 name = "mc-proto"
-description = "Protocole compagnon MeshCore (docs/spec/companion.md), dans les deux sens, et tramage USB"
+description = "MeshCore companion protocol (docs/spec/companion.md), both directions, and USB framing"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 mc-core.workspace = true

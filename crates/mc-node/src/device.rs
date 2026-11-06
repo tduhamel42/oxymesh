@@ -1,6 +1,6 @@
-//! Couche compagnon (`examples/companion_radio/MyMesh.cpp` ; `docs/spec/companion.md`) :
-//! commandes de l'app, file des messages en attente, notifications, itération des contacts,
-//! requêtes aux serveurs. Le nœud (`Node`) fait le réseau ; `Device` parle à l'app.
+//! Companion layer (`examples/companion_radio/MyMesh.cpp`; `docs/spec/companion.md`):
+//! app commands, offline message queue, notifications, contact iteration, server requests.
+//! The node (`Node`) handles the network; `Device` talks to the app.
 
 use mc_air::crypto::{LocalIdentity, PUB_KEY_LEN};
 use mc_air::{PathLen, payload};
@@ -16,39 +16,39 @@ use crate::persist::{
     CHANNEL_RECORD, CONTACT_RECORD, PREFS_RECORD, encode_channel, encode_contact, encode_prefs,
 };
 
-/// Trame vers l'app (`MAX_FRAME_SIZE`).
+/// Frame to the app (`MAX_FRAME_SIZE`).
 pub const FRAME_MAX: usize = 176;
 pub type Frame = heapless::Vec<u8, FRAME_MAX>;
-/// File des messages en attente du build M5 (`OFFLINE_QUEUE_SIZE`).
+/// Offline message queue of the M5 build (`OFFLINE_QUEUE_SIZE`).
 pub const OFFLINE_QUEUE: usize = 256;
-/// `FIRMWARE_VER_CODE` de MeshCore v1.18.
+/// `FIRMWARE_VER_CODE` of MeshCore v1.18.
 pub const FIRMWARE_VER_CODE: u8 = 14;
-/// Taille maximale d'un message à signer (`SIGN_START`).
+/// Maximum size of a message to sign (`SIGN_START`).
 pub const SIGN_MAX: usize = 8192;
-/// Écriture différée des contacts (`MyMesh.cpp`, 5 s).
+/// Deferred contacts write (`MyMesh.cpp`, 5 s).
 const CONTACTS_SAVE_DELAY: Duration = Duration::from_secs(5);
-/// Délai de réponse d'un serveur (`SERVER_RESPONSE_DELAY`).
+/// Server response delay (`SERVER_RESPONSE_DELAY`).
 const SERVER_RESPONSE_DELAY: u64 = 300;
-/// Fréquences où le relais du compagnon est permis (`MyMesh.cpp:1032-1040`), en kHz.
+/// Frequencies where companion repeating is allowed (`MyMesh.cpp:1032-1040`), in kHz.
 pub const REPEAT_FREQS: [u32; 3] = [433_000, 869_495, 918_000];
 const REQ_TYPE_GET_TELEMETRY_DATA: u8 = 0x03;
 
-/// Stockage persistant fourni par le runner.
+/// Persistent storage provided by the runner.
 pub trait Storage {
     fn save_identity(&mut self, prv: &[u8; 64], pub_key: &[u8; PUB_KEY_LEN]);
     fn save_prefs(&mut self, rec: &[u8; PREFS_RECORD]);
-    /// Toute la table des contacts, dans l'ordre.
+    /// The whole contacts table, in order.
     fn save_contacts(&mut self, records: &mut dyn Iterator<Item = [u8; CONTACT_RECORD]>);
     fn save_channel(&mut self, idx: u8, rec: &[u8; CHANNEL_RECORD]);
-    /// Annonce gardée d'un contact (au plus 255 octets).
+    /// A contact's stored advert (at most 255 bytes).
     fn put_blob(&mut self, key: &[u8; PUB_KEY_LEN], raw: &[u8]);
     fn get_blob(&mut self, key: &[u8; PUB_KEY_LEN], out: &mut [u8]) -> Option<usize>;
     fn remove_blob(&mut self, key: &[u8; PUB_KEY_LEN]);
-    /// (utilisé, total) en Ko.
+    /// (used, total) in KB.
     fn usage_kb(&self) -> (u32, u32);
 }
 
-/// Ce que la carte annonce dans `DEVICE_INFO`.
+/// What the board reports in `DEVICE_INFO`.
 #[derive(Debug, Clone, Copy)]
 pub struct Info {
     pub manufacturer: &'static str,
@@ -59,14 +59,14 @@ pub struct Info {
     pub has_gps: bool,
 }
 
-/// Actions demandées au runner.
+/// Actions requested from the runner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Reboot,
     FactoryReset,
-    /// Réglage radio ou puissance changés : reconfigurer le SX1262.
+    /// Radio or power settings changed: reconfigure the SX1262.
     RadioChanged,
-    /// Code PIN changé (pris en compte au redémarrage, comme le C++).
+    /// PIN code changed (applied at reboot, like in C++).
     PinChanged,
 }
 
@@ -89,7 +89,7 @@ pub struct Device {
     pub node: Node,
     pub info: Info,
     pub app_target_ver: u8,
-    /// Un porteur est connecté (en USB : toujours).
+    /// A transport is connected (over USB: always).
     pub connected: bool,
     pub battery_mv: u16,
     pub noise_floor: i16,
@@ -106,7 +106,7 @@ pub struct Device {
     contacts_dirty: Option<Instant>,
     actions: heapless::Deque<Action, 4>,
     ui: heapless::Deque<Event, 8>,
-    /// Variables personnalisées (`GET_CUSTOM_VARS`) : réglage `gps`.
+    /// Custom variables (`GET_CUSTOM_VARS`): the `gps` setting.
     pub gps_interval: u32,
 }
 
@@ -157,7 +157,7 @@ fn rcontact(c: &Contact) -> RContact<'static> {
     }
 }
 
-/// Code d'erreur d'un échec d'envoi.
+/// Error code of a failed send.
 fn err_of(e: SendError) -> u8 {
     match e {
         SendError::NotFound => err::NOT_FOUND,
@@ -173,8 +173,8 @@ impl Device {
         d
     }
 
-    /// Appareil vide, constructible à la compilation (≈ 150 Ko : il vit dans une statique sur
-    /// l'appareil) ; le nœud s'initialise ensuite par `node.reset`.
+    /// Empty device, constructible at compile time (≈ 150 KB: it lives in a static on the
+    /// device); the node is then initialised by `node.reset`.
     pub const fn empty(info: Info) -> Self {
         Self {
             node: Node::empty(),
@@ -200,7 +200,7 @@ impl Device {
         }
     }
 
-    // ------------------------------------------------------------------ interface du runner
+    // ------------------------------------------------------------------ runner interface
 
     pub fn on_rx(
         &mut self,
@@ -215,7 +215,7 @@ impl Device {
         self.pump(now, rng, st);
     }
 
-    /// À appeler régulièrement : événements du nœud, écritures différées.
+    /// Call regularly: node events, deferred writes.
     pub fn tick(&mut self, now: Instant, rng: &mut impl Rng, st: &mut impl Storage) {
         self.pump(now, rng, st);
         if let Some(at) = self.contacts_dirty
@@ -225,7 +225,7 @@ impl Device {
         }
     }
 
-    /// Écrit tout de suite les contacts en attente (avant un redémarrage).
+    /// Writes pending contacts right away (before a reboot).
     pub fn flush_contacts(&mut self, st: &mut impl Storage) {
         self.contacts_dirty = None;
         let mut it = self.node.contacts.list.iter().map(encode_contact);
@@ -254,8 +254,8 @@ impl Device {
         }
     }
 
-    /// Prochaine trame vers l'app. Les contacts d'un `GET_CONTACTS` sortent un par un, quand
-    /// la file est vide (`checkSerialInterface`).
+    /// Next frame to the app. The contacts of a `GET_CONTACTS` come out one by one, when the
+    /// queue is empty (`checkSerialInterface`).
     pub fn poll_app(&mut self) -> Option<Frame> {
         if let Some(f) = self.out.pop_front() {
             return Some(f);
@@ -280,7 +280,7 @@ impl Device {
         self.actions.pop_front()
     }
 
-    /// Événements pour l'interface de l'appareil (copies).
+    /// Events for the device UI (copies).
     pub fn poll_ui(&mut self) -> Option<Event> {
         self.ui.pop_front()
     }
@@ -297,7 +297,7 @@ impl Device {
         if let Some(f) = frame_of(r)
             && self.out.push_back(f).is_err()
         {
-            // File pleine : la trame est perdue (`writeFrame` d'un porteur saturé).
+            // Queue full: the frame is lost (`writeFrame` on a saturated transport).
         }
     }
 
@@ -309,7 +309,7 @@ impl Device {
         self.reply(&Response::Ok);
     }
 
-    /// Notification : seulement si un porteur est connecté, sinon perdue (comme le C++).
+    /// Notification: only if a transport is connected, otherwise lost (like in C++).
     fn push(&mut self, r: &Response<'_>) {
         if self.connected {
             self.reply(r);
@@ -326,8 +326,8 @@ impl Device {
         st.save_prefs(&encode_prefs(&self.node.prefs));
     }
 
-    /// Met un message en file (`addToOfflineQueue`) : pleine, on retire le plus ancien message de
-    /// canal ; s'il n'y en a pas, le nouveau est perdu. `MSG_WAITING` part dans tous les cas.
+    /// Queues a message (`addToOfflineQueue`): when full, the oldest channel message is dropped;
+    /// if there is none, the new one is lost. `MSG_WAITING` is sent in every case.
     fn enqueue(&mut self, f: Frame) {
         if self.queue.is_full() {
             let is_channel = |f: &Frame| matches!(f.first(), Some(8 | 17 | 27));
@@ -347,7 +347,7 @@ impl Device {
         self.push(&Response::MsgWaiting);
     }
 
-    // ------------------------------------------------------------------ événements du nœud
+    // ------------------------------------------------------------------ node events
 
     fn pump(&mut self, now: Instant, rng: &mut impl Rng, st: &mut impl Storage) {
         while let Some(e) = self.node.poll_event() {
@@ -625,7 +625,7 @@ impl Device {
                 data: data.get(4..).unwrap_or(&[]),
             });
         } else if len >= 4 {
-            // Réponse non attendue : transmise telle quelle à l'app.
+            // Unexpected response: passed to the app as is.
             self.push(&Response::BinaryResponse {
                 reserved: 0,
                 tag: fixed(data),
@@ -642,8 +642,8 @@ impl Device {
         self.node.pending_discovery = 0;
     }
 
-    /// Télémétrie de l'appareil en CayenneLPP : tension (canal 1, type 116, 0,01 V) et
-    /// température du microcontrôleur (canal 1, type 103, 0,1 °C).
+    /// Device telemetry in CayenneLPP: voltage (channel 1, type 116, 0.01 V) and
+    /// microcontroller temperature (channel 1, type 103, 0.1 °C).
     fn telemetry(&self) -> heapless::Vec<u8, 16> {
         let mut v = heapless::Vec::new();
         let cv = self.battery_mv / 10;
@@ -656,7 +656,7 @@ impl Device {
         v
     }
 
-    /// Requête d'un contact (`onContactRequest`) : seule la télémétrie est servie, selon les
+    /// Request from a contact (`onContactRequest`): only telemetry is served, according to the
     /// permissions (`MyMesh.cpp:639-683`).
     #[allow(clippy::too_many_arguments)]
     fn on_request(
@@ -733,7 +733,7 @@ impl Device {
         }
     }
 
-    // ------------------------------------------------------------------ commandes de l'app
+    // ------------------------------------------------------------------ app commands
 
     fn sent(&mut self, s: Sent) {
         self.reply(&Response::Sent {
@@ -779,7 +779,7 @@ impl Device {
         })
     }
 
-    /// Une trame de l'app (`handleCmdFrame`).
+    /// A frame from the app (`handleCmdFrame`).
     pub fn on_app_frame(
         &mut self,
         now: Instant,
@@ -1088,7 +1088,7 @@ impl Device {
             }
             Command::ImportPrivateKey { key } => {
                 let id = LocalIdentity::from_private(&key);
-                // Contrôles du C++ : clé publique non réservée, auto-test ECDH (`Identity.cpp:67-109`).
+                // C++ checks: public key not reserved, ECDH self-test (`Identity.cpp:67-109`).
                 let probe = LocalIdentity::from_seed(&[0x5A; 32]);
                 let ok = !id.is_reserved()
                     && id.shared_secret(probe.pub_key()).is_some()
@@ -1334,7 +1334,7 @@ impl Device {
                 for (o, b) in req.iter_mut().skip(5).zip(r) {
                     *o = b;
                 }
-                // Inondation forcée le temps de l'envoi.
+                // Flood forced for the duration of the send.
                 let saved = self
                     .node
                     .contacts
@@ -1519,8 +1519,8 @@ impl Device {
         }
     }
 
-    /// Console de l'appareil (`RUN_CLI_COMMAND`), sous-ensemble de `CommonRadioPrefs.cpp`.
-    /// Un préfixe `"xx|"` est renvoyé tel quel. Textes en anglais.
+    /// Device console (`RUN_CLI_COMMAND`), a subset of `CommonRadioPrefs.cpp`.
+    /// A `"xx|"` prefix is echoed back as is. Texts in English.
     fn cli(
         &mut self,
         now: Instant,

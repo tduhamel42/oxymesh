@@ -1,5 +1,5 @@
-//! Charges utiles (`docs/spec/air.md` §3) : vues sur ce qui arrive, textes clairs, et
-//! constructeurs de trames identiques à celles du C++.
+//! Payloads (`docs/spec/air.md` §3): views over incoming data, plaintexts, and packet builders
+//! that produce exactly the same packets as the C++.
 
 use mc_core::Reader;
 
@@ -7,56 +7,56 @@ use crate::crypto::{self, ChannelSecret, LocalIdentity, PUB_KEY_LEN, SECRET_LEN,
 use crate::packet::{PAYLOAD_MAX, PacketBuf, PathLen, PayloadType, Route};
 use crate::{Error, advert};
 
-/// Charge utile reçue, découpée sans déchiffrement, avec les longueurs minimales du C++
-/// (`Mesh.cpp:41-332`). Les trames plus courtes sont ignorées par le C++ ; ici, `Err(Truncated)`.
+/// Received payload, split up without decrypting, with the C++ minimum lengths
+/// (`Mesh.cpp:41-332`). Shorter packets are ignored by the C++; here, `Err(Truncated)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Payload<'a> {
-    /// REQ, RESPONSE, TXT_MSG, PATH : ≥ 5 octets.
+    /// REQ, RESPONSE, TXT_MSG, PATH: ≥ 5 bytes.
     Addressed {
         ptype: PayloadType,
         dest: u8,
         src: u8,
         sealed: &'a [u8],
     },
-    /// ANON_REQ : ≥ 36 octets.
+    /// ANON_REQ: ≥ 36 bytes.
     AnonReq {
         dest: u8,
         sender: &'a [u8; PUB_KEY_LEN],
         sealed: &'a [u8],
     },
-    /// GRP_TXT, GRP_DATA : ≥ 4 octets.
+    /// GRP_TXT, GRP_DATA: ≥ 4 bytes.
     Group {
         ptype: PayloadType,
         channel: u8,
         sealed: &'a [u8],
     },
-    /// ACK : ≥ 4 octets ; seuls les 4 premiers comptent.
+    /// ACK: ≥ 4 bytes; only the first 4 matter.
     Ack {
         crc: u32,
         rest: &'a [u8],
     },
-    /// ADVERT : ≥ 100 octets.
+    /// ADVERT: ≥ 100 bytes.
     Advert(Advert<'a>),
-    /// TRACE : ≥ 9 octets (le C++ lit hors de la trame en dessous ; nous refusons).
+    /// TRACE: ≥ 9 bytes (below that the C++ reads past the end of the packet; we reject).
     Trace {
         tag: u32,
         auth: u32,
         flags: u8,
         hashes: &'a [u8],
     },
-    /// MULTIPART : ≥ 3 octets.
+    /// MULTIPART: ≥ 3 bytes.
     Multipart {
         remaining: u8,
         inner: PayloadType,
         body: &'a [u8],
     },
-    /// CONTROL : ≥ 1 octet.
+    /// CONTROL: ≥ 1 byte.
     Control {
         flags: u8,
         data: &'a [u8],
     },
     RawCustom(&'a [u8]),
-    /// Types 0xC à 0xE : jamais relayés.
+    /// Types 0xC to 0xE: never forwarded.
     Unknown(&'a [u8]),
 }
 
@@ -147,13 +147,13 @@ impl<'a> Payload<'a> {
     }
 }
 
-/// Annonce reçue : `pub(32) ‖ ts u32 ‖ sig(64) ‖ app_data`.
+/// Received advert: `pub(32) ‖ ts u32 ‖ sig(64) ‖ app_data`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Advert<'a> {
     pub pub_key: &'a [u8; PUB_KEY_LEN],
     pub ts: u32,
     pub sig: &'a [u8; SIG_LEN],
-    /// Tronqué à 32 octets, comme en C++ avant la vérification (`Mesh.cpp:269-281`).
+    /// Truncated to 32 bytes, as the C++ does before verification (`Mesh.cpp:269-281`).
     pub app_data: &'a [u8],
 }
 
@@ -175,7 +175,7 @@ impl<'a> Advert<'a> {
         })
     }
 
-    /// Signature valide sur `pub ‖ ts ‖ app_data`.
+    /// Valid signature over `pub ‖ ts ‖ app_data`.
     pub fn verify(&self) -> bool {
         crypto::verify(
             self.pub_key,
@@ -186,22 +186,22 @@ impl<'a> Advert<'a> {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Textes clairs (après `crypto::open`, bourrage de zéros compris)
+// Plaintexts (after `crypto::open`, zero padding included)
 
-/// TXT_MSG déchiffré (`BaseChatMesh.cpp:231-300`) : `ts ‖ flags ‖ texte ‖ [0x00 ‖ essai]`.
+/// Decrypted TXT_MSG (`BaseChatMesh.cpp:231-300`): `ts ‖ flags ‖ text ‖ [0x00 ‖ attempt]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TxtPlain<'a> {
     pub ts: u32,
-    /// `txt_type << 2 | essai & 3`.
+    /// `txt_type << 2 | attempt & 3`.
     pub flags: u8,
-    /// Jusqu'au premier NUL.
+    /// Up to the first NUL.
     pub text: &'a [u8],
-    /// Octet qui suit le NUL de fin : l'essai étendu (> 3), ou du bourrage.
+    /// Byte following the terminating NUL: the extended attempt (> 3), or padding.
     pub after_nul: u8,
 }
 
 impl<'a> TxtPlain<'a> {
-    /// Le C++ exige plus de 5 octets (`len > 5`).
+    /// The C++ requires more than 5 bytes (`len > 5`).
     pub fn parse(plain: &'a [u8]) -> Result<Self, Error> {
         if plain.len() <= 5 {
             return Err(Error::Truncated);
@@ -226,18 +226,18 @@ impl<'a> TxtPlain<'a> {
     pub const fn attempt(&self) -> u8 {
         self.flags & 3
     }
-    /// CRC d'accusé attendu par l'émetteur (`BaseChatMesh.cpp:245`).
+    /// Ack CRC expected by the sender (`BaseChatMesh.cpp:245`).
     pub fn ack_crc(&self, sender_pub: &[u8; PUB_KEY_LEN]) -> u32 {
         crypto::ack_crc(self.ts, self.flags, self.text, sender_pub)
     }
 }
 
-/// GRP_TXT déchiffré : `ts ‖ txt_type ‖ "nom: texte"` (≥ 5 octets, `txt_type >> 2 == 0`).
+/// Decrypted GRP_TXT: `ts ‖ txt_type ‖ "name: text"` (≥ 5 bytes, `txt_type >> 2 == 0`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GroupTxtPlain<'a> {
     pub ts: u32,
     pub txt_type: u8,
-    /// Jusqu'au premier NUL.
+    /// Up to the first NUL.
     pub text: &'a [u8],
 }
 
@@ -262,7 +262,7 @@ impl<'a> GroupTxtPlain<'a> {
     }
 }
 
-/// GRP_DATA déchiffré : `data_type u16 ‖ longueur ‖ données` (≥ 3 octets, longueur ≤ reste).
+/// Decrypted GRP_DATA: `data_type u16 ‖ length ‖ data` (≥ 3 bytes, length ≤ remainder).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GroupDataPlain<'a> {
     pub data_type: u16,
@@ -278,14 +278,14 @@ impl<'a> GroupDataPlain<'a> {
     }
 }
 
-/// PATH déchiffré : `path_len ‖ chemin ‖ type_extra ‖ extra` (`Mesh.cpp:160-172`).
+/// Decrypted PATH: `path_len ‖ path ‖ extra_type ‖ extra` (`Mesh.cpp:160-172`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PathPlain<'a> {
     pub path_len: PathLen,
     pub path: &'a [u8],
-    /// Quartet bas seulement (les 4 bits hauts sont réservés).
+    /// Low nibble only (the upper 4 bits are reserved).
     pub extra_type: u8,
-    /// Le reste, bourrage de zéros compris.
+    /// The remainder, zero padding included.
     pub extra: &'a [u8],
 }
 
@@ -305,10 +305,10 @@ impl<'a> PathPlain<'a> {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Constructeurs (la route et le chemin sont fixés ensuite par l'émetteur)
+// Builders (the route and path are set afterwards by the sender)
 
-/// Datagramme adressé (`Mesh::createDatagram`) : `dest ‖ src ‖ seal(clair)`.
-/// Types permis : TXT_MSG, REQ, RESPONSE ; refusé si `clair + 2 + 15 > 184`.
+/// Addressed datagram (`Mesh::createDatagram`): `dest ‖ src ‖ seal(plain)`.
+/// Allowed types: TXT_MSG, REQ, RESPONSE; rejected if `plain + 2 + 15 > 184`.
 pub fn datagram(
     ptype: PayloadType,
     dest_hash: u8,
@@ -344,9 +344,9 @@ fn addressed(
     Ok(b)
 }
 
-/// Texte clair d'un TXT_MSG (`composeMsgPacket`, `sendCommandData`) dans `out` ; renvoie sa
-/// longueur et le CRC d'accusé attendu (calculé avec la clé de l'émetteur, sans la queue
-/// d'essai étendu). Texte de 160 octets au plus, 158 si `attempt > 3`.
+/// TXT_MSG plaintext (`composeMsgPacket`, `sendCommandData`) into `out`; returns its length and
+/// the expected ack CRC (computed with the sender's key, without the extended-attempt tail).
+/// Text of at most 160 bytes, 158 if `attempt > 3`.
 pub fn txt_plain(
     ts: u32,
     txt_type: u8,
@@ -375,7 +375,7 @@ pub fn txt_plain(
     Ok((w.position(), crypto::ack_crc(ts, flags, text, sender_pub)))
 }
 
-/// Datagramme anonyme (`createAnonDatagram`) : `dest ‖ pub_émetteur ‖ seal(clair)`.
+/// Anonymous datagram (`createAnonDatagram`): `dest ‖ sender_pub ‖ seal(plain)`.
 pub fn anon_datagram(
     dest_hash: u8,
     sender: &LocalIdentity,
@@ -396,8 +396,8 @@ pub fn anon_datagram(
     Ok(b)
 }
 
-/// Datagramme de canal (`createGroupDatagram`) : `hash ‖ seal(clair)` ; refusé si
-/// `clair + 1 + 15 > 184`.
+/// Channel datagram (`createGroupDatagram`): `hash ‖ seal(plain)`; rejected if
+/// `plain + 1 + 15 > 184`.
 pub fn group_datagram(
     ptype: PayloadType,
     channel: &ChannelSecret,
@@ -418,8 +418,8 @@ pub fn group_datagram(
     Ok(b)
 }
 
-/// Texte clair d'un GRP_TXT (`sendGroupMessage`) : `ts ‖ 0 ‖ "nom: texte"`, le tout tronqué à
-/// 160 octets de texte préfixe compris. Renvoie la longueur.
+/// GRP_TXT plaintext (`sendGroupMessage`): `ts ‖ 0 ‖ "name: text"`, truncated to 160 bytes of
+/// text, prefix included. Returns the length.
 pub fn group_txt_plain(
     ts: u32,
     sender_name: &[u8],
@@ -442,7 +442,7 @@ pub fn group_txt_plain(
     Ok(w.position())
 }
 
-/// Texte clair d'un GRP_DATA (`sendGroupData`) : `data_type ‖ longueur ‖ données` (≤ 165).
+/// GRP_DATA plaintext (`sendGroupData`): `data_type ‖ length ‖ data` (≤ 165).
 pub fn group_data_plain(data_type: u16, data: &[u8], out: &mut [u8]) -> Result<usize, Error> {
     const MAX_GROUP_DATA: usize = PAYLOAD_MAX - crypto::BLOCK_LEN - 3;
     if data.len() > MAX_GROUP_DATA {
@@ -454,8 +454,8 @@ pub fn group_data_plain(data_type: u16, data: &[u8], out: &mut [u8]) -> Result<u
     Ok(w.position())
 }
 
-/// PATH (`createPathReturn`) : `dest ‖ src ‖ seal(path_len ‖ chemin ‖ type_extra ‖ extra)` ;
-/// sans extra, `0xFF ‖ aléa(4)`. Refusé si `octets de chemin + extra + 5 > 166`.
+/// PATH (`createPathReturn`): `dest ‖ src ‖ seal(path_len ‖ path ‖ extra_type ‖ extra)`;
+/// without extra, `0xFF ‖ random(4)`. Rejected if `path bytes + extra + 5 > 166`.
 pub fn path_return(
     dest_hash: u8,
     src_hash: u8,
@@ -501,14 +501,14 @@ pub fn path_return(
     )
 }
 
-/// ACK (`createAck`) : les octets d'accusé tels quels (4, 5 ou 6).
+/// ACK (`createAck`): the ack bytes as is (4, 5 or 6).
 pub fn ack(bytes: &[u8]) -> Result<PacketBuf, Error> {
     let mut b = PacketBuf::new(Route::Flood, PayloadType::ACK);
     b.set_payload(bytes)?;
     Ok(b)
 }
 
-/// MULTIPART-ACK (`createMultiAck`) : `(restants << 4 | ACK) ‖ accusé`.
+/// MULTIPART-ACK (`createMultiAck`): `(remaining << 4 | ACK) ‖ ack`.
 pub fn multi_ack(bytes: &[u8], remaining: u8) -> Result<PacketBuf, Error> {
     let mut b = PacketBuf::new(Route::Flood, PayloadType::MULTIPART);
     let buf = b.payload_buf();
@@ -521,7 +521,7 @@ pub fn multi_ack(bytes: &[u8], remaining: u8) -> Result<PacketBuf, Error> {
     Ok(b)
 }
 
-/// Annonce signée (`createAdvert`) : `pub ‖ ts ‖ sig ‖ app_data`, signature sur
+/// Signed advert (`createAdvert`): `pub ‖ ts ‖ sig ‖ app_data`, signature over
 /// `pub ‖ ts ‖ app_data`.
 pub fn advert(id: &LocalIdentity, ts: u32, app_data: &[u8]) -> Result<PacketBuf, Error> {
     if app_data.len() > advert::APP_DATA_MAX {

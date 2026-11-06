@@ -1,4 +1,4 @@
-//! Réception (`Mesh::onRecvPacket`, `BaseChatMesh` ; `docs/spec/air.md` §4).
+//! Reception (`Mesh::onRecvPacket`, `BaseChatMesh`; `docs/spec/air.md` §4).
 
 use mc_air::crypto::{self, PUB_KEY_LEN, SECRET_LEN};
 use mc_air::payload::{GroupDataPlain, GroupTxtPlain, PathPlain, Payload, TxtPlain};
@@ -9,7 +9,7 @@ use rand_core::Rng;
 use crate::contacts::{Contact, PATH_UNKNOWN, Slot, TYPE_NONE};
 use crate::node::{Event, Node, Text};
 
-/// Délai avant l'accusé d'un message (`TXT_ACK_DELAY`).
+/// Delay before acknowledging a message (`TXT_ACK_DELAY`).
 pub const TXT_ACK_DELAY: u64 = 200;
 
 fn text_of(b: &[u8]) -> Text {
@@ -19,7 +19,7 @@ fn text_of(b: &[u8]) -> Text {
 }
 
 impl Node {
-    /// Une trame reçue par la radio.
+    /// A frame received by the radio.
     pub fn on_rx(&mut self, now: Instant, raw: &[u8], snr4: i8, rssi: i16, rng: &mut impl Rng) {
         self.last_snr4 = snr4;
         self.last_rssi = rssi;
@@ -45,8 +45,8 @@ impl Node {
         self.process(now, &mut pkt, snr4, rssi8, rng);
     }
 
-    /// `IMPORT_CONTACT` : la trame d'annonce est rejouée comme reçue par inondation
-    /// (`BaseChatMesh.cpp:588-601`). Faux si ce n'est pas une annonce.
+    /// `IMPORT_CONTACT`: the advert frame is replayed as if received by flood
+    /// (`BaseChatMesh.cpp:588-601`). False if it is not an advert.
     pub fn import_advert(&mut self, now: Instant, raw: &[u8], rng: &mut impl Rng) -> bool {
         let Ok(p) = Packet::decode(raw) else {
             return false;
@@ -82,12 +82,12 @@ impl Node {
         let direct = pkt.header.route.is_direct();
         let ptype = pkt.header.ptype;
 
-        // TRACE en direct (`Mesh.cpp:42-68`).
+        // Direct TRACE (`Mesh.cpp:42-68`).
         if direct && ptype == PayloadType::TRACE {
             self.on_trace(now, pkt, snr4, rng);
             return;
         }
-        // CONTROL zéro saut seulement (`Mesh.cpp:70-76`).
+        // Zero-hop CONTROL only (`Mesh.cpp:70-76`).
         if direct
             && ptype == PayloadType::CONTROL
             && pkt.payload().first().is_some_and(|f| f & 0x80 != 0)
@@ -104,7 +104,7 @@ impl Node {
             }
             return;
         }
-        // Direct avec un chemin : relais seulement (`Mesh.cpp:78-110`).
+        // Direct with a path: forward only (`Mesh.cpp:78-110`).
         if direct && pkt.path_len.hops() > 0 {
             if ptype == PayloadType::ACK
                 && let Some(crc) = pkt
@@ -163,8 +163,8 @@ impl Node {
                 if !self.seen.check_and_mark(&hash, direct) {
                     return;
                 }
-                // Un compagnon ne sert pas de requêtes anonymes ; on les ignore après déchiffrement
-                // comme le C++ (aucun `onAnonDataRecv` côté compagnon).
+                // A companion does not serve anonymous requests; they are ignored after decryption
+                // like in C++ (no `onAnonDataRecv` on the companion side).
                 if dest == self.id.hash() {
                     do_not_retransmit = true;
                 }
@@ -230,7 +230,7 @@ impl Node {
             }
             Payload::Trace { .. } | Payload::Control { .. } | Payload::Unknown(_) => return,
         }
-        // Relais en inondation (`routeRecvPacket`).
+        // Flood forwarding (`routeRecvPacket`).
         if !do_not_retransmit && pkt.header.route.is_flood() && self.allow_forward() {
             let h = self.id.pub_key();
             let hs = usize::from(pkt.path_len.hash_size());
@@ -294,8 +294,8 @@ impl Node {
         }
     }
 
-    /// REQ, RESPONSE, TXT_MSG ou PATH pour nous : on essaie chaque contact au bon hash.
-    /// Vrai si la trame a été déchiffrée (elle ne sera pas relayée).
+    /// REQ, RESPONSE, TXT_MSG or PATH for us: try each contact with the matching hash.
+    /// True if the frame was decrypted (it will not be forwarded).
     #[allow(clippy::too_many_arguments)]
     fn on_addressed(
         &mut self,
@@ -333,7 +333,7 @@ impl Node {
                 let reciprocal =
                     self.on_path(now, slot, pkt, out_len, &out_path, pp.extra_type, &extra);
                 if reciprocal && pkt.header.route.is_flood() {
-                    // Chemin réciproque, en direct le long du chemin appris, après 500 ms.
+                    // Reciprocal path, sent direct along the learned path, after 500 ms.
                     let r4 = rng.next_u32().to_le_bytes();
                     if let Ok(rp) = mc_air::payload::path_return(
                         src,
@@ -423,7 +423,7 @@ impl Node {
                         text: text_of(t.text),
                     }),
                     2 => {
-                        // Message signé d'un salon : `préfixe auteur(4) ‖ texte`.
+                        // Signed room-server message: `author prefix(4) ‖ text`.
                         let Some(rest) = plain.get(5..) else { return };
                         let author: Option<[u8; 4]> = rest.get(..4).and_then(|a| a.try_into().ok());
                         let body = rest.get(4..).unwrap_or(&[]);
@@ -489,8 +489,8 @@ impl Node {
         }
     }
 
-    /// Accusé d'un message : PATH de retour en inondation si la trame est arrivée par
-    /// inondation, sinon `sendAckTo` (`BaseChatMesh.cpp:244-256`).
+    /// Message acknowledgement: a flood return PATH if the frame arrived by flood, otherwise
+    /// `sendAckTo` (`BaseChatMesh.cpp:244-256`).
     fn reply_ack(
         &mut self,
         now: Instant,
@@ -524,8 +524,8 @@ impl Node {
         }
     }
 
-    /// `sendAckTo` : en inondation si le chemin est inconnu, sinon en direct (avec un
-    /// MULTIPART-ACK en plus si `multi_acks`).
+    /// `sendAckTo`: by flood if the path is unknown, otherwise direct (with an extra
+    /// MULTIPART-ACK if `multi_acks`).
     pub(crate) fn send_ack_to(&mut self, now: Instant, out_len: u8, out_path: &[u8], ack: &[u8]) {
         if out_len == PATH_UNKNOWN {
             if let Ok(a) = mc_air::payload::ack(ack) {
@@ -545,8 +545,8 @@ impl Node {
         }
     }
 
-    /// Accusé ou réponse arrivé par inondation alors qu'un chemin direct est connu : on renvoie
-    /// ce chemin en direct après 3 s (`handleReturnPathRetry`).
+    /// Ack or response that arrived by flood while a direct path is known: send that path back
+    /// direct after 3 s (`handleReturnPathRetry`).
     fn return_path_retry(&mut self, now: Instant, key: &[u8; PUB_KEY_LEN], pkt: &PacketBuf) {
         if !pkt.header.route.is_flood() {
             return;
@@ -579,7 +579,7 @@ impl Node {
         }
     }
 
-    /// Chemin reçu (`onContactPathRecv`) ; faux si aucun chemin réciproque ne doit partir.
+    /// Path received (`onContactPathRecv`); false if no reciprocal path must be sent.
     #[allow(clippy::too_many_arguments)]
     fn on_path(
         &mut self,
@@ -591,7 +591,7 @@ impl Node {
         extra_type: u8,
         extra: &[u8],
     ) -> bool {
-        // Réponse à une découverte de chemin : rapportée, ni retenue ni renvoyée.
+        // Response to a path discovery: reported, neither stored nor sent back.
         if extra_type == PayloadType::RESPONSE.value() && extra.len() > 4 {
             let tag = extra
                 .get(..4)
@@ -644,8 +644,8 @@ impl Node {
         true
     }
 
-    /// Cherche l'accusé dans la table ; s'il y est, notification `SEND_CONFIRMED` et effacement
-    /// (`MyMesh::processAck`). Renvoie la clé du contact.
+    /// Looks up the ack in the table; if found, sends a `SEND_CONFIRMED` notification and clears
+    /// it (`MyMesh::processAck`). Returns the contact's key.
     pub(crate) fn process_ack(&mut self, now: Instant, crc: u32) -> Option<[u8; PUB_KEY_LEN]> {
         for slot in self.acks.iter_mut() {
             if let Some(e) = slot
@@ -688,7 +688,7 @@ impl Node {
         }
     }
 
-    /// Annonce valide (`BaseChatMesh::onAdvertRecv`, règles d'ajout du compagnon).
+    /// Valid advert (`BaseChatMesh::onAdvertRecv`, companion add rules).
     fn on_advert(
         &mut self,
         now: Instant,
@@ -717,17 +717,17 @@ impl Node {
             && let Some(c) = self.contacts.get(s)
         {
             if ts <= c.last_advert {
-                return; // rejeu
+                return; // replay
             }
             if c.kind == TYPE_NONE
                 && let Slot::Anon(i) = s
                 && let Some(a) = self.contacts.anon.get_mut(i)
             {
-                *a = None; // un contact temporaire devient un vrai contact
+                *a = None; // a temporary contact becomes a real contact
                 slot = None;
             }
         }
-        // Trame gardée : route FLOOD, codes de transport retirés (`BaseChatMesh.cpp:141-149`).
+        // Stored frame: FLOOD route, transport codes stripped (`BaseChatMesh.cpp:141-149`).
         let raw = {
             let mut b = pkt.clone();
             b.header.route = mc_air::Route::Flood;

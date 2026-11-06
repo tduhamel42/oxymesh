@@ -1,12 +1,12 @@
 # oxymesh
 
-Firmware **compatible MeshCore** écrit en Rust, d'abord pour l'Elecrow **ThinkNode M5**
-(ESP32-S3, SX1262, écran e-paper 200×200).
+**MeshCore-compatible** firmware written in Rust, first for the Elecrow **ThinkNode M5**
+(ESP32-S3, SX1262, 200×200 e-paper screen).
 
-- **Sur l'air** : interopère avec les compagnons, relais et serveurs de salon MeshCore d'origine (v1.18).
-- **Avec l'app** : l'app MeshCore officielle, meshcore.js et les autres clients du protocole
-  compagnon marchent sans changement (Bluetooth et USB).
-- **Sur l'appareil** : une nouvelle interface, utilisable sans téléphone.
+- **Over the air**: interoperates with original MeshCore companions, repeaters and room servers (v1.18).
+- **With the app**: the official MeshCore app, meshcore.js and other companion-protocol clients
+  work unchanged (Bluetooth and USB).
+- **On the device**: a new interface, usable without a phone.
 
-Feuille de route, règles et commandes : [`CLAUDE.md`](CLAUDE.md). Formats : [`docs/spec/`](docs/spec/).
-Décisions : [`docs/decisions/`](docs/decisions/). Attributions : [`NOTICE`](NOTICE).
+Roadmap, rules and commands: [`CLAUDE.md`](CLAUDE.md). Formats: [`docs/spec/`](docs/spec/).
+Decisions: [`docs/decisions/`](docs/decisions/). Attributions: [`NOTICE`](NOTICE).

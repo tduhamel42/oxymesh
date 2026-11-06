@@ -1,4 +1,4 @@
-//! Scénarios de bout en bout entre `mc-node` sur la radio simulée.
+//! End-to-end scenarios between `mc-node` instances over the simulated radio.
 
 use mc_core::Duration;
 use mc_node::contacts::PATH_UNKNOWN;
@@ -13,7 +13,7 @@ fn has(w: &World, i: usize, f: impl Fn(&Event) -> bool) -> bool {
     w.nodes[i].events.iter().any(f)
 }
 
-/// Deux nœuds s'annoncent et deviennent contacts l'un de l'autre.
+/// Two nodes advertise and become each other's contacts.
 fn meet(w: &mut World, a: usize, b: usize, flood: bool) {
     let now = w.now;
     w.node(a).send_self_advert(now, flood).unwrap();
@@ -24,7 +24,7 @@ fn meet(w: &mut World, a: usize, b: usize, flood: bool) {
             b,
             |e| matches!(e, Event::Advert { key, .. } if *key == ka)
         )),
-        "annonce de {a} non reçue par {b}"
+        "advert from {a} not received by {b}"
     );
     let now = w.now;
     w.node(b).send_self_advert(now, flood).unwrap();
@@ -35,7 +35,7 @@ fn meet(w: &mut World, a: usize, b: usize, flood: bool) {
             a,
             |e| matches!(e, Event::Advert { key, .. } if *key == kb)
         )),
-        "annonce de {b} non reçue par {a}"
+        "advert from {b} not received by {a}"
     );
 }
 
@@ -53,7 +53,7 @@ fn delivered(w: &mut World, from: usize, to: usize, text: &str, sent: Sent) {
     let t = text.as_bytes().to_vec();
     assert!(
         w.run_until(secs(30), |w| has(w, to, |e| matches!(e, Event::ContactMsg { key, text, txt_type: 0, .. } if *key == kf && **text == t[..]))),
-        "message « {text} » non reçu"
+        "message \"{text}\" not received"
     );
     let ack = sent.ack.to_le_bytes();
     assert!(
@@ -62,7 +62,7 @@ fn delivered(w: &mut World, from: usize, to: usize, text: &str, sent: Sent) {
             from,
             |e| matches!(e, Event::SendConfirmed { ack: a, .. } if *a == ack)
         )),
-        "accusé de « {text} » non reçu"
+        "ack for \"{text}\" not received"
     );
 }
 
@@ -79,12 +79,12 @@ fn advert_message_ack_and_path_learning() {
     assert_eq!(mc_node::contacts::name_str(&bob.name), b"bob");
     assert_eq!(bob.out_path_len, PATH_UNKNOWN);
 
-    // Premier message : inondation, PATH de retour avec l'accusé, chemin appris (0 saut).
+    // First message: flood, return PATH carrying the ack, path learned (0 hops).
     let s1 = send(&mut w, a, b, "hello bob");
     assert!(s1.flood);
     delivered(&mut w, a, b, "hello bob", s1);
     assert_eq!(w.node(a).contacts.get(c).unwrap().out_path_len, 0);
-    // Le PATH réciproque (500 ms) apprend à Bob le chemin vers Alice.
+    // The reciprocal PATH (500 ms) teaches Bob the path to Alice.
     let ka = *w.node(a).id.pub_key();
     assert!(w.run_until(secs(10), |w| {
         let n = &w.nodes[b].dev.node;
@@ -94,14 +94,14 @@ fn advert_message_ack_and_path_learning() {
             .is_some_and(|c| c.out_path_len == 0)
     }));
 
-    // Deuxième message : direct, accusé direct.
-    let s2 = send(&mut w, a, b, "deuxième, en direct");
+    // Second message: direct, direct ack.
+    let s2 = send(&mut w, a, b, "second one, direct");
     assert!(!s2.flood);
-    delivered(&mut w, a, b, "deuxième, en direct", s2);
-    // Réponse de Bob, elle aussi en direct.
-    let s3 = send(&mut w, b, a, "réponse");
+    delivered(&mut w, a, b, "second one, direct", s2);
+    // Bob's reply, also direct.
+    let s3 = send(&mut w, b, a, "reply");
     assert!(!s3.flood);
-    delivered(&mut w, b, a, "réponse", s3);
+    delivered(&mut w, b, a, "reply", s3);
 }
 
 #[test]
@@ -112,9 +112,9 @@ fn public_channel() {
     w.link(a, b);
     let now = w.now;
     w.node(a)
-        .send_channel_text(now, 0, EPOCH, "bonjour à tous".as_bytes())
+        .send_channel_text(now, 0, EPOCH, "hello everyone — see you".as_bytes())
         .unwrap();
-    let want = "alice: bonjour à tous".as_bytes().to_vec();
+    let want = "alice: hello everyone — see you".as_bytes().to_vec();
     assert!(w.run_until(secs(10), |w| has(
         w,
         b,
@@ -131,10 +131,10 @@ fn one_hop_through_a_relay() {
     w.link(a, r);
     w.link(r, b);
     meet(&mut w, a, b, true);
-    let s1 = send(&mut w, a, b, "à travers le relais");
+    let s1 = send(&mut w, a, b, "through the relay");
     assert!(s1.flood);
-    delivered(&mut w, a, b, "à travers le relais", s1);
-    // Alice a appris un chemin d'un saut : le hash du relais.
+    delivered(&mut w, a, b, "through the relay", s1);
+    // Alice learned a one-hop path: the relay's hash.
     let kb = *w.node(b).id.pub_key();
     let rh = w.node(r).id.hash();
     let ab = {
@@ -145,9 +145,9 @@ fn one_hop_through_a_relay() {
     assert_eq!(ab.out_path_len, 1);
     assert_eq!(ab.out_path()[0], rh);
     w.run(secs(5));
-    let s2 = send(&mut w, a, b, "en direct par le relais");
+    let s2 = send(&mut w, a, b, "direct via the relay");
     assert!(!s2.flood);
-    delivered(&mut w, a, b, "en direct par le relais", s2);
+    delivered(&mut w, a, b, "direct via the relay", s2);
 }
 
 #[test]
@@ -157,9 +157,9 @@ fn duplicate_frames_are_ignored() {
     let b = w.add("bob", |_| {});
     w.link(a, b);
     meet(&mut w, a, b, false);
-    let s = send(&mut w, a, b, "une seule fois");
-    delivered(&mut w, a, b, "une seule fois", s);
-    // On rejoue la trame du message : Bob ne le livre pas deux fois.
+    let s = send(&mut w, a, b, "only once");
+    delivered(&mut w, a, b, "only once", s);
+    // Replay the message frame: Bob does not deliver it twice.
     let (_, _, raw) = w
         .log
         .iter()
@@ -175,7 +175,7 @@ fn duplicate_frames_are_ignored() {
     let n = w.nodes[b]
         .events
         .iter()
-        .filter(|e| matches!(e, Event::ContactMsg { text, .. } if **text == b"une seule fois"[..]))
+        .filter(|e| matches!(e, Event::ContactMsg { text, .. } if **text == b"only once"[..]))
         .count();
     assert_eq!(n, 1);
 }

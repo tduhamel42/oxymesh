@@ -1,18 +1,18 @@
-//! La trame : en-tête, codes de transport, chemin, charge utile (`docs/spec/air.md` §1).
+//! The packet: header, transport codes, path, payload (`docs/spec/air.md` §1).
 
 use mc_core::{Overflow, Writer};
 use sha2::{Digest, Sha256};
 
 use crate::Error;
 
-/// Charge utile la plus longue (`MAX_PACKET_PAYLOAD`).
+/// Longest payload (`MAX_PACKET_PAYLOAD`).
 pub const PAYLOAD_MAX: usize = 184;
-/// Chemin le plus long, en octets (`MAX_PATH_SIZE`).
+/// Longest path, in bytes (`MAX_PATH_SIZE`).
 pub const PATH_MAX: usize = 64;
-/// Hash anti-doublon, en octets (`MAX_HASH_SIZE`).
+/// Duplicate-detection hash, in bytes (`MAX_HASH_SIZE`).
 pub const PACKET_HASH_LEN: usize = 8;
 
-/// Type de route : bits 0-1 de l'en-tête.
+/// Route type: header bits 0-1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Route {
     TransportFlood = 0,
@@ -41,7 +41,7 @@ impl Route {
     }
 }
 
-/// Type de charge utile : bits 2-5 de l'en-tête.
+/// Payload type: header bits 2-5.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PayloadType(u8);
 
@@ -60,7 +60,7 @@ impl PayloadType {
     pub const CONTROL: Self = Self(0xB);
     pub const RAW_CUSTOM: Self = Self(0xF);
 
-    /// Les 4 bits bas de `v`.
+    /// The low 4 bits of `v`.
     pub const fn new(v: u8) -> Self {
         Self(v & 0x0F)
     }
@@ -69,7 +69,7 @@ impl PayloadType {
     }
 }
 
-/// En-tête `0bVVPPPPRR`. La version est toujours 0 dans une trame valide.
+/// Header `0bVVPPPPRR`. The version is always 0 in a valid packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Header {
     pub route: Route,
@@ -83,7 +83,7 @@ impl Header {
     pub const fn to_byte(self) -> u8 {
         (self.ptype.0 << 2) | self.route as u8
     }
-    /// Lit un octet d'en-tête. Toute version autre que 0 est refusée (`Dispatcher.cpp:153-156`).
+    /// Reads a header byte. Any version other than 0 is rejected (`Dispatcher.cpp:153-156`).
     pub const fn from_byte(b: u8) -> Result<Self, Error> {
         if b >> 6 != 0 {
             return Err(Error::Version);
@@ -95,19 +95,19 @@ impl Header {
     }
 }
 
-/// L'octet `path_len` : 6 bits de nombre de sauts, 2 bits de taille de hash moins 1.
+/// The `path_len` byte: 6 bits of hop count, 2 bits of hash size minus 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PathLen(u8);
 
 impl PathLen {
-    /// Aucun saut, hashes d'1 octet.
+    /// No hops, 1-byte hashes.
     pub const EMPTY: Self = Self(0);
-    /// « Chemin inconnu » dans l'état des contacts et le protocole compagnon ; jamais sur l'air.
+    /// "Unknown path" in contact state and the companion protocol; never over the air.
     pub const UNKNOWN: u8 = 0xFF;
-    /// Plus grand nombre de sauts codable.
+    /// Largest encodable hop count.
     pub const MAX_HOPS: u8 = 63;
 
-    /// Octet brut, validé comme sur l'air : taille de hash 1 à 3, au plus 64 octets de chemin.
+    /// Raw byte, validated as over the air: hash size 1 to 3, at most 64 bytes of path.
     pub const fn from_byte(b: u8) -> Result<Self, Error> {
         let p = Self(b);
         if b >> 6 == 3 {
@@ -118,7 +118,7 @@ impl PathLen {
         }
         Ok(p)
     }
-    /// `hash_size` de 1 à 3 octets, `hops` de 0 à 63, chemin d'au plus 64 octets.
+    /// `hash_size` of 1 to 3 bytes, `hops` from 0 to 63, path of at most 64 bytes.
     pub const fn new(hash_size: u8, hops: u8) -> Result<Self, Error> {
         if hash_size == 0 || hash_size > 3 {
             return Err(Error::PathHashSize);
@@ -140,7 +140,7 @@ impl PathLen {
     pub const fn byte_len(self) -> usize {
         self.hops() as usize * self.hash_size() as usize
     }
-    /// Un saut de plus, s'il tient (63 sauts au plus, 64 octets au plus).
+    /// One more hop, if it fits (at most 63 hops, at most 64 bytes).
     pub const fn plus_one(self) -> Option<Self> {
         if self.hops() >= Self::MAX_HOPS {
             return None;
@@ -154,11 +154,11 @@ impl PathLen {
     }
 }
 
-/// Une trame décodée, sans copie.
+/// A decoded packet, zero-copy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Packet<'a> {
     pub header: Header,
-    /// `[tc0, tc1]`, présents seulement pour les routes 0 et 3.
+    /// `[tc0, tc1]`, present only for routes 0 and 3.
     pub transport: Option<[u16; 2]>,
     pub path_len: PathLen,
     pub path: &'a [u8],
@@ -166,8 +166,8 @@ pub struct Packet<'a> {
 }
 
 impl<'a> Packet<'a> {
-    /// Décode une trame reçue, avec les règles de `Dispatcher::tryParsePacket`
-    /// (`Dispatcher.cpp:149-189`). Une charge utile vide est acceptée ici.
+    /// Decodes a received packet with the rules of `Dispatcher::tryParsePacket`
+    /// (`Dispatcher.cpp:149-189`). An empty payload is accepted here.
     pub fn decode(raw: &'a [u8]) -> Result<Self, Error> {
         let mut r = mc_core::Reader::new(raw);
         let header = Header::from_byte(r.u8().map_err(|_| Error::Truncated)?)?;
@@ -193,13 +193,13 @@ impl<'a> Packet<'a> {
         })
     }
 
-    /// Longueur une fois encodée.
+    /// Encoded length.
     pub const fn encoded_len(&self) -> usize {
         1 + if self.transport.is_some() { 4 } else { 0 } + 1 + self.path.len() + self.payload.len()
     }
 
-    /// Encode la trame. Refuse une trame incohérente (codes de transport sans route qui les
-    /// porte, chemin de mauvaise longueur, charge trop longue, trame de plus de 255 octets).
+    /// Encodes the packet. Rejects an inconsistent packet (transport codes without a route type
+    /// that carries them, path of the wrong length, payload too long, packet over 255 bytes).
     pub fn encode(&self, out: &mut [u8]) -> Result<usize, Error> {
         if self.transport.is_some() != self.header.route.has_transport_codes() {
             return Err(Error::Transport);
@@ -228,19 +228,19 @@ impl<'a> Packet<'a> {
         Ok(w.position())
     }
 
-    /// Hash anti-doublon (`Packet.cpp:41-50`) : `SHA256(type ‖ [path_len u16 si TRACE] ‖
-    /// charge utile)[0..8]`.
+    /// Duplicate-detection hash (`Packet.cpp:41-50`): `SHA256(type ‖ [path_len u16 if TRACE] ‖
+    /// payload)[0..8]`.
     pub fn hash(&self) -> [u8; PACKET_HASH_LEN] {
         packet_hash(self.header.ptype, self.path_len, self.payload)
     }
 }
 
-/// Hash anti-doublon d'une charge utile (voir [`Packet::hash`]).
+/// Duplicate-detection hash of a payload (see [`Packet::hash`]).
 pub fn packet_hash(ptype: PayloadType, path_len: PathLen, payload: &[u8]) -> [u8; PACKET_HASH_LEN] {
     let mut h = Sha256::new();
     h.update([ptype.value()]);
     if ptype == PayloadType::TRACE {
-        // `path_len` est un uint16_t dans la classe C++ : deux octets, petit-boutiste.
+        // `path_len` is a uint16_t in the C++ class: two bytes, little-endian.
         h.update(u16::from(path_len.byte()).to_le_bytes());
     }
     h.update(payload);
@@ -252,7 +252,7 @@ pub fn packet_hash(ptype: PayloadType, path_len: PathLen, payload: &[u8]) -> [u8
     out
 }
 
-/// Une trame à construire, dans un tampon fixe (pour l'émission et les tests).
+/// A packet under construction, in a fixed buffer (for transmission and tests).
 #[derive(Debug, Clone)]
 pub struct PacketBuf {
     pub header: Header,
@@ -264,7 +264,7 @@ pub struct PacketBuf {
 }
 
 impl PacketBuf {
-    /// Trame sans chemin ni codes de transport.
+    /// Packet with no path and no transport codes.
     pub const fn new(route: Route, ptype: PayloadType) -> Self {
         Self {
             header: Header::new(route, ptype),
@@ -276,7 +276,7 @@ impl PacketBuf {
         }
     }
 
-    /// Copie d'une trame décodée.
+    /// Copy of a decoded packet.
     pub fn from_packet(p: &Packet<'_>) -> Result<Self, Error> {
         let mut b = Self::new(p.header.route, p.header.ptype);
         b.transport = p.transport;
@@ -293,7 +293,7 @@ impl PacketBuf {
         self.payload.get(..self.payload_len).unwrap_or(&[])
     }
 
-    /// Zone de charge utile complète, à remplir puis à fixer par [`PacketBuf::set_payload_len`].
+    /// The whole payload area, to fill in and then commit with [`PacketBuf::set_payload_len`].
     pub fn payload_buf(&mut self) -> &mut [u8; PAYLOAD_MAX] {
         &mut self.payload
     }
@@ -326,7 +326,7 @@ impl PacketBuf {
         Ok(())
     }
 
-    /// Ajoute un hash de saut en fin de chemin (relais en inondation), à la taille du chemin.
+    /// Appends a hop hash at the end of the path (flood forwarding), at the path's hash size.
     pub fn push_hop(&mut self, hash: &[u8]) -> Result<(), Error> {
         let size = usize::from(self.path_len.hash_size());
         let next = self.path_len.plus_one().ok_or(Error::PathTooLong)?;
@@ -341,7 +341,7 @@ impl PacketBuf {
         Ok(())
     }
 
-    /// Retire le premier hash du chemin (relais direct).
+    /// Removes the first hash from the path (direct forwarding).
     pub fn pop_front_hop(&mut self) -> Result<(), Error> {
         let size = usize::from(self.path_len.hash_size());
         let hops = self.path_len.hops();

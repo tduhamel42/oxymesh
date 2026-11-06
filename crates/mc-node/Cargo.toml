@@ -1,10 +1,11 @@
 [package]
 name = "mc-node"
-description = "La machine sans IO d'un compagnon MeshCore : dispatcher, mesh, contacts, messages, compagnon"
+description = "The IO-free state machine of a MeshCore companion: dispatcher, mesh, contacts, messages, companion"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 mc-core.workspace = true

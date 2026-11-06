@@ -1,8 +1,9 @@
-//! Protocole compagnon MeshCore (`docs/spec/companion.md`) : trames de l'app et de l'appareil,
-//! et tramage USB. Base reprise de `ln-meshcore` (loranet, côté app), étendue côté appareil.
+//! MeshCore companion protocol (`docs/spec/companion.md`): app and device frames, and USB
+//! framing. Base taken from `ln-meshcore` (loranet, app side), extended on the device side.
 //!
-//! `no_std`, sans allocation ; décodage zéro-copie. Deux modes pour les commandes (ADR-0002) :
-//! [`Command::decode`] strict et canonique, [`Command::decode_device`] comme le firmware C++.
+//! `no_std`, no allocation; zero-copy decoding. Two modes for commands (ADR-0002):
+//! [`Command::decode`], strict and canonical, and [`Command::decode_device`], like the C++
+//! firmware.
 #![no_std]
 #![deny(clippy::float_arithmetic)]
 #![cfg_attr(
