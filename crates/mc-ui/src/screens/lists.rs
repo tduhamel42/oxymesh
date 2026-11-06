@@ -24,6 +24,7 @@ pub enum Pick {
     Write,
     Range,
     Trace,
+    Admin,
 }
 
 #[derive(Debug, Default)]
@@ -82,6 +83,7 @@ impl Screen for Contacts {
                 Pick::Write => "Write to…",
                 Pick::Range => "Range test with…",
                 Pick::Trace => "Trace to…",
+                Pick::Admin => "Repeater…",
             })
         } else {
             format!("Contacts {}", ui.ctx.dev.node.contacts.list.len())
@@ -121,6 +123,9 @@ impl Screen for Contacts {
             }
             Some(Pick::Trace) => {
                 return Nav::Replace(Box::new(super::tools::Trace::new(c.pub_key)));
+            }
+            Some(Pick::Admin) => {
+                return Nav::Replace(Box::new(super::admin::Admin::new(c.pub_key)));
             }
             None => {}
         }

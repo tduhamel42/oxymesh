@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/tools.rs
+expression: s
+---
+|Neighbours      18:35 80%|
+|2 heard by the repeater  |
+|                         |
+|▸ You             ▂▄▆█ 2m|
+|  Bob             ▂▄▆█ 2m|
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|A▸next             B◂back|

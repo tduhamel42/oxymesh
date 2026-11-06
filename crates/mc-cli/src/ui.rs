@@ -36,7 +36,8 @@ use crate::port::now_unix;
 const ME: usize = 0;
 
 /// The device ("oxymesh") and three neighbours: Alice (echo bot, with a position), Bob
-/// (posts on Public, answers pings) and a relay that forwards (with a position).
+/// (posts on Public, answers pings) and a relay that forwards and answers like a repeater
+/// (admin password "secret"), with a position.
 fn world(clock: u32) -> World {
     let mut w = World::new(7);
     let me = w.add("oxymesh", |_| {});
@@ -55,6 +56,10 @@ fn world(clock: u32) -> World {
     for i in [alice, bob, relay] {
         w.link(me, i);
     }
+    // The relay answers like a MeshCore repeater: discovery, login (admin password "secret",
+    // guests without one), status, neighbours.
+    w.serve_repeater(relay, "secret", "");
+    w.link(relay, bob);
     let mut frame = [0u8; 8];
     if let Ok(n) = (Command::SetDeviceTime { unix_s: clock }).encode(&mut frame) {
         w.app(ME, &frame[..n]);

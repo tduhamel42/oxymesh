@@ -19,6 +19,14 @@ pub const REQUESTS: usize = 4;
 const DIRECT_TRIES: u8 = 3;
 const REQ_TYPE_GET_STATUS: u8 = 0x01;
 const REQ_TYPE_GET_TELEMETRY_DATA: u8 = 0x03;
+const REQ_TYPE_GET_NEIGHBOURS: u8 = 0x06;
+/// Node discovery (`simple_repeater/MyMesh.cpp:786-860`).
+const CTL_DISCOVER_REQ: u8 = 0x80;
+const CTL_DISCOVER_RESP: u8 = 0x90;
+const ADV_TYPE_REPEATER: u8 = 2;
+/// Answers to a discovery are taken for a minute (like the C++ repeater).
+const DISCOVER_FOR: Duration = Duration::from_secs(60);
+pub const DISCOVERED: usize = 16;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Outgoing {
@@ -39,6 +47,26 @@ pub enum ReqKind {
     Telemetry,
     Status,
     Trace,
+    /// Login to a repeater or room server (anonymous request with the password).
+    Login,
+    /// A repeater's neighbours (`REQ_TYPE_GET_NEIGHBOURS`).
+    Neighbours,
+}
+
+/// A repeater that answered our discovery, zero hop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Discovered {
+    /// Its key, or the first `key_len` bytes of it (prefix-only answers).
+    pub key: [u8; 32],
+    pub key_len: u8,
+    /// Node type (2: repeater).
+    pub kind: u8,
+    /// SNR ×4 of our request as it heard it.
+    pub snr_there: i8,
+    /// SNR ×4 of its answer as we heard it.
+    pub snr_back: i8,
+    /// Our clock.
+    pub at: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -255,7 +283,10 @@ impl Device {
         let req = match kind {
             ReqKind::Telemetry => REQ_TYPE_GET_TELEMETRY_DATA,
             ReqKind::Status => REQ_TYPE_GET_STATUS,
-            ReqKind::Trace => return Err(SendError::Unsupported),
+            // Their own functions: `request_trace`, `request_login`, `request_neighbours`.
+            ReqKind::Trace | ReqKind::Login | ReqKind::Neighbours => {
+                return Err(SendError::Unsupported);
+            }
         };
         let sent = self.node.send_typed_request(now, slot, req, rng)?;
         self.track(Pending {
@@ -266,6 +297,117 @@ impl Device {
             deadline: now + Duration::from_millis(u64::from(sent.timeout_ms)),
         });
         Ok(sent.ack)
+    }
+
+    /// The screen logs in to a server (empty password: ACL only); the answer's data is the
+    /// login block (`[0]` 0 = OK, `[2]` admin, `[3]` permissions, `[8]` firmware level).
+    pub fn request_login(
+        &mut self,
+        now: Instant,
+        key: &[u8; 32],
+        password: &[u8],
+    ) -> Result<u32, SendError> {
+        let slot = self.node.contacts.find(key).ok_or(SendError::NotFound)?;
+        let sent = self.node.send_login(now, slot, password)?;
+        let key4 = u32::from_le_bytes(super::fixed(key));
+        self.track(Pending {
+            tag: key4,
+            key4,
+            kind: ReqKind::Login,
+            sent: now,
+            deadline: now + Duration::from_millis(u64::from(sent.timeout_ms)),
+        });
+        Ok(key4)
+    }
+
+    /// The screen asks a repeater for its neighbours, strongest first, 6-byte key prefixes.
+    pub fn request_neighbours(
+        &mut self,
+        now: Instant,
+        key: &[u8; 32],
+        rng: &mut impl Rng,
+    ) -> Result<u32, SendError> {
+        let slot = self.node.contacts.find(key).ok_or(SendError::NotFound)?;
+        let mut req = [REQ_TYPE_GET_NEIGHBOURS, 0, 20, 0, 0, 2, 6, 0, 0, 0, 0];
+        let r = rng.next_u32().to_le_bytes();
+        for (o, b) in req.iter_mut().skip(7).zip(r) {
+            *o = b;
+        }
+        let sent = self.node.send_request(now, slot, &req)?;
+        self.track(Pending {
+            tag: sent.ack,
+            key4: u32::from_le_bytes(super::fixed(key)),
+            kind: ReqKind::Neighbours,
+            sent: now,
+            deadline: now + Duration::from_millis(u64::from(sent.timeout_ms)),
+        });
+        Ok(sent.ack)
+    }
+
+    /// Zero-hop discovery of the repeaters around (`sendNodeDiscoverReq`); the answers
+    /// collect in [`Device::discovered`] for a minute.
+    pub fn discover(&mut self, now: Instant, rng: &mut impl Rng) -> Result<u32, SendError> {
+        let tag = rng.next_u32();
+        let t = tag.to_le_bytes();
+        let data = [
+            CTL_DISCOVER_REQ,
+            1 << ADV_TYPE_REPEATER,
+            t[0],
+            t[1],
+            t[2],
+            t[3],
+            0,
+            0,
+            0,
+            0,
+        ];
+        self.node.send_control(now, &data)?;
+        self.discover = Some((tag, now + DISCOVER_FOR));
+        self.discovered.clear();
+        Ok(tag)
+    }
+
+    pub fn discovered(&self) -> &[Discovered] {
+        &self.discovered
+    }
+
+    /// Zero-hop control data: true if it answers the screen's discovery.
+    pub(super) fn screen_control(&mut self, now: Instant, snr4: i8, data: &[u8]) -> bool {
+        let Some((tag, until)) = self.discover else {
+            return false;
+        };
+        let (Some(&head), Some(&there), Some(t)) = (data.first(), data.get(1), data.get(2..6))
+        else {
+            return false;
+        };
+        if head & 0xF0 != CTL_DISCOVER_RESP || now >= until || t != tag.to_le_bytes() {
+            return false;
+        }
+        let k = data.get(6..).unwrap_or(&[]);
+        let mut key = [0u8; 32];
+        for (o, b) in key.iter_mut().zip(k) {
+            *o = *b;
+        }
+        let n = k.len().min(32);
+        let d = Discovered {
+            key,
+            key_len: n as u8,
+            kind: head & 0x0F,
+            snr_there: there as i8,
+            snr_back: snr4,
+            at: self.node.time(now),
+        };
+        if let Some(old) = self
+            .discovered
+            .iter_mut()
+            .find(|x| x.key.get(..n) == key.get(..n))
+        {
+            *old = d;
+        } else {
+            let _ = self.discovered.push(d);
+        }
+        self.notify(UiEvent::Discovered);
+        true
     }
 
     /// The screen traces a path of repeater hashes (`flags & 3`: hash size code).
@@ -327,12 +469,19 @@ impl Device {
     pub(super) fn screen_response(&mut self, now: Instant, key: &[u8; 32], data: &[u8]) -> bool {
         let tag = u32::from_le_bytes(super::fixed(data));
         let key4 = u32::from_le_bytes(super::fixed(key));
-        let found = self.ui_reqs.iter().position(|p| match p.kind {
-            ReqKind::Telemetry => data.len() > 4 && p.tag == tag,
-            // Status answers carry the server's clock, not our tag (`MyMesh.cpp:694-776`).
-            ReqKind::Status => data.len() > 4 && p.key4 == key4,
-            ReqKind::Trace => false,
-        });
+        // Login first, like the C++ (`MyMesh.cpp:694-776`): login and status answers carry the
+        // server's clock, not our tag, and are matched by key.
+        let found = self
+            .ui_reqs
+            .iter()
+            .position(|p| p.kind == ReqKind::Login && p.key4 == key4 && data.len() > 4)
+            .or_else(|| {
+                self.ui_reqs.iter().position(|p| match p.kind {
+                    ReqKind::Telemetry | ReqKind::Neighbours => data.len() > 4 && p.tag == tag,
+                    ReqKind::Status => data.len() > 4 && p.key4 == key4,
+                    ReqKind::Trace | ReqKind::Login => false,
+                })
+            });
         let Some(i) = found else {
             return false;
         };

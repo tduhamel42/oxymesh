@@ -16,6 +16,9 @@ use mc_node::{Device, Event, Node, Prefs, Storage};
 use rand_chacha::ChaCha20Rng;
 use rand_core::{Rng, SeedableRng};
 
+pub mod server;
+pub use server::RepeaterServer;
+
 /// In-memory storage (tests, virtual device).
 #[derive(Debug, Default, Clone)]
 pub struct MemStorage {
@@ -95,6 +98,8 @@ pub struct SimNode {
     pub ui: Vec<UiEvent>,
     /// Frames sent to the app outside direct responses (notifications, contacts).
     pub app: Vec<Frame>,
+    /// Answers like a MeshCore repeater (discovery, login, status, neighbours).
+    pub server: Option<RepeaterServer>,
 }
 
 struct OnAir {
@@ -170,6 +175,7 @@ impl World {
             events: Vec::new(),
             ui: Vec::new(),
             app: Vec::new(),
+            server: None,
         });
         for row in &mut self.links {
             row.push(None);
@@ -281,7 +287,18 @@ impl World {
             while let Some(f) = sn.dev.poll_app() {
                 sn.app.push(f);
             }
+            if let Some(srv) = sn.server.as_mut() {
+                srv.serve(&mut sn.dev, &sn.events, now);
+            }
         }
+    }
+
+    /// Node `i` answers like a MeshCore repeater: it forwards (repeat on), and serves
+    /// discovery, logins (`admin` or `guest` password), status and neighbours. Its event list
+    /// must not be cleared while it serves.
+    pub fn serve_repeater(&mut self, i: usize, admin: &str, guest: &str) {
+        self.nodes[i].dev.node.prefs.repeat = true;
+        self.nodes[i].server = Some(RepeaterServer::new(admin, guest));
     }
 
     fn log_overlaps_tx(&self, n: usize, start: Instant, end: Instant) -> bool {

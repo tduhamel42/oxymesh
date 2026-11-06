@@ -5,7 +5,7 @@
 mod screen;
 mod settings;
 
-pub use screen::{OUTBOX, REQUESTS, Reply, ReqKind};
+pub use screen::{DISCOVERED, Discovered, OUTBOX, REQUESTS, Reply, ReqKind};
 pub use settings::SetResult;
 
 use mc_air::crypto::{LocalIdentity, PUB_KEY_LEN};
@@ -79,6 +79,8 @@ pub enum UiEvent {
     Contacts,
     /// A request from the screen was answered or timed out (`Device::request_reply`).
     Reply { tag: u32 },
+    /// A repeater answered the screen's discovery (`Device::discovered`).
+    Discovered,
 }
 
 /// Offline queue index entry; the frame itself is in storage.
@@ -149,6 +151,8 @@ pub struct Device {
     outbox: heapless::Vec<screen::Outgoing, OUTBOX>,
     ui_reqs: heapless::Vec<screen::Pending, REQUESTS>,
     replies: heapless::Deque<Reply, REQUESTS>,
+    discover: Option<(u32, Instant)>,
+    discovered: heapless::Vec<Discovered, DISCOVERED>,
     iter: Option<Iter>,
     pending_login: u32,
     pending_status: u32,
@@ -250,6 +254,8 @@ impl Device {
             outbox: heapless::Vec::new(),
             ui_reqs: heapless::Vec::new(),
             replies: heapless::Deque::new(),
+            discover: None,
+            discovered: heapless::Vec::new(),
             iter: None,
             pending_login: 0,
             pending_status: 0,
@@ -808,6 +814,8 @@ impl Device {
                 path_len,
                 path,
             } => self.on_request(now, key, *ts, data, *flood, *path_len, path, rng),
+            // A companion serves no anonymous requests (C++: no `onAnonDataRecv`).
+            Event::AnonRequest { .. } => {}
             Event::RawData { snr4, rssi, data } => self.push(&Response::RawData {
                 snr4: *snr4,
                 rssi: *rssi,
@@ -819,12 +827,17 @@ impl Device {
                 rssi,
                 path_len,
                 data,
-            } => self.push(&Response::ControlData {
-                snr4: *snr4,
-                rssi: *rssi,
-                path_len: *path_len,
-                payload: data,
-            }),
+            } => {
+                // An answer to the screen's discovery: not for the app.
+                if !self.screen_control(now, *snr4, data) {
+                    self.push(&Response::ControlData {
+                        snr4: *snr4,
+                        rssi: *rssi,
+                        path_len: *path_len,
+                        payload: data,
+                    });
+                }
+            }
             Event::TraceData {
                 path_len,
                 flags,

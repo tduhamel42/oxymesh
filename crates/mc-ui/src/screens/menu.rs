@@ -126,19 +126,13 @@ pub fn tools() -> Menu {
         "Tools",
         &[
             item("Heard nodes", Action::Open(Dest::Heard)),
-            item(
-                "Discover",
-                Action::Soon("Zero-hop discovery: arrives in U4 (part 2)."),
-            ),
+            item("Discover", Action::Open(Dest::Discover)),
             item("Trace route", Action::Open(Dest::TracePick)),
             item("Ping & range", Action::Open(Dest::RangePick)),
             item("Signal", Action::Open(Dest::Signal)),
             item("Packet log", Action::Open(Dest::Packets)),
             item("Airtime", Action::Open(Dest::Airtime)),
-            item(
-                "Repeater admin",
-                Action::Soon("Login, status and neighbours: arrives in U4 (part 2)."),
-            ),
+            item("Repeater admin", Action::Open(Dest::AdminPick)),
             item("GPS", Action::Open(Dest::Gps)),
             item("Map", Action::Open(Dest::Map)),
         ],

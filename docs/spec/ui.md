@@ -72,7 +72,7 @@ Home (always-on face)
 - **Contact**: type and route (`direct`, `2 hops`, `no route yet`), short key, last heard; then Write, Messages, Ping (round trip shown on the screen), Favourite, Reset route, Trace route (U4), Share (QR card), Remove (hold-to-confirm).
 - **Channels**: `+ Add #channel` (name typed, secret derived from it like the app), then the channels with their unread count. A channel with unread messages opens on its conversation; otherwise on its screen: Messages, Write, Remove (hold-to-confirm).
 - **Compose and quick replies**: §7. 8 quick replies by default: OK, Yes, No, On my way, Call me, Where are you?, Running late, Thanks; plus "Send my position". Sent from the device: 3 direct attempts, then `RESET_PATH` and flood (deliberate deviation 6).
-- **Tools** (U4; Discover and Repeater admin in its second part):
+- **Tools** (U4):
   - Signal strength is shown as bars from the SNR: `▂▄▆█` at 10 dB and above, `▂▄▆` from 5, `▂▄` from 0, `▂` from −7.
   - The map is a pixel overlay on the panel (a cross for us, rings and names for the nodes; the braille canvas is only the terminal's fallback): braille dots are about 400 m apart at 10 km, too coarse to see.
   - Airtime compares the last hour of transmission with the duty cycle of the sub-band the frequency falls in (`config/eu868.toml`), as a filled bar: a line gauge is invisible in black and white.
@@ -85,7 +85,8 @@ Home (always-on face)
   - Signal (last RSSI/SNR, noise floor sparkline, packet rate).
   - Packet log (time, type, route, hops, SNR, summary).
   - Airtime (TX/RX time, regulatory duty-cycle gauge, queue).
-  - Repeater admin (login, status, neighbours).
+  - Repeater admin (login as guest or with a password typed on the keyboard, status, neighbours strongest first), in the formats of MeshCore's `simple_repeater` v1.18.
+  - Answers to the screen's requests (pings, traces, discovery, logins, status, neighbours) go to the screen only: the app never sees them, and the app's own pending requests are untouched.
   - GPS (fix, satellites, position, distance and bearing to contacts).
   - Map (braille canvas, self and contacts, zoom).
 - **My card**: full-screen QR overlay of `meshcore://contact/add?name=<name>&public_key=<64 hex>&type=1`, scannable by the official app, with the name and short key below.
@@ -127,7 +128,7 @@ Home (always-on face)
 
 ## 11. Emulator and verification
 
-- `mc ui` runs the real `mc-ui` App in a terminal at the device's grid size, hosted by `mc-sim` (two virtual peers from U3 on). Keys: `j`/↓ = A click, `k`/↑ = A double click, Enter = A long, Space (held) = A hold, Esc/Backspace = B click, `h` = B double click, `l` = B long, `g` = switch grid, `q` = quit.
+- `mc ui` runs the real `mc-ui` App in a terminal at the device's grid size, hosted by `mc-sim`: Alice (an echo bot who writes first), Bob (posts on Public, answers pings) and a relay that forwards and answers like a MeshCore repeater (admin password `secret`). The emulator shows a fixed GPS fix. Keys: `j`/↓ = A click, `k`/↑ = A double click, Enter = A long, Space (held) = A hold, Esc/Backspace = B click, `h` = B double click, `l` = B long, `g` = switch grid, `q` = quit.
 - `mc ui --png <dir>` renders every screen through mousefood into PNG files: the exact panel pixels, overlays included.
 - Snapshot tests (`insta`) of every screen and state at both grid sizes.
 - On the device (U6): navigation with the two buttons, a message composed and delivered with its tick, tools on real traffic, backlight and potentiometer, no packet lost during a refresh (M5 log compared with the Heltec's).

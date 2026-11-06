@@ -253,6 +253,14 @@ pub enum Event {
         path_len: u8,
         path: heapless::Vec<u8, PATH_MAX>,
     },
+    /// Anonymous request to us (a login to a server), decrypted. The companion layer ignores
+    /// it, like the C++ companion; a server role (and the simulator's repeater) answers it.
+    AnonRequest {
+        key: [u8; PUB_KEY_LEN],
+        ts: u32,
+        data: Text,
+        flood: bool,
+    },
     RawData {
         snr4: i8,
         rssi: i8,
@@ -528,7 +536,7 @@ impl Node {
     }
 
     /// `sendZeroHop`: direct route, empty path, priority 0.
-    pub(crate) fn send_zero_hop(
+    pub fn send_zero_hop(
         &mut self,
         mut pkt: PacketBuf,
         transport: Option<[u16; 2]>,

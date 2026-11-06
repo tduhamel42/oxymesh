@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/tools.rs
+expression: s
+---
+|Repeater status 18:35 80%|
+|Battery            4.05 V|
+|Up             1 h 00 min|
+|Queue                   0|
+|Noise floor      -112 dBm|
+|Last       9.5 dB -71 dBm|
+|Received                5|
+|Sent                    2|
+|Airtime TX/RX       1/2 s|
+|Duplicates              2|
+|Errors                  0|
+|Answer             1.16 s|
+|                         |
+|                         |
+|                   B◂back|

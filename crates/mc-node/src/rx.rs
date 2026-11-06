@@ -159,14 +159,36 @@ impl Node {
                     do_not_retransmit = self.on_addressed(now, pkt, ptype, src, &sealed, snr4, rng);
                 }
             }
-            Payload::AnonReq { dest, .. } => {
+            Payload::AnonReq {
+                dest,
+                sender,
+                sealed,
+            } => {
                 if !self.seen.check_and_mark(&hash, direct) {
                     return;
                 }
-                // A companion does not serve anonymous requests; they are ignored after decryption
-                // like in C++ (no `onAnonDataRecv` on the companion side).
+                // A companion does not serve anonymous requests: the companion layer ignores
+                // the event, like the C++ (no `onAnonDataRecv` on the companion side).
                 if dest == self.id.hash() {
                     do_not_retransmit = true;
+                    let key = *sender;
+                    if let Some(secret) = self.id.shared_secret(&key) {
+                        let mut buf = [0u8; 184];
+                        if let Ok(plain) = crypto::open(&secret, sealed, &mut buf)
+                            && let (Some(ts), Some(data)) = (
+                                plain.get(..4).and_then(|t| <[u8; 4]>::try_from(t).ok()),
+                                plain.get(4..),
+                            )
+                        {
+                            let ts = u32::from_le_bytes(ts);
+                            self.emit(Event::AnonRequest {
+                                key,
+                                ts,
+                                data: text_of(data),
+                                flood: !direct,
+                            });
+                        }
+                    }
                 }
             }
             Payload::Group {

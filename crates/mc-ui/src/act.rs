@@ -35,6 +35,15 @@ pub enum Intent {
         flags: u8,
         path: alloc::vec::Vec<u8>,
     },
+    /// Zero-hop discovery of the repeaters around.
+    Discover,
+    /// Login to a repeater (empty password: its access list only).
+    Login {
+        key: [u8; 32],
+        password: String,
+    },
+    RepeaterStatus([u8; 32]),
+    Neighbours([u8; 32]),
     /// Our position in adverts, degrees × 1e6.
     SetLocation {
         lat: i32,
@@ -132,6 +141,22 @@ pub fn perform(
             Err(e) => send_err(e),
         },
         Intent::SetLocation { lat, lon } => of(dev.set_location(*lat, *lon, st)),
+        Intent::Discover => match dev.discover(now, rng) {
+            Ok(tag) => Outcome::Request(tag),
+            Err(e) => send_err(e),
+        },
+        Intent::Login { key, password } => match dev.request_login(now, key, password.as_bytes()) {
+            Ok(tag) => Outcome::Request(tag),
+            Err(e) => send_err(e),
+        },
+        Intent::RepeaterStatus(key) => match dev.request(now, key, ReqKind::Status, rng) {
+            Ok(tag) => Outcome::Request(tag),
+            Err(e) => send_err(e),
+        },
+        Intent::Neighbours(key) => match dev.request_neighbours(now, key, rng) {
+            Ok(tag) => Outcome::Request(tag),
+            Err(e) => send_err(e),
+        },
         Intent::ResetPath(key) => of(dev.reset_contact_path(now, key)),
         Intent::SetFavourite(key, on) => of(dev.set_favourite(now, key, *on)),
         Intent::RemoveContact(key) => of(dev.remove_contact(now, key, st)),

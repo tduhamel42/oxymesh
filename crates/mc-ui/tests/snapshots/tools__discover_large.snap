@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/tools.rs
+expression: s
+---
+|Discover        18:35 80%|
+|1 found. SNR in dB:      |
+|theirs/ours.             |
+|                         |
+|▸ Relay Aigui… ▂▄▆█ 10/10|
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|A▸next hold▸search B◂back|

@@ -62,6 +62,9 @@ impl Rig {
         for i in [bob, alice, relay] {
             w.link(me, i);
         }
+        // The relay also answers like a MeshCore repeater (admin password "secret").
+        w.serve_repeater(relay, "secret", "guest-pw");
+        w.link(relay, bob);
         for x in [bob, alice, relay, me] {
             let now = w.now;
             w.node(x).send_self_advert(now, false).unwrap();
@@ -224,6 +227,72 @@ fn snapshots() {
         r.press(&[Long(A)]);
         insta::assert_snapshot!(format!("heard_detail_{size}"), r.draw());
     }
+}
+
+impl Rig {
+    /// In a text entry: types `text` candidate by candidate, then the final action.
+    fn type_text(&mut self, text: &str) {
+        use mc_ui::keyboard::Cand;
+        for ch in text.chars() {
+            let want = Cand::Char(ch);
+            let mut found = false;
+            for _ in 0..120 {
+                if self.app.keyboard().and_then(|k| k.selected()) == Some(&want) {
+                    self.press(&[Long(A)]);
+                    found = true;
+                    break;
+                }
+                self.press(&[Click(A)]);
+            }
+            assert!(found, "{ch} not offered");
+        }
+        self.press(&[Double(A), Long(A)]);
+    }
+}
+
+#[test]
+fn discover_finds_the_relay() {
+    let mut r = Rig::new(LARGE);
+    r.tool(1); // Discover
+    r.press(&[Long(A)]);
+    r.run(5);
+    let s = r.draw();
+    assert!(s.contains("1 found") && s.contains("Relay"), "{s}");
+    insta::assert_snapshot!("discover_large", s);
+}
+
+#[test]
+fn repeater_admin_login_status_and_neighbours() {
+    let mut r = Rig::new(LARGE);
+    r.tool(7); // Repeater admin
+    r.pick("Relay");
+    // A wrong password: no answer, then failure.
+    r.press(&[Click(A), Long(A)]);
+    r.draw();
+    r.type_text("nope");
+    r.run(20);
+    assert!(r.draw().contains("Login failed"), "{}", r.draw());
+    // The admin password.
+    r.press(&[Long(A)]);
+    r.draw();
+    r.type_text("secret");
+    r.run(5);
+    assert!(r.draw().contains("Logged in as admin"), "{}", r.draw());
+    // Status.
+    r.press(&[Click(A), Long(A)]);
+    r.run(5);
+    let s = r.draw();
+    assert!(s.contains("4.05 V") && s.contains("Up"), "{s}");
+    insta::assert_snapshot!("repeater_status_large", s);
+    // Neighbours: the relay heard Bob, Alice and us.
+    r.press(&[Click(B), Click(A), Long(A)]);
+    r.run(5);
+    let s = r.draw();
+    assert!(
+        s.contains("heard by the repeater") && s.contains("Bob"),
+        "{s}"
+    );
+    insta::assert_snapshot!("neighbours_large", s);
 }
 
 #[test]

@@ -38,6 +38,8 @@ pub enum Mode {
     Name,
     /// A `#hashtag` channel name (without the `#`).
     Hashtag,
+    /// A server password: shown, lower and upper case, no completions.
+    Password,
 }
 
 impl Mode {
@@ -46,6 +48,7 @@ impl Mode {
             Mode::Message { limit } => limit,
             Mode::Name => 31,
             Mode::Hashtag => 30,
+            Mode::Password => 15,
         }
     }
 
@@ -55,6 +58,7 @@ impl Mode {
             Mode::Message { .. } => "Send",
             Mode::Name => "Save",
             Mode::Hashtag => "Add",
+            Mode::Password => "Login",
         }
     }
 }
@@ -187,9 +191,11 @@ impl Keyboard {
         if can_space && self.mode != Mode::Hashtag {
             c.push(Cand::Space);
         }
-        let upper = self.mode != Mode::Hashtag && sentence_start(&self.text);
+        let upper =
+            matches!(self.mode, Mode::Message { .. } | Mode::Name) && sentence_start(&self.text);
+        let ascii_only = matches!(self.mode, Mode::Hashtag | Mode::Password);
         for ch in LETTERS.chars() {
-            if self.mode == Mode::Hashtag && !ch.is_ascii_lowercase() {
+            if ascii_only && !ch.is_ascii_lowercase() {
                 continue;
             }
             let ch = if upper {
@@ -199,11 +205,19 @@ impl Keyboard {
             };
             c.push(Cand::Char(ch));
         }
+        if self.mode == Mode::Password {
+            c.extend(
+                LETTERS
+                    .chars()
+                    .filter(char::is_ascii_lowercase)
+                    .map(|ch| Cand::Char(ch.to_ascii_uppercase())),
+            );
+        }
         c.extend(DIGITS.chars().map(Cand::Char));
         match self.mode {
             Mode::Hashtag => c.push(Cand::Char('-')),
             Mode::Name => c.extend("-_.'".chars().map(Cand::Char)),
-            Mode::Message { .. } => c.extend(PUNCT.chars().map(Cand::Char)),
+            Mode::Message { .. } | Mode::Password => c.extend(PUNCT.chars().map(Cand::Char)),
         }
         if !self.text.trim().is_empty() {
             c.push(Cand::Done);

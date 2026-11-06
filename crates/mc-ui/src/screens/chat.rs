@@ -244,6 +244,8 @@ pub enum Target {
     Name {
         setup: bool,
     },
+    /// A server's password, then log in.
+    Password([u8; 32]),
 }
 
 #[derive(Debug)]
@@ -282,6 +284,7 @@ impl Compose {
             }
             Target::Hashtag => Mode::Hashtag,
             Target::Name { .. } => Mode::Name,
+            Target::Password(_) => Mode::Password,
         }
     }
 
@@ -328,6 +331,13 @@ impl Compose {
                 Nav::PopWith(Intent::SetName(text), Some("Name saved"))
             }
             Target::Name { setup: true } => Nav::Intent(Intent::SetName(text)),
+            Target::Password(key) => Nav::PopWith(
+                Intent::Login {
+                    key,
+                    password: text,
+                },
+                None,
+            ),
         }
     }
 }
@@ -339,6 +349,7 @@ impl Screen for Compose {
             Target::Hashtag => String::from("New #channel"),
             Target::Name { setup: true } => String::from("2/3 Name"),
             Target::Name { setup: false } => String::from("Your name"),
+            Target::Password(_) => String::from("Password"),
         }
     }
 

@@ -1,5 +1,6 @@
 //! The screens (`docs/spec/ui.md` §6) and what they share: list drawing and cursor moves.
 
+pub mod admin;
 pub mod chat;
 pub mod contact;
 mod home;
@@ -54,6 +55,8 @@ pub enum Dest {
     Airtime,
     Gps,
     Map,
+    Discover,
+    AdminPick,
 }
 
 pub fn open(d: Dest) -> Box<dyn Screen> {
@@ -77,6 +80,8 @@ pub fn open(d: Dest) -> Box<dyn Screen> {
         Dest::Airtime => Box::new(tools::Airtime),
         Dest::Gps => Box::new(tools::Gps::default()),
         Dest::Map => Box::new(tools::Map::default()),
+        Dest::Discover => Box::new(admin::Discover::default()),
+        Dest::AdminPick => Box::new(Contacts::pick_for(lists::Pick::Admin)),
     }
 }
 
