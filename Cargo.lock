@@ -903,6 +903,7 @@ dependencies = [
  "mc-air",
  "mc-core",
  "mc-node",
+ "mc-proto",
  "mc-sim",
  "mousefood",
  "qrcodegen-no-heap",

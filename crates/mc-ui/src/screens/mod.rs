@@ -7,6 +7,7 @@ mod home;
 mod info;
 mod lists;
 mod menu;
+pub mod settings;
 pub mod setup;
 pub mod tools;
 
@@ -57,6 +58,14 @@ pub enum Dest {
     Map,
     Discover,
     AdminPick,
+    Radio,
+    Bluetooth,
+    ContactSettings,
+    Display,
+    Notifications,
+    Telemetry,
+    Power,
+    Time,
 }
 
 pub fn open(d: Dest) -> Box<dyn Screen> {
@@ -82,6 +91,14 @@ pub fn open(d: Dest) -> Box<dyn Screen> {
         Dest::Map => Box::new(tools::Map::default()),
         Dest::Discover => Box::new(admin::Discover::default()),
         Dest::AdminPick => Box::new(Contacts::pick_for(lists::Pick::Admin)),
+        Dest::Radio
+        | Dest::Bluetooth
+        | Dest::ContactSettings
+        | Dest::Display
+        | Dest::Notifications
+        | Dest::Telemetry
+        | Dest::Power
+        | Dest::Time => settings::open(d).unwrap_or_else(|| Box::new(Soon::new("Settings", ""))),
     }
 }
 

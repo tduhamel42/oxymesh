@@ -14,8 +14,12 @@ use crate::act::Intent;
 use crate::app::{Confirm, Input, Nav, Screen, Ui};
 
 /// What choosing an item does.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum Action {
+    /// A screen built from the current state (a choice with the current value marked).
+    Build(fn(&Ui<'_>) -> Box<dyn Screen>),
+    /// Something done at once (a toggle).
+    Run(fn(&Ui<'_>) -> Nav),
     Open(Dest),
     /// Not built yet: a screen that says which milestone brings it.
     Soon(&'static str),
@@ -34,6 +38,16 @@ pub struct Item {
     /// Value shown on the right, computed when drawn.
     pub detail: Option<fn(&Ui<'_>) -> String>,
     pub action: Action,
+}
+
+impl Item {
+    pub fn plain(label: &'static str, action: Action) -> Item {
+        item(label, action)
+    }
+
+    pub fn with(label: &'static str, detail: fn(&Ui<'_>) -> String, action: Action) -> Item {
+        item_with(label, detail, action)
+    }
 }
 
 const fn item(label: &'static str, action: Action) -> Item {
@@ -92,7 +106,7 @@ impl Screen for Menu {
         draw_list(f, body, &rows, &mut self.state, ui);
     }
 
-    fn input(&mut self, input: Input, _ui: &Ui<'_>) -> Nav {
+    fn input(&mut self, input: Input, ui: &Ui<'_>) -> Nav {
         if !step(&mut self.state, self.items.len(), input) {
             return Nav::Stay;
         }
@@ -100,6 +114,8 @@ impl Screen for Menu {
             return Nav::Stay;
         };
         match item.action.clone() {
+            Action::Build(f) => Nav::Push(f(ui)),
+            Action::Run(f) => f(ui),
             Action::Open(d) => Nav::Push(open(d)),
             Action::Soon(note) => Nav::Push(Box::new(Soon::new(item.label, note))),
             Action::Intent(i, toast) => Nav::IntentToast(i, toast),
@@ -143,39 +159,18 @@ pub fn settings() -> Menu {
     Menu::new(
         "Settings",
         &[
-            item_with(
-                "Radio",
-                radio,
-                Action::Soon("Region, frequency, SF, bandwidth, power: arrives in U5."),
-            ),
+            item_with("Radio", radio, Action::Open(Dest::Radio)),
             item_with("Identity", name, Action::Open(Dest::Identity)),
-            item(
-                "Bluetooth",
-                Action::Soon("Pairing and PIN: arrive with Bluetooth (MC5)."),
-            ),
-            item(
-                "Contacts",
-                Action::Soon("Auto-add rules and limits: arrive in U5."),
-            ),
-            item(
-                "Display",
-                Action::Soon("Light timeout, text size, invert, rotate: arrive in U5."),
-            ),
-            item(
-                "Notifications",
-                Action::Soon("Buzzer and LED: arrive in U5."),
-            ),
-            item(
-                "Telemetry",
-                Action::Soon("Who may read battery, location, sensors: arrives in U5."),
-            ),
-            item(
-                "Power",
-                Action::Soon("GPS power and hibernate: arrive in U5."),
-            ),
-            item(
+            item("Bluetooth", Action::Open(Dest::Bluetooth)),
+            item("Contacts", Action::Open(Dest::ContactSettings)),
+            item("Display", Action::Open(Dest::Display)),
+            item("Notifications", Action::Open(Dest::Notifications)),
+            item("Telemetry", Action::Open(Dest::Telemetry)),
+            item("Power", Action::Open(Dest::Power)),
+            item_with(
                 "Time",
-                Action::Soon("Time source and time zone: arrive in U5."),
+                |ui| super::settings::utc(ui.ctx.dev.node.prefs.ui.tz_offset_min),
+                Action::Open(Dest::Time),
             ),
             item("System", Action::Open(Dest::System)),
         ],
@@ -188,6 +183,11 @@ pub fn identity() -> Menu {
         &[
             item("My card (QR)", Action::Open(Dest::MyCard)),
             item_with("Name", name, Action::Open(Dest::Name)),
+            item_with(
+                "Share location",
+                super::settings::location_state,
+                Action::Run(super::settings::location_toggle),
+            ),
             item(
                 "Advert, zero hop",
                 Action::Intent(Intent::SendAdvert { flood: false }, "Advert sent"),

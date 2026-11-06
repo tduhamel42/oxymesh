@@ -246,6 +246,10 @@ pub enum Target {
     },
     /// A server's password, then log in.
     Password([u8; 32]),
+    /// The radio frequency in kHz (hold-to-confirm).
+    Frequency,
+    /// A fixed Bluetooth PIN, six digits.
+    Pin,
 }
 
 #[derive(Debug)]
@@ -285,6 +289,8 @@ impl Compose {
             Target::Hashtag => Mode::Hashtag,
             Target::Name { .. } => Mode::Name,
             Target::Password(_) => Mode::Password,
+            Target::Frequency => Mode::Digits { limit: 7 },
+            Target::Pin => Mode::Digits { limit: 6 },
         }
     }
 
@@ -331,6 +337,36 @@ impl Compose {
                 Nav::PopWith(Intent::SetName(text), Some("Name saved"))
             }
             Target::Name { setup: true } => Nav::Intent(Intent::SetName(text)),
+            Target::Frequency => match text.parse::<u32>() {
+                Ok(f) if (150_000..=2_500_000).contains(&f) => {
+                    let r = &ui.ctx.dev.node.prefs.radio;
+                    Nav::Confirm(
+                        crate::app::Confirm::new(
+                            "Frequency",
+                            &format!(
+                                "Every node you talk to must use the same frequency. Switch to {}.{:03} MHz.",
+                                f / 1000,
+                                f % 1000
+                            ),
+                            Intent::SetRadio {
+                                freq_khz: f,
+                                bw_hz: r.bw_hz,
+                                sf: r.sf,
+                                cr: r.cr,
+                            },
+                        )
+                        .with_toast("Frequency saved"),
+                    )
+                }
+                _ => Nav::Toast(String::from("150000 to 2500000 kHz")),
+            },
+            Target::Pin => match text.parse::<u32>() {
+                Ok(p) if text.len() == 6 && (100_000..=999_999).contains(&p) => Nav::PopWith(
+                    Intent::SetPin(p),
+                    Some("PIN saved, used from the next reboot"),
+                ),
+                _ => Nav::Toast(String::from("Six digits, not starting with 0")),
+            },
             Target::Password(key) => Nav::PopWith(
                 Intent::Login {
                     key,
@@ -350,6 +386,8 @@ impl Screen for Compose {
             Target::Name { setup: true } => String::from("2/3 Name"),
             Target::Name { setup: false } => String::from("Your name"),
             Target::Password(_) => String::from("Password"),
+            Target::Frequency => String::from("Frequency (kHz)"),
+            Target::Pin => String::from("Bluetooth PIN"),
         }
     }
 
@@ -461,6 +499,12 @@ impl Screen for Compose {
             && *outcome == Outcome::Ok
         {
             return Nav::Replace(Box::new(super::setup::SetupTime));
+        }
+        if matches!(intent, Intent::SetRadio { .. })
+            && self.target == Target::Frequency
+            && *outcome == Outcome::Ok
+        {
+            return Nav::Pop;
         }
         Nav::Stay
     }

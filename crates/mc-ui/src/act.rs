@@ -8,7 +8,7 @@ use alloc::string::String;
 use mc_core::Instant;
 use mc_node::device::ReqKind;
 use mc_node::history::Peer;
-use mc_node::{Device, Storage};
+use mc_node::{Device, Storage, UiPrefs};
 use rand_core::Rng;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +63,29 @@ pub enum Intent {
         cr: u8,
     },
     SetupDone,
+    SetTxPower(i8),
+    /// 0 to 2: 1 to 3-byte path hashes.
+    SetPathHash(u8),
+    /// The default flood scope (a region name like `fr`), or none.
+    SetScope(Option<String>),
+    /// `SET_OTHER_PARAMS` with all four values.
+    SetOther {
+        manual_add: u8,
+        telemetry: u8,
+        advert_loc: u8,
+        multi_acks: u8,
+    },
+    SetAutoadd {
+        config: u8,
+        max_hops: u8,
+    },
+    /// Bluetooth PIN: 0 random at pairing, or six digits.
+    SetPin(u32),
+    SetGps(bool),
+    /// The screen's own settings.
+    SetUi(UiPrefs),
+    /// Turn off until B is pressed.
+    Hibernate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,6 +105,8 @@ pub enum Outcome {
     Reboot,
     /// For the runner: erase the storage, then reboot.
     FactoryReset,
+    /// For the runner: draw the badge, then deep sleep until B.
+    Hibernate,
 }
 
 fn of(r: Result<(), u8>) -> Outcome {
@@ -174,7 +199,46 @@ pub fn perform(
             bw_hz,
             sf,
             cr,
-        } => of(dev.set_radio(*freq_khz, *bw_hz, *sf, *cr, false, st)),
+        } => {
+            let repeat = dev.node.prefs.repeat;
+            of(dev.set_radio(*freq_khz, *bw_hz, *sf, *cr, repeat, st))
+        }
+        Intent::SetTxPower(dbm) => of(dev.set_tx_power(*dbm, st)),
+        Intent::SetPathHash(m) => of(dev.set_path_hash_mode(*m, st)),
+        Intent::SetScope(None) => of(dev.set_default_scope(None, st)),
+        Intent::SetScope(Some(name)) => {
+            let mut n = [0u8; 31];
+            for (o, b) in n.iter_mut().zip(name.bytes().take(30)) {
+                *o = b;
+            }
+            of(dev.set_default_scope(Some((n, mc_air::crypto::region_key(name))), st))
+        }
+        Intent::SetOther {
+            manual_add,
+            telemetry,
+            advert_loc,
+            multi_acks,
+        } => {
+            dev.set_other_params(
+                *manual_add,
+                Some(*telemetry),
+                Some(*advert_loc),
+                Some(*multi_acks),
+                st,
+            );
+            Outcome::Ok
+        }
+        Intent::SetAutoadd { config, max_hops } => {
+            dev.set_autoadd(*config, Some(*max_hops), st);
+            Outcome::Ok
+        }
+        Intent::SetPin(pin) => of(dev.set_pin(*pin, st)),
+        Intent::SetGps(on) => of(dev.set_gps(*on, st)),
+        Intent::SetUi(ui) => {
+            dev.set_ui(*ui, st);
+            Outcome::Ok
+        }
+        Intent::Hibernate => Outcome::Hibernate,
         Intent::SetupDone => {
             let mut ui = dev.node.prefs.ui;
             ui.setup_done = true;

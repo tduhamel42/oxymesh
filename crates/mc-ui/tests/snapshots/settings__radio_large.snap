@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/settings.rs
+expression: r.draw()
+---
+|Radio           17:33 80%|
+|▸ Region           custom|
+|  Frequency       869.618|
+|  Bandwidth      62.5 kHz|
+|  Spreading           SF8|
+|  Coding rate         4/5|
+|  Power            22 dBm|
+|  Path hash           1 B|
+|  Flood scope        none|
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|A▸next hold▸open   B◂back|

@@ -89,6 +89,13 @@ Home (always-on face)
   - Answers to the screen's requests (pings, traces, discovery, logins, status, neighbours) go to the screen only: the app never sees them, and the app's own pending requests are untouched.
   - GPS (fix, satellites, position, distance and bearing to contacts).
   - Map (braille canvas, self and contacts, zoom).
+- **Settings** (U5): every value goes through the device's settings API, so the app sees it at once (`SELF_INFO`, `DEVICE_INFO`, the scope and auto-add getters).
+  - A value is picked on a list where the current one is marked `●`; lists longer than 8 put it first. Toggles flip on a long A with a toast.
+  - Radio: region (presets from `config/regions.toml`), frequency (typed in kHz), bandwidth, spreading factor, coding rate (all four hold-to-confirm: every node you talk to must match), power, path hash size, flood scope (none, or a region's scope).
+  - Identity: my card, name, share location in adverts, adverts. Bluetooth: fixed (six digits) or random PIN; pairing and paired devices come with MC5.
+  - Contacts: add every node heard or only chosen types (chat, repeater, room, sensor), replace the oldest when full, max hops.
+  - Display: text size (the grid changes at once), light timeout (30 s, 2 min, 10 min, never), invert, rotate 180° (applied on the panel in U6). Notifications: buzzer off / quiet / on, LED on unread.
+  - Telemetry: who may read the battery, the location, the sensors (nobody, favourites, everyone). Power: GPS on/off, hibernate (hold-to-confirm). Time: time zone (UTC−12 to UTC+14 in 30-minute steps), clock.
 - **My card**: full-screen QR overlay of `meshcore://contact/add?name=<name>&public_key=<64 hex>&type=1`, scannable by the official app, with the name and short key below.
 - **Pairing**: full-screen PIN in big digits as soon as pairing starts; gone when it ends.
 - **Hibernate**: leaves a badge on the panel (name, my-card QR, "off — press B") and wakes on B.

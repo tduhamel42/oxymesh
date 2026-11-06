@@ -1,0 +1,24 @@
+---
+source: crates/mc-ui/tests/settings.rs
+expression: r.draw()
+---
+|Notifications           17:33 80%|
+|► Buzzer                       on|
+|  LED on unread                on|
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|A►next hold►open           B◄back|

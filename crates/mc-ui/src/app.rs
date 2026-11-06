@@ -213,6 +213,21 @@ impl App {
         self.grid
     }
 
+    /// Follows the text size setting; true if the grid changed (the runner then rebuilds its
+    /// terminal for [`App::grid`]).
+    pub fn sync(&mut self, ctx: &Ctx<'_>) -> bool {
+        let want = if ctx.dev.node.prefs.ui.compact {
+            COMPACT
+        } else {
+            crate::panel::LARGE
+        };
+        if want != self.grid {
+            self.set_grid(want);
+            return true;
+        }
+        false
+    }
+
     /// The runner rebuilds its terminal for the new grid.
     pub fn set_grid(&mut self, grid: Grid) {
         self.grid = grid;

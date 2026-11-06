@@ -132,7 +132,11 @@ pub fn encode_prefs(p: &Prefs) -> [u8; PREFS_RECORD] {
         let u = &p.ui;
         w.put(&u.light_timeout_s.to_le_bytes())?;
         w.put_u8(
-            u8::from(u.compact) | (u8::from(u.led_unread) << 1) | (u8::from(u.setup_done) << 2),
+            u8::from(u.compact)
+                | (u8::from(u.led_unread) << 1)
+                | (u8::from(u.setup_done) << 2)
+                | (u8::from(u.invert) << 3)
+                | (u8::from(u.rotate) << 4),
         )?;
         w.put_u8(u.buzzer)?;
         w.put(&u.tz_offset_min.to_le_bytes())
@@ -193,6 +197,8 @@ pub fn decode_prefs(b: &[u8], defaults: &Prefs) -> Option<Prefs> {
         u.compact = f & 1 != 0;
         u.led_unread = f & 2 != 0;
         u.setup_done = f & 4 != 0;
+        u.invert = f & 8 != 0;
+        u.rotate = f & 16 != 0;
         u.buzzer = r.u8().ok()?;
         u.tz_offset_min = i16::from_le_bytes(*r.array::<2>().ok()?);
     }

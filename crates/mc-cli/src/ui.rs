@@ -77,7 +77,7 @@ fn ctx(w: &World, light: bool) -> Ctx<'_> {
         dev,
         now_ms: ms(w.now),
         unix: dev.node.rtc.now(w.now),
-        tz_offset_min: local_offset_min(),
+        tz_offset_min: dev.node.prefs.ui.tz_offset_min,
         battery_percent: Some(87),
         charging: false,
         light,
@@ -205,6 +205,9 @@ fn interactive(mut grid: Grid) -> std::io::Result<()> {
 fn emulate(grid: &mut Grid) -> std::io::Result<()> {
     let mut term = Terminal::new(CrosstermBackend::new(stdout()))?;
     let mut w = world(now_unix());
+    // The Mac's time zone, until changed in Settings → Time.
+    w.nodes[ME].dev.node.prefs.ui.tz_offset_min = local_offset_min();
+    w.nodes[ME].dev.node.prefs.ui.compact = *grid == COMPACT;
     let mut app = App::new(*grid, false);
     {
         let c = ctx(&w, false);
@@ -308,6 +311,7 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
                 }
                 KeyCode::Char('g') => {
                     *grid = if *grid == LARGE { COMPACT } else { LARGE };
+                    w.nodes[ME].dev.node.prefs.ui.compact = *grid == COMPACT;
                     app.set_grid(*grid);
                     term.clear()?;
                     None
@@ -328,13 +332,17 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
             log.push(format!("  → {i:?}: {o:?}"));
             match o {
                 Outcome::Light => light = !light,
-                Outcome::Reboot | Outcome::FactoryReset => {
+                Outcome::Reboot | Outcome::FactoryReset | Outcome::Hibernate => {
                     app.toast("Ignored by the emulator", ms(w.now));
                 }
                 _ => {}
             }
             let c = ctx(&w, light);
             app.done(&i, &o, &c);
+            if app.sync(&c) {
+                *grid = app.grid();
+                term.clear()?;
+            }
         }
         if log.len() > 12 {
             log.drain(..log.len() - 12);

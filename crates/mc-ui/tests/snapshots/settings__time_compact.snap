@@ -1,0 +1,24 @@
+---
+source: crates/mc-ui/tests/settings.rs
+expression: r.draw()
+---
+|Time                    17:33 80%|
+|► Time zone                 UTC+0|
+|  Clock                     17:33|
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|A►next hold►open           B◄back|

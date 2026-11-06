@@ -9,6 +9,7 @@ license.workspace = true
 
 [dependencies]
 mc-core.workspace = true
+mc-air.workspace = true
 mc-node.workspace = true
 heapless.workspace = true
 rand_core.workspace = true
@@ -20,7 +21,7 @@ mousefood = { version = "0.5.3", default-features = false, features = ["fonts", 
 embedded-graphics = "0.8"
 
 [dev-dependencies]
-mc-air.workspace = true
+mc-proto.workspace = true
 rand_chacha.workspace = true
 mc-sim.workspace = true
 insta = "1.49"

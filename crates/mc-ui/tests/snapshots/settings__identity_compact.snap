@@ -1,0 +1,24 @@
+---
+source: crates/mc-ui/tests/settings.rs
+expression: r.draw()
+---
+|Identity                17:33 80%|
+|► My card (QR)                   |
+|  Name                     Tanguy|
+|  Share location              off|
+|  Advert, zero hop               |
+|  Advert, flood                  |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|A►next hold►open           B◄back|

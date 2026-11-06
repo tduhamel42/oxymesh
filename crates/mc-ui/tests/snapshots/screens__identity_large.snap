@@ -5,9 +5,9 @@ expression: "text(&mut app, grid, &c)"
 |Identity     ●2 18:33 87%|
 |▸ My card (QR)           |
 |  Name             Tanguy|
+|  Share location      off|
 |  Advert, zero hop       |
 |  Advert, flood          |
-|                         |
 |                         |
 |                         |
 |                         |

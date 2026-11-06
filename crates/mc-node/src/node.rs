@@ -63,6 +63,10 @@ pub struct UiPrefs {
     pub tz_offset_min: i16,
     /// The first-boot setup has been done or skipped.
     pub setup_done: bool,
+    /// White on black.
+    pub invert: bool,
+    /// Upside down (buttons on top).
+    pub rotate: bool,
 }
 
 impl UiPrefs {
@@ -73,6 +77,8 @@ impl UiPrefs {
         led_unread: true,
         tz_offset_min: 0,
         setup_done: false,
+        invert: false,
+        rotate: false,
     };
 }
 

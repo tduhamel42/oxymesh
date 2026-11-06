@@ -40,6 +40,8 @@ pub enum Mode {
     Hashtag,
     /// A server password: shown, lower and upper case, no completions.
     Password,
+    /// Digits only (PIN, frequency).
+    Digits { limit: usize },
 }
 
 impl Mode {
@@ -49,6 +51,7 @@ impl Mode {
             Mode::Name => 31,
             Mode::Hashtag => 30,
             Mode::Password => 15,
+            Mode::Digits { limit } => limit,
         }
     }
 
@@ -59,6 +62,7 @@ impl Mode {
             Mode::Name => "Save",
             Mode::Hashtag => "Add",
             Mode::Password => "Login",
+            Mode::Digits { .. } => "Save",
         }
     }
 }
@@ -182,6 +186,18 @@ impl Keyboard {
 
     fn refresh(&mut self) {
         let mut c: Vec<Cand> = Vec::new();
+        if let Mode::Digits { limit } = self.mode {
+            c.extend(DIGITS.chars().map(Cand::Char));
+            if self.text.len() == limit {
+                // Full: the action first.
+                c.insert(0, Cand::Done);
+            } else if !self.text.is_empty() {
+                c.push(Cand::Done);
+            }
+            self.cands = c;
+            self.sel = 0;
+            return;
+        }
         let msg = matches!(self.mode, Mode::Message { .. });
         if msg && self.text.is_empty() {
             c.extend(QUICK_REPLIES.iter().map(|r| Cand::Reply(r)));
@@ -218,6 +234,7 @@ impl Keyboard {
             Mode::Hashtag => c.push(Cand::Char('-')),
             Mode::Name => c.extend("-_.'".chars().map(Cand::Char)),
             Mode::Message { .. } | Mode::Password => c.extend(PUNCT.chars().map(Cand::Char)),
+            Mode::Digits { .. } => {}
         }
         if !self.text.trim().is_empty() {
             c.push(Cand::Done);

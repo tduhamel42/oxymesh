@@ -245,4 +245,28 @@ impl Device {
         self.notify(super::UiEvent::Contacts);
         Ok(())
     }
+
+    /// `SET_DEFAULT_FLOOD_SCOPE`: name (1 to 30 bytes) and key; `None` clears it.
+    pub fn set_default_scope(
+        &mut self,
+        scope: Option<([u8; 31], [u8; 16])>,
+        st: &mut impl Storage,
+    ) -> SetResult {
+        match scope {
+            Some((name, key)) => {
+                let n = name_str(&name).len();
+                if n == 0 || n > 30 {
+                    return Err(err::ILLEGAL_ARG);
+                }
+                self.node.prefs.default_scope_name = name;
+                self.node.prefs.default_scope_key = key;
+            }
+            None => {
+                self.node.prefs.default_scope_name = [0; 31];
+                self.node.prefs.default_scope_key = [0; 16];
+            }
+        }
+        self.save_prefs(st);
+        Ok(())
+    }
 }

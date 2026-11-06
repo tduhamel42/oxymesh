@@ -11,7 +11,7 @@ expression: "text(&mut app, grid, &c)"
 |  Notifications          |
 |  Telemetry              |
 |  Power                  |
-|  Time                   |
+|  Time              UTC+0|
 |  System                 |
 |                         |
 |                         |

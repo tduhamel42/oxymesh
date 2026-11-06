@@ -152,7 +152,7 @@ fn advert_from_identity_shows_a_toast() {
     let w = world();
     let c = ctx(&w);
     let mut app = App::new(LARGE, false);
-    // Settings → Identity (2nd) → Advert, zero hop (3rd).
+    // Settings → Identity (2nd) → Advert, zero hop (4th).
     let got = press(
         &mut app,
         &c,
@@ -161,6 +161,7 @@ fn advert_from_identity_shows_a_toast() {
             Long(A),
             Click(A),
             Long(A),
+            Click(A),
             Click(A),
             Click(A),
             Long(A),
