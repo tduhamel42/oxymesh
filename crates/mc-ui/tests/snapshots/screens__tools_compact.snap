@@ -1,0 +1,24 @@
+---
+source: crates/mc-ui/tests/screens.rs
+expression: "text(&mut app, grid, &c)"
+---
+|Tools                   18:33 87%|
+|► Heard nodes                    |
+|  Discover                       |
+|  Trace route                    |
+|  Ping & range                   |
+|  Signal                         |
+|  Packet log                     |
+|  Airtime                        |
+|  Repeater admin                 |
+|  GPS                            |
+|  Map                            |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|A►next hold►open           B◄back|

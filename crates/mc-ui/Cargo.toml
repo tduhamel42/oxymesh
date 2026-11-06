@@ -8,11 +8,19 @@ publish.workspace = true
 license.workspace = true
 
 [dependencies]
+mc-core.workspace = true
+mc-node.workspace = true
 heapless.workspace = true
+qrcodegen-no-heap = "1.8"
 ratatui-core = { version = "0.1", default-features = false }
 ratatui-widgets = { version = "0.3", default-features = false }
 mousefood = { version = "0.5.3", default-features = false, features = ["fonts", "monochrome"] }
 embedded-graphics = "0.8"
+
+[dev-dependencies]
+mc-air.workspace = true
+mc-sim.workspace = true
+insta = "1.49"
 
 [lints]
 workspace = true

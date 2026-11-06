@@ -1,0 +1,24 @@
+---
+source: crates/mc-ui/tests/screens.rs
+expression: "text(&mut app, grid, &c)"
+---
+|About                   18:33 87%|
+|Name                       Tanguy|
+|Key                      7888b006|
+|Firmware          v1.18.0-oxymesh|
+|Frequency             869.618 MHz|
+|Modulation       SF8 BW62.5 CR4/5|
+|Power                      22 dBm|
+|Contacts                    2/350|
+|Channels                     1/40|
+|Battery                    -- 87%|
+|Uptime                 1 h 02 min|
+|For the app              0 queued|
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                           B◄back|

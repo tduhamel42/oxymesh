@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/screens.rs
+expression: "text(&mut app, grid, &c)"
+---
+|Settings        18:33 87%|
+|▸ Radio       SF8 869.618|
+|  Identity         Tanguy|
+|  Bluetooth              |
+|  Contacts               |
+|  Display                |
+|  Notifications          |
+|  Telemetry              |
+|  Power                  |
+|  Time                   |
+|  System                 |
+|                         |
+|                         |
+|                         |
+|A▸next hold▸open   B◂back|

@@ -1,0 +1,24 @@
+---
+source: crates/mc-ui/tests/screens.rs
+expression: "text(&mut app, grid, &c)"
+---
+|Identity                18:33 87%|
+|► My card (QR)                   |
+|  Name                     Tanguy|
+|  Advert, zero hop               |
+|  Advert, flood                  |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|A►next hold►open           B◄back|

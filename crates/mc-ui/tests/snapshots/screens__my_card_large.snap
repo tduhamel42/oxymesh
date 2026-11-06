@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/screens.rs
+expression: "text(&mut app, grid, &c)"
+---
+|My card         18:33 87%|
+|                         |
+|      QR code shown      |
+|     on the device:      |
+|    scan it with the     |
+|      MeshCore app.      |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|    Tanguy · 7888b006    |
+|                   B◂back|

@@ -1,0 +1,24 @@
+---
+source: crates/mc-ui/tests/screens.rs
+expression: "text(&mut app, grid, &c)"
+---
+|Tanguy                        87%|
+|                                 |
+|                                 |
+|              18:33              |
+|                                 |
+|                                 |
+|         Thu 5 Nov 2026          |
+|No new messages                  |
+|Nothing heard yet                |
+|Tanguy · 7888b006                |
+|869.618 MHz SF8 BW62.5           |
+|                                 |
+|                                 |
+|                                 |
+|  Messages                       |
+|► Contacts                      2|
+|  Channels                      1|
+|  Tools                          |
+|  Settings                       |
+|A►next hold►open               B☀|

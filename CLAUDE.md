@@ -114,6 +114,9 @@ python3 -I testdata/air/gen.py > testdata/air/vectors.toml   # over-the-air vect
 cargo run --release -p mc-cli -- info /dev/cu.wchusbserial120          # query a USB companion
 cargo run --release -p mc-cli -- sniff /dev/cu.usbmodem141101 --channel '#test'   # packets heard, decoded
 cargo run --release -p mc-cli -- airtest --ref /dev/cu.usbmodem141101 --dut /dev/cu.wchusbserial120   # mc-air against a C++ node, zero-hop
+cargo run --release -p mc-cli -- ui                  # the device interface in a terminal, on a simulated device (--compact)
+cargo run --release -p mc-cli -- ui --png local/ui-png   # every screen of the tour as panel-exact PNG
+INSTA_UPDATE=always cargo test -p mc-ui              # accept changed screen snapshots (review the diff!)
 cargo run --release -p mc-cli -- duo --a /dev/cu.wchusbserial120 --b /dev/cu.usbmodem141101   # two companions talk (adverts, DMs, channel, pings), zero-hop; --flood for more
 ```
 

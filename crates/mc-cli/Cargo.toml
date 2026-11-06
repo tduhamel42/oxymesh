@@ -15,8 +15,14 @@ path = "src/main.rs"
 mc-core.workspace = true
 mc-air.workspace = true
 mc-proto.workspace = true
+mc-node.workspace = true
+mc-sim.workspace = true
+mc-ui = { path = "../mc-ui" }
 clap.workspace = true
 serialport.workspace = true
+ratatui-core = { version = "0.1", default-features = false }
+ratatui-widgets = { version = "0.3", default-features = false }
+ratatui-crossterm = "0.1"
 
 [lints]
 workspace = true

@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/screens.rs
+expression: "text(&mut app, grid, &c)"
+---
+|Bob             18:33 87%|
+|                         |
+|Messages, ping, trace,   |
+|telemetry and the rest   |
+|arrive in U3.            |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                   B◂back|

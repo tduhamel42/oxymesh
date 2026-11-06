@@ -3,7 +3,9 @@
 mod airtest;
 mod describe;
 mod duo;
+mod png;
 mod port;
+mod ui;
 
 use clap::{Parser, Subcommand};
 use mc_air::crypto::ChannelSecret;
@@ -50,6 +52,15 @@ enum Cmd {
         #[arg(short, long)]
         verbose: bool,
     },
+    /// The device's interface in a terminal, on a simulated device (`--png DIR`: panel images).
+    Ui {
+        /// Compact text (33×20) instead of large (25×15).
+        #[arg(long)]
+        compact: bool,
+        /// Render every screen of the tour as PNG files in this directory, then exit.
+        #[arg(long)]
+        png: Option<std::path::PathBuf>,
+    },
     /// Two companions talk to each other (adverts, DMs, channel, pings), zero-hop unless `--flood`.
     Duo {
         #[arg(long)]
@@ -82,6 +93,7 @@ fn main() {
             dut,
             verbose,
         } => airtest::run(&ref_port, &dut, verbose),
+        Cmd::Ui { compact, png } => ui::run(compact, png.as_deref()),
         Cmd::Duo {
             a,
             b,

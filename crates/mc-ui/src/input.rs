@@ -5,7 +5,7 @@
 //! - `Double`: two short presses within 300 ms;
 //! - `Long`: released after 600 ms (and, for A, before auto-repeat starts at 1 s);
 //! - `Held`: while a button stays down past 1 s, one tick every 250 ms (lists scroll on it,
-//!   hold-to-confirm dialogs count it down).
+//!   hold-to-confirm dialogs count it down), then `HeldEnd` on release (A only).
 //!
 //! Pure and `no_std`: the same code runs on the device, in the emulator and in tests.
 
@@ -26,6 +26,8 @@ pub enum Gesture {
     Long(Button),
     /// Still held; `ms` since the press.
     Held(Button, u32),
+    /// A released after `Held` ticks (B reports `Long` instead): ends a hold-to-confirm.
+    HeldEnd(Button),
 }
 
 pub const DEBOUNCE_MS: u64 = 30;
@@ -139,10 +141,12 @@ impl Gestures {
                         }
                     }
                 } else {
-                    // A auto-repeats once held past 1 s: the release then means nothing more.
-                    if button == Button::B || ticks == 0 {
-                        emit = Some(Gesture::Long(button));
-                    }
+                    // A auto-repeats once held past 1 s: its release then only ends the hold.
+                    emit = Some(if button == Button::B || ticks == 0 {
+                        Gesture::Long(button)
+                    } else {
+                        Gesture::HeldEnd(button)
+                    });
                     State::Idle
                 }
             }
@@ -251,7 +255,10 @@ mod tests {
     #[test]
     fn a_held_repeats_and_does_not_open() {
         let g = run(&[(A, true, 100), (A, false, 1700)], 2000);
-        assert_eq!(g, vec![Held(A, 1000), Held(A, 1250), Held(A, 1500)]);
+        assert_eq!(
+            g,
+            vec![Held(A, 1000), Held(A, 1250), Held(A, 1500), HeldEnd(A)]
+        );
     }
 
     #[test]

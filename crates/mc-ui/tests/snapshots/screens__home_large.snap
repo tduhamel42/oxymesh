@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/screens.rs
+expression: "text(&mut app, grid, &c)"
+---
+|Tanguy                87%|
+|                         |
+|                         |
+|          18:33          |
+|                         |
+|     Thu 5 Nov 2026      |
+|No new messages          |
+|Nothing heard yet        |
+|                         |
+|▸ Messages               |
+|  Contacts              2|
+|  Channels              1|
+|  Tools                  |
+|  Settings               |
+|A▸next hold▸open       B☀|
