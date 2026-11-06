@@ -15,6 +15,7 @@ pub mod app;
 pub mod chrome;
 pub mod clock;
 pub mod demo;
+pub mod geo;
 pub mod input;
 pub mod keyboard;
 pub mod overlay;

@@ -30,6 +30,16 @@ pub enum Intent {
     MarkRead(Peer),
     /// Telemetry request used as a ping.
     Ping([u8; 32]),
+    /// Trace along repeater hashes (`flags & 3`: hash size code).
+    Trace {
+        flags: u8,
+        path: alloc::vec::Vec<u8>,
+    },
+    /// Our position in adverts, degrees × 1e6.
+    SetLocation {
+        lat: i32,
+        lon: i32,
+    },
     ResetPath([u8; 32]),
     SetFavourite([u8; 32], bool),
     RemoveContact([u8; 32]),
@@ -117,6 +127,11 @@ pub fn perform(
             Ok(tag) => Outcome::Request(tag),
             Err(e) => send_err(e),
         },
+        Intent::Trace { flags, path } => match dev.request_trace(now, *flags, path, rng) {
+            Ok(tag) => Outcome::Request(tag),
+            Err(e) => send_err(e),
+        },
+        Intent::SetLocation { lat, lon } => of(dev.set_location(*lat, *lon, st)),
         Intent::ResetPath(key) => of(dev.reset_contact_path(now, key)),
         Intent::SetFavourite(key, on) => of(dev.set_favourite(now, key, *on)),
         Intent::RemoveContact(key) => of(dev.remove_contact(now, key, st)),

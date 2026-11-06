@@ -7,6 +7,7 @@ mod info;
 mod lists;
 mod menu;
 pub mod setup;
+pub mod tools;
 
 use alloc::boxed::Box;
 use alloc::format;
@@ -26,7 +27,7 @@ pub use chat::{Compose, Conversation, Messages, Target};
 pub use contact::{ChannelScreen, ContactScreen};
 pub use home::Home;
 pub use info::{About, Card, Soon, contact_link as info_link};
-pub use lists::{Channels, Contacts};
+pub use lists::{Channels, Contacts, Pick};
 pub use menu::{Action, Item, Menu};
 
 /// Where a menu item leads.
@@ -45,6 +46,14 @@ pub enum Dest {
     Setup,
     /// Edit the node's name.
     Name,
+    Heard,
+    TracePick,
+    RangePick,
+    Signal,
+    Packets,
+    Airtime,
+    Gps,
+    Map,
 }
 
 pub fn open(d: Dest) -> Box<dyn Screen> {
@@ -60,6 +69,14 @@ pub fn open(d: Dest) -> Box<dyn Screen> {
         Dest::MyCard => Box::new(Card::mine()),
         Dest::Setup => Box::new(setup_start()),
         Dest::Name => Box::new(Compose::new(Target::Name { setup: false }, "")),
+        Dest::Heard => Box::new(tools::HeardNodes::default()),
+        Dest::TracePick => Box::new(Contacts::pick_for(lists::Pick::Trace)),
+        Dest::RangePick => Box::new(Contacts::pick_for(lists::Pick::Range)),
+        Dest::Signal => Box::new(tools::Signal),
+        Dest::Packets => Box::new(tools::Packets::default()),
+        Dest::Airtime => Box::new(tools::Airtime),
+        Dest::Gps => Box::new(tools::Gps::default()),
+        Dest::Map => Box::new(tools::Map::default()),
     }
 }
 

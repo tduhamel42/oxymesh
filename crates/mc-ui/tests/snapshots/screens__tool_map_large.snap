@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/screens.rs
+expression: "text(&mut app, grid, &c)"
+---
+|Map 10 km    ●2 18:33 87%|
+|                         |
+|No position: no GPS fix  |
+|and none set by the app. |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|A▸out hold▸reset   B◂back|

@@ -37,12 +37,18 @@ pub enum Overlay {
     },
     /// A QR code of `text`, as large as fits, centered.
     Qr { at: PixelRect, text: String },
+    /// A map: us at the center (a cross), nodes as rings with their names; positions in
+    /// thousandths of the half-width, east and north.
+    Map {
+        at: PixelRect,
+        points: alloc::vec::Vec<(String, i16, i16)>,
+    },
 }
 
 impl Overlay {
     pub fn area(&self) -> PixelRect {
         match self {
-            Overlay::Clock { at, .. } | Overlay::Qr { at, .. } => *at,
+            Overlay::Clock { at, .. } | Overlay::Qr { at, .. } | Overlay::Map { at, .. } => *at,
         }
     }
 }
@@ -58,7 +64,55 @@ pub fn draw<D: DrawTarget<Color = BinaryColor>>(o: &Overlay, d: &mut D) -> Resul
     match o {
         Overlay::Clock { time, .. } => clock(at, *time, d),
         Overlay::Qr { text, .. } => qr(at, text, d),
+        Overlay::Map { points, .. } => map(at, points, d),
     }
+}
+
+fn map<D: DrawTarget<Color = BinaryColor>>(
+    at: PixelRect,
+    points: &[(String, i16, i16)],
+    d: &mut D,
+) -> Result<(), D::Error> {
+    use embedded_graphics::mono_font::MonoTextStyle;
+    use embedded_graphics::primitives::{Circle, Line};
+    use embedded_graphics::text::{Baseline, Text};
+    let ink = PrimitiveStyle::with_stroke(BinaryColor::On, 1);
+    let cx = at.x + at.w as i32 / 2;
+    let cy = at.y + at.h as i32 / 2;
+    let half = (at.w.min(at.h) as i32 / 2 - 4).max(8);
+    let font = MonoTextStyle::new(&mousefood::fonts::MONO_6X10, BinaryColor::On);
+    // Us: a cross in a ring.
+    Line::new(Point::new(cx - 7, cy), Point::new(cx + 7, cy))
+        .into_styled(ink)
+        .draw(d)?;
+    Line::new(Point::new(cx, cy - 7), Point::new(cx, cy + 7))
+        .into_styled(ink)
+        .draw(d)?;
+    Circle::with_center(Point::new(cx, cy), 9)
+        .into_styled(ink)
+        .draw(d)?;
+    for (label, e, n) in points {
+        let x = cx + i32::from(*e) * half / 1000;
+        let y = cy - i32::from(*n) * half / 1000;
+        if x < at.x || y < at.y || x >= at.x + at.w as i32 || y >= at.y + at.h as i32 {
+            continue;
+        }
+        Circle::with_center(Point::new(x, y), 9)
+            .into_styled(ink)
+            .draw(d)?;
+        Circle::with_center(Point::new(x, y), 3)
+            .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
+            .draw(d)?;
+        // Name to the right, or to the left near the right edge.
+        let w = label.chars().count() as i32 * 6;
+        let tx = if x + 7 + w > at.x + at.w as i32 {
+            x - 7 - w
+        } else {
+            x + 7
+        };
+        Text::with_baseline(label, Point::new(tx, y - 5), font, Baseline::Top).draw(d)?;
+    }
+    Ok(())
 }
 
 fn fill<D: DrawTarget<Color = BinaryColor>>(

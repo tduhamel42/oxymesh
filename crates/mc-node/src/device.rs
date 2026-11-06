@@ -17,7 +17,7 @@ use mc_proto::{Command, Response};
 use rand_core::Rng;
 
 use crate::contacts::{Contact, MAX_CHANNELS, MAX_CONTACTS, PATH_UNKNOWN, Slot, name_str};
-use crate::heard::{Heard, HeardNode, LoggedPacket, PacketLog};
+use crate::heard::{Heard, HeardNode, LoggedPacket, Minutes, PacketLog};
 use crate::history::{HISTORY_RECORD, HISTORY_TEXT, History, Msg, Peer, Status};
 use crate::node::{Event, Node, SendError, Sent};
 use crate::persist::{CHANNEL_RECORD, CONTACT_RECORD, PREFS_RECORD, encode_contact, encode_prefs};
@@ -145,6 +145,7 @@ pub struct Device {
     history: History,
     heard: Heard,
     packets: PacketLog,
+    minutes: Minutes,
     outbox: heapless::Vec<screen::Outgoing, OUTBOX>,
     ui_reqs: heapless::Vec<screen::Pending, REQUESTS>,
     replies: heapless::Deque<Reply, REQUESTS>,
@@ -245,6 +246,7 @@ impl Device {
             history: History::new(),
             heard: Heard::new(),
             packets: PacketLog::new(),
+            minutes: Minutes::new(),
             outbox: heapless::Vec::new(),
             ui_reqs: heapless::Vec::new(),
             replies: heapless::Deque::new(),
@@ -284,6 +286,9 @@ impl Device {
         self.pump(now, rng, st);
         self.screen_tick(now, st);
         self.pump(now, rng, st);
+        let s = self.node.disp.stats;
+        self.minutes
+            .update(now, self.packets.total, s.tx_airtime_ms, self.noise_floor);
         if let Some(at) = self.contacts_dirty
             && now >= at
         {
@@ -376,6 +381,16 @@ impl Device {
 
     pub fn packets(&self) -> &PacketLog {
         &self.packets
+    }
+
+    /// The last hour of radio activity, minute by minute.
+    pub fn minutes(&self) -> &Minutes {
+        &self.minutes
+    }
+
+    /// Frames waiting to be transmitted.
+    pub fn tx_queue(&self) -> usize {
+        self.node.disp.len()
     }
 
     fn save_history_slot(&self, slot: usize, st: &mut impl Storage) {

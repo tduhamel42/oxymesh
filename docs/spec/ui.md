@@ -72,7 +72,12 @@ Home (always-on face)
 - **Contact**: type and route (`direct`, `2 hops`, `no route yet`), short key, last heard; then Write, Messages, Ping (round trip shown on the screen), Favourite, Reset route, Trace route (U4), Share (QR card), Remove (hold-to-confirm).
 - **Channels**: `+ Add #channel` (name typed, secret derived from it like the app), then the channels with their unread count. A channel with unread messages opens on its conversation; otherwise on its screen: Messages, Write, Remove (hold-to-confirm).
 - **Compose and quick replies**: §7. 8 quick replies by default: OK, Yes, No, On my way, Call me, Where are you?, Running late, Thanks; plus "Send my position". Sent from the device: 3 direct attempts, then `RESET_PATH` and flood (deliberate deviation 6).
-- **Tools**:
+- **Tools** (U4; Discover and Repeater admin in its second part):
+  - Signal strength is shown as bars from the SNR: `▂▄▆█` at 10 dB and above, `▂▄▆` from 5, `▂▄` from 0, `▂` from −7.
+  - The map is a pixel overlay on the panel (a cross for us, rings and names for the nodes; the braille canvas is only the terminal's fallback): braille dots are about 400 m apart at 10 km, too coarse to see.
+  - Airtime compares the last hour of transmission with the duty cycle of the sub-band the frequency falls in (`config/eu868.toml`), as a filled bar: a line gauge is invisible in black and white.
+  - Ping & range: a telemetry request every 5 s while the screen is open (hold A pauses), answered count, RTT, the SNR of each answer, and a strip of hits (`█`) and misses (`·`).
+  - Trace route: along the contact's route and back (turning at a repeater contact itself, else at the last repeater of the route); per-hop SNR, then the SNR back here.
   - Heard nodes (name, type, signal bars and SNR, hops, distance, last heard; repeaters first).
   - Discover (zero-hop discovery, SNR both ways, at most once every 5 s).
   - Trace route (per-hop SNR bars, both directions).

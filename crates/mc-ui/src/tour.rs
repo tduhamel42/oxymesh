@@ -25,6 +25,40 @@ pub const TOUR: &[(&str, &[Gesture])] = &[
     ("channels", &[Click(A), Click(A), Long(A)]),
     ("add_channel", &[Click(A), Click(A), Long(A), Long(A)]),
     ("tools", &[Click(A), Click(A), Click(A), Long(A)]),
+    (
+        "tool_heard",
+        &[Click(A), Click(A), Click(A), Long(A), Long(A)],
+    ),
+    (
+        "tool_signal",
+        &[
+            Click(A),
+            Click(A),
+            Click(A),
+            Long(A),
+            Click(A),
+            Click(A),
+            Click(A),
+            Click(A),
+            Long(A),
+        ],
+    ),
+    (
+        "tool_gps",
+        &[
+            Click(A),
+            Click(A),
+            Click(A),
+            Long(A),
+            Double(A),
+            Double(A),
+            Long(A),
+        ],
+    ),
+    (
+        "tool_map",
+        &[Click(A), Click(A), Click(A), Long(A), Double(A), Long(A)],
+    ),
     ("settings", &SETTINGS),
     ("identity", &[Double(A), Long(A), Click(A), Long(A)]),
     (

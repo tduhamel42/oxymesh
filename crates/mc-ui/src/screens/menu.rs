@@ -125,46 +125,22 @@ pub fn tools() -> Menu {
     Menu::new(
         "Tools",
         &[
-            item(
-                "Heard nodes",
-                Action::Soon("Nodes heard, signal, hops and distance: arrives in U4."),
-            ),
+            item("Heard nodes", Action::Open(Dest::Heard)),
             item(
                 "Discover",
-                Action::Soon("Zero-hop discovery with SNR both ways: arrives in U4."),
+                Action::Soon("Zero-hop discovery: arrives in U4 (part 2)."),
             ),
-            item(
-                "Trace route",
-                Action::Soon("Per-hop SNR in both directions: arrives in U4."),
-            ),
-            item(
-                "Ping & range",
-                Action::Soon("Repeated pings, success rate, RTT and SNR: arrives in U4."),
-            ),
-            item(
-                "Signal",
-                Action::Soon("RSSI, SNR, noise floor and packet rate: arrives in U4."),
-            ),
-            item(
-                "Packet log",
-                Action::Soon("Recent packets, decoded: arrives in U4."),
-            ),
-            item(
-                "Airtime",
-                Action::Soon("Airtime and the duty-cycle budget: arrives in U4."),
-            ),
+            item("Trace route", Action::Open(Dest::TracePick)),
+            item("Ping & range", Action::Open(Dest::RangePick)),
+            item("Signal", Action::Open(Dest::Signal)),
+            item("Packet log", Action::Open(Dest::Packets)),
+            item("Airtime", Action::Open(Dest::Airtime)),
             item(
                 "Repeater admin",
-                Action::Soon("Login, status and neighbours: arrives in U4."),
+                Action::Soon("Login, status and neighbours: arrives in U4 (part 2)."),
             ),
-            item(
-                "GPS",
-                Action::Soon("Fix, satellites, position: arrives in U4."),
-            ),
-            item(
-                "Map",
-                Action::Soon("You and your contacts on a map: arrives in U4."),
-            ),
+            item("GPS", Action::Open(Dest::Gps)),
+            item("Map", Action::Open(Dest::Map)),
         ],
     )
 }

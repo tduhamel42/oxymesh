@@ -18,18 +18,31 @@ use crate::app::{Input, Nav, Screen, Ui};
 use crate::chrome::Footer;
 use crate::clock;
 
+/// What a contact is picked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pick {
+    Write,
+    Range,
+    Trace,
+}
+
 #[derive(Debug, Default)]
 pub struct Contacts {
     state: ListState,
-    /// Choosing whom to write to (Messages → New message).
-    pick: bool,
+    /// Choosing a contact for something rather than browsing.
+    pick: Option<Pick>,
 }
 
 impl Contacts {
+    /// Messages → New message.
     pub fn picker() -> Self {
+        Self::pick_for(Pick::Write)
+    }
+
+    pub fn pick_for(p: Pick) -> Self {
         Self {
             state: ListState::default(),
-            pick: true,
+            pick: Some(p),
         }
     }
 }
@@ -64,8 +77,12 @@ fn sorted(ui: &Ui<'_>) -> Vec<(String, String)> {
 
 impl Screen for Contacts {
     fn title(&self, ui: &Ui<'_>) -> String {
-        if self.pick {
-            String::from("Write to…")
+        if let Some(p) = self.pick {
+            String::from(match p {
+                Pick::Write => "Write to…",
+                Pick::Range => "Range test with…",
+                Pick::Trace => "Trace to…",
+            })
         } else {
             format!("Contacts {}", ui.ctx.dev.node.contacts.list.len())
         }
@@ -92,11 +109,20 @@ impl Screen for Contacts {
         let Some(c) = list.get(self.state.selected().unwrap_or(0)) else {
             return Nav::Stay;
         };
-        if self.pick {
-            let mut p = [0u8; 6];
-            p.copy_from_slice(&c.pub_key[..6]);
-            let peer = mc_node::history::Peer::Contact(p);
-            return Nav::Replace(Box::new(Compose::to(peer)));
+        match self.pick {
+            Some(Pick::Write) => {
+                let mut p = [0u8; 6];
+                p.copy_from_slice(&c.pub_key[..6]);
+                let peer = mc_node::history::Peer::Contact(p);
+                return Nav::Replace(Box::new(Compose::to(peer)));
+            }
+            Some(Pick::Range) => {
+                return Nav::Replace(Box::new(super::tools::RangeTest::new(c.pub_key)));
+            }
+            Some(Pick::Trace) => {
+                return Nav::Replace(Box::new(super::tools::Trace::new(c.pub_key)));
+            }
+            None => {}
         }
         Nav::Push(Box::new(ContactScreen::new(c.pub_key)))
     }

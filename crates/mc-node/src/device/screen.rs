@@ -58,6 +58,8 @@ pub struct Reply {
     /// False: no answer before the timeout.
     pub ok: bool,
     pub rtt_ms: u32,
+    /// SNR ×4 of the answer as we heard it (0 on a timeout).
+    pub snr4: i8,
     /// Telemetry: CayenneLPP. Status: the status block. Trace: hashes, SNRs ×4, final SNR ×4.
     pub data: heapless::Vec<u8, 136>,
 }
@@ -299,11 +301,18 @@ impl Device {
         if self.replies.is_full() {
             let _ = self.replies.pop_front();
         }
+        // The answer is the last packet logged before its event.
+        let snr4 = if ok {
+            self.packets.recent().next().map(|p| p.snr4).unwrap_or(0)
+        } else {
+            0
+        };
         let _ = self.replies.push_back(Reply {
             tag: p.tag,
             kind: p.kind,
             ok,
             rtt_ms: ms(now, p.sent),
+            snr4,
             data: d,
         });
         self.notify(UiEvent::Reply { tag: p.tag });

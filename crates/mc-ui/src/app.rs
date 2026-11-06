@@ -40,6 +40,17 @@ pub struct Ctx<'a> {
     pub battery_percent: Option<u8>,
     pub charging: bool,
     pub light: bool,
+    /// The GPS, when it has a fix.
+    pub gps: Option<GpsFix>,
+}
+
+/// A GPS position fix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GpsFix {
+    /// Degrees × 1e6.
+    pub lat: i32,
+    pub lon: i32,
+    pub satellites: u8,
 }
 
 /// Context handed to screens.
@@ -85,6 +96,9 @@ pub enum Nav {
 pub enum Paint {
     Clock(Option<(u8, u8)>),
     Qr(String),
+    /// Map points: label and position in thousandths of the half-width (east, north); we are
+    /// at the center.
+    Map(Vec<(String, i16, i16)>),
 }
 
 pub trait Screen: core::fmt::Debug {
@@ -119,6 +133,10 @@ pub trait Screen: core::fmt::Debug {
     /// The text entry, for tests and scripts.
     fn keyboard(&self) -> Option<&Keyboard> {
         None
+    }
+    /// Called regularly while the screen is shown (the range test sends its pings here).
+    fn tick(&mut self, _ui: &Ui<'_>) -> Nav {
+        Nav::Stay
     }
 }
 
@@ -253,15 +271,24 @@ impl App {
         self.dirty = true;
     }
 
-    /// Timers: toasts expire.
-    pub fn tick(&mut self, now_ms: u64) {
+    /// Timers: toasts expire, the screen on top may act. Call a few times a second.
+    pub fn tick(&mut self, ctx: &Ctx<'_>) {
         if self
             .toast
             .as_ref()
-            .is_some_and(|(_, until)| now_ms >= *until)
+            .is_some_and(|(_, until)| ctx.now_ms >= *until)
         {
             self.toast = None;
             self.dirty = true;
+        }
+        let ui = make_ui(self.grid, ctx);
+        let nav = match self.stack.last_mut() {
+            Some(s) => s.tick(&ui),
+            None => Nav::Stay,
+        };
+        if !matches!(nav, Nav::Stay) {
+            self.dirty = true;
+            self.apply(nav, ctx);
         }
     }
 
@@ -467,6 +494,7 @@ impl App {
                 self.overlays.push(match paint {
                     Paint::Clock(time) => Overlay::Clock { at, time },
                     Paint::Qr(text) => Overlay::Qr { at, text },
+                    Paint::Map(points) => Overlay::Map { at, points },
                 });
             }
         }

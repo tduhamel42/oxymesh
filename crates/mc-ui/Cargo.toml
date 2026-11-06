@@ -13,6 +13,7 @@ mc-node.workspace = true
 heapless.workspace = true
 rand_core.workspace = true
 qrcodegen-no-heap = "1.8"
+libm = "0.2"
 ratatui-core = { version = "0.1", default-features = false }
 ratatui-widgets = { version = "0.3", default-features = false }
 mousefood = { version = "0.5.3", default-features = false, features = ["fonts", "monochrome"] }

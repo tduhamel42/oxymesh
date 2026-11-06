@@ -1,0 +1,24 @@
+---
+source: crates/mc-ui/tests/tools.rs
+expression: r.draw()
+---
+|Heard 3                 18:35 80%|
+|► Relay Aiguille           ▂▄▆█ d|
+|  Alice                    ▂▄▆█ d|
+|  Bob                      ▂▄▆█ d|
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|A►next hold►open           B◄back|

@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/tools.rs
+expression: r.draw()
+---
+|Map 10 km       18:35 80%|
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|           ⢀⣤meAlice     |
+|           ⠉⠛⠉           |
+|                         |
+|             ⢠Relay Ai   |
+|             ⠈⠉          |
+|                         |
+|                         |
+|                  2 shown|
+|A▸out hold▸reset   B◂back|

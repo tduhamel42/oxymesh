@@ -66,6 +66,7 @@ fn ctx(w: &mc_sim::World) -> Ctx<'_> {
         battery_percent: Some(87),
         charging: false,
         light: false,
+        gps: None,
     }
 }
 
@@ -168,7 +169,11 @@ fn advert_from_identity_shows_a_toast() {
     assert_eq!(got, vec![Intent::SendAdvert { flood: false }]);
     let screen = text(&mut app, LARGE, &c);
     assert!(screen.contains("|Advert sent"), "{screen}");
-    app.tick(c.now_ms + 3_000);
+    let later = Ctx {
+        now_ms: c.now_ms + 3_000,
+        ..c
+    };
+    app.tick(&later);
     assert!(!text(&mut app, LARGE, &c).contains("Advert sent"));
 }
 

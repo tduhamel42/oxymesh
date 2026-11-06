@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/screens.rs
+expression: "text(&mut app, grid, &c)"
+---
+|Signal       ●2 18:33 87%|
+|Last      10.0 dB -90 dBm|
+|Noise floor      -120 dBm|
+|Packets         0/min 0/h|
+|                         |
+|Noise floor, 1 h         |
+|                         |
+|                         |
+|                         |
+|Packets per minute       |
+|                         |
+|                         |
+|                         |
+|                         |
+|                   B◂back|

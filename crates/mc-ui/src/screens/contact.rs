@@ -15,7 +15,7 @@ use ratatui_widgets::list::ListState;
 use ratatui_widgets::paragraph::Paragraph;
 
 use super::chat::{Compose, Conversation};
-use super::{Card, Soon, draw_list, name_of, rows, short_key, step};
+use super::{Card, draw_list, name_of, rows, short_key, step};
 use crate::act::{Intent, Outcome};
 use crate::app::{Confirm, Input, Nav, Screen, Ui};
 use crate::clock;
@@ -162,7 +162,7 @@ impl Screen for ContactScreen {
         let Some(c) = self.contact(ui) else {
             return Nav::Pop;
         };
-        let (act, label) = ACTS[self.state.selected().unwrap_or(0) % ACTS.len()];
+        let (act, _) = ACTS[self.state.selected().unwrap_or(0) % ACTS.len()];
         let key = self.key;
         match act {
             Act::Write => Nav::Push(Box::new(Compose::to(self.peer()))),
@@ -179,10 +179,7 @@ impl Screen for ContactScreen {
                 )
             }
             Act::ResetRoute => Nav::IntentToast(Intent::ResetPath(key), "Route reset"),
-            Act::Trace => Nav::Push(Box::new(Soon::new(
-                label,
-                "Trace route arrives with the tools (U4).",
-            ))),
+            Act::Trace => Nav::Push(Box::new(super::tools::Trace::new(key))),
             Act::Share => Nav::Push(Box::new(Card::of(&name_of(&c.name), &c.pub_key))),
             Act::Remove => Nav::Confirm(
                 Confirm::new(

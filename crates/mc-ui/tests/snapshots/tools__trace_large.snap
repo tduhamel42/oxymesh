@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/tools.rs
+expression: s
+---
+|Trace route     18:35 80%|
+|1 hop there and back     |
+|1 Relay Aig… ▂▄▆█ 10.0 dB|
+|Back here    ▂▄▆█ 10.0 dB|
+|Round trip 0.59 s        |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|hold▸trace         B◂back|

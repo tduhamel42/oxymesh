@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/tools.rs
+expression: r.draw()
+---
+|Airtime         18:35 80%|
+|TX total            0.7 s|
+|RX total            2.3 s|
+|TX last hour        0.7 s|
+|Queue                   0|
+|Sent / received       1/3|
+|                         |
+|Duty 0.02% of 10.0% (g3) |
+|·························|
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                   B◂back|

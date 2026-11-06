@@ -11,7 +11,7 @@ use mc_core::{Duration, Instant};
 use mc_node::Event;
 use mc_proto::Command;
 use mc_sim::World;
-use mc_ui::app::{App, Ctx};
+use mc_ui::app::{App, Ctx, GpsFix};
 use mc_ui::input::{Button, Gesture};
 use mc_ui::panel::{self, COMPACT, Frame, Grid, LARGE};
 use mc_ui::{Outcome, perform};
@@ -35,12 +35,24 @@ use crate::port::now_unix;
 
 const ME: usize = 0;
 
-/// The device ("oxymesh") and two neighbours.
+/// The device ("oxymesh") and three neighbours: Alice (echo bot, with a position), Bob
+/// (posts on Public, answers pings) and a relay that forwards (with a position).
 fn world(clock: u32) -> World {
     let mut w = World::new(7);
     let me = w.add("oxymesh", |_| {});
-    for name in ["Alice", "Bob"] {
-        let i = w.add(name, |_| {});
+    let alice = w.add("Alice", |p| {
+        p.advert_loc_policy = 1;
+        p.lat = 45_930_000;
+        p.lon = 6_900_000;
+    });
+    let bob = w.add("Bob", |p| p.telemetry_base = 2);
+    let relay = w.add("Relay Aiguille", |p| {
+        p.repeat = true;
+        p.advert_loc_policy = 1;
+        p.lat = 45_878_600;
+        p.lon = 6_887_200;
+    });
+    for i in [alice, bob, relay] {
         w.link(me, i);
     }
     let mut frame = [0u8; 8];
@@ -64,6 +76,12 @@ fn ctx(w: &World, light: bool) -> Ctx<'_> {
         battery_percent: Some(87),
         charging: false,
         light,
+        // A fixed fix near Chamonix, for the GPS and Map tools.
+        gps: Some(GpsFix {
+            lat: 45_923_700,
+            lon: 6_869_400,
+            satellites: 9,
+        }),
     }
 }
 
@@ -116,7 +134,7 @@ fn say_channel(w: &mut World, from: usize, text: &str) {
 fn render_tour(dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let mut w = world(1_793_973_720);
-    for i in [1, 2, ME] {
+    for i in [1, 2, 3, ME] {
         let now = w.now;
         let _ = w.node(i).send_self_advert(now, false);
         w.run(Duration::from_secs(3));
@@ -196,7 +214,7 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
     let mut log: Vec<String> = Vec::new();
     // Alice and Bob advertise themselves a few seconds in, then every 2 minutes; the device
     // too, so they can write to it. Alice greets at 10 s and echoes; Bob posts on Public.
-    let mut next_advert = [(1usize, 3_000u64), (2, 7_000), (ME, 4_000)];
+    let mut next_advert = [(1usize, 3_000u64), (2, 7_000), (3, 5_000), (ME, 4_000)];
     let mut alice_hello = Some(10_000u64);
     let mut bob_post = 30_000u64;
     loop {
@@ -235,13 +253,14 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
         // Node event copies (simulator tap) are not needed beyond the bot: keep memory flat.
         w.nodes[ME].events.clear();
         w.nodes[2].events.clear();
+        w.nodes[3].events.clear();
         let events = std::mem::take(&mut w.nodes[ME].ui);
         {
             let c = ctx(&w, light);
             for e in &events {
                 app.event(e, &c);
             }
-            app.tick(c.now_ms);
+            app.tick(&c);
         }
         // A held with Space: ticks every 250 ms from 1 s.
         let mut gestures: Vec<Gesture> = Vec::new();

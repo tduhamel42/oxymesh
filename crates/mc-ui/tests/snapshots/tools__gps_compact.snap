@@ -1,0 +1,24 @@
+---
+source: crates/mc-ui/tests/tools.rs
+expression: r.draw()
+---
+|GPS                     18:35 80%|
+|Fix                  9 satellites|
+|Lat                     45.9237 N|
+|Lon                      6.8694 E|
+|Shared position              none|
+|                                 |
+|► Share this position            |
+|  Alice                  2.4 km E|
+|  Relay Aiguille         5.2 km S|
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|                                 |
+|A►next hold►open           B◄back|
