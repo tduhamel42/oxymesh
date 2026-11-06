@@ -86,7 +86,7 @@ Findings:
   - a scan duplicate list of 10 (we never scan) saves 1.1 KB.
 - **Flash:** image 1,269,568 B of 1,835,008 (69 %). Bluetooth adds ≈ 300 KB of code and 27 KB of IRAM.
 - **Interface heap on the host** (`crates/mc-ui/tests/heap.rs`): worst screen is compose on the compact grid, 62.7 KB on the host. The host is 64-bit, ≈ 1.45× the device, so ≈ 43 KB on the M5.
-- **One connection only.** An app that reconnects at once (seen here: an app running the companion startup sequence, APP_START, DEVICE_QUERY, default scope, contacts) holds it, and the M5 stops advertising, like the C++. `mc` then cannot get in. `mc` reaches a companion it knows by its CoreBluetooth identifier, cached in `~/Library/Caches/oxymesh/ble-peripherals`.
+- **One connection only.** An app that reconnects at once (seen here: Tanguy's phone, paired with the M5, running the companion startup sequence: APP_START, DEVICE_QUERY, default scope, contacts) holds it, and the M5 stops advertising, like the C++. `mc` then cannot get in. `mc` reaches a companion it knows by its CoreBluetooth identifier, cached in `~/Library/Caches/oxymesh/ble-peripherals`.
 
 ## 2026-11-06 — message bursts while the M5 redraws (U6)
 
