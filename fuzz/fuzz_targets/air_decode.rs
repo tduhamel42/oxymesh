@@ -10,7 +10,9 @@ use mc_air::payload::{Advert, GroupDataPlain, GroupTxtPlain, PathPlain, Payload,
 use mc_air::{AppData, Packet};
 
 fuzz_target!(|data: &[u8]| {
-    let Some((&which, bytes)) = data.split_first() else { return };
+    let Some((&which, bytes)) = data.split_first() else {
+        return;
+    };
     match which % 3 {
         0 => {
             if let Ok(p) = Packet::decode(bytes) {

@@ -35,6 +35,8 @@ if [ "$found" -ne 0 ]; then echo "flottant trouvé dans une crate no_std" >&2; e
 
 step "firmware (esp32s3)"
 if [ "${CI_SKIP_FIRMWARE:-0}" != "1" ] && [ -f firmware/esp32s3/Cargo.toml ] && rustup toolchain list | grep -q '^esp'; then
+  # L'éditeur de liens Xtensa vient de l'environnement d'espup.
+  [ -f "$HOME/export-esp.sh" ] && . "$HOME/export-esp.sh"
   (cd firmware/esp32s3 && cargo build --quiet --release)
 else
   echo "sauté : pas de firmware, CI_SKIP_FIRMWARE=1 ou chaîne esp absente (espup install --targets esp32s3)"
