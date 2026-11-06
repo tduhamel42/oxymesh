@@ -33,8 +33,53 @@ Other findings:
 - In this run, "the C++ firmware" in the check names is oxymesh: the test identity talks to the device under test, the Heltec only listens and injects raw packets.
 - Result: **10 checks out of 10**, the same checks as the C++ run above. ACK round trip 692 ms (824 ms with the C++ firmware on the M5).
 
-## 2026-11-05 — one-hour fuzz run
+## 2026-11-06 — `mc duo`: oxymesh (M5) and C++ (Heltec) talk to each other (MC4)
+
+- Setup: A = ThinkNode M5 running oxymesh `mc-m5` (`/dev/cu.wchusbserial210`); B = Heltec V4 running `companion_radio_usb` v1.18.0 (`/dev/cu.usbmodem1101`). Region fr. No injected frames: each device builds its own packets from companion commands. Everything zero-hop.
+- Command: `mc duo --a /dev/cu.wchusbserial210 --b /dev/cu.usbmodem1101 --pings 10`.
+- Result: **12 checks out of 12**.
+
+| Check | A → B | B → A |
+|---|---|---|
+| Zero-hop advert reported (`ADVERT`) | after 2.5 s | after 1.2 s |
+| DM sent direct (`SENT`) | ok | ok |
+| DM received (`MSG_WAITING`, `SYNC_NEXT_MESSAGE`) | identical text, `path_len` 0xFF, SNR 12.0 dB | identical text, `path_len` 0xFF, SNR 13.25 dB |
+| Delivery confirmed (`SEND_CONFIRMED`) | round trip 1125 ms | round trip 1257 ms |
+| Channel datagram, zero hop (`CHANNEL_DATA_RECV`) | `path_len` 0xFF, SNR 13.0 dB | `path_len` 0xFF, SNR 12.25 dB |
+| Telemetry requests as pings | 10/10, RTT 1035 / 1040 / 1047 ms | 10/10, RTT 1008 / 1015 / 1025 ms |
+
+Findings:
+- **Bug, fixed:** oxymesh reported a zero-hop channel message or datagram with `path_len` 0x00. The C++ firmware reports 0xFF for any direct packet (M:572, 617). companion.md §5 now says so, and an mc-sim test covers it.
+- **Test artifact:** GRP_DATA has no nonce. The same data on the same channel within one second gives byte-identical packets, and the receiver drops the second one as already seen (the C++ firmware does the same). `mc duo` puts the sender in the data.
+- **Open:** telemetry pings that start right after `SET_OTHER_PARAMS` (which `mc duo` uses to allow telemetry) lose their second exchange.
+  - Without a pause, in 6 runs, A → B lost ping 2 in 5 and B → A in 2; the other pings were all answered.
+  - The lost packet is always the one oxymesh sends and the C++ firmware never sees: A counts it as sent, while B's receive counter and `LOG_RX_DATA` miss it, with no CRC error.
+  - Zero-hop datagrams sent every 600 ms during the 4 s after a prefs save, on either device, all arrived (48/48), so it is not simply "deaf after a flash write".
+  - With 100 to 300 ms before each ping: 0 lost in 2 runs. With 3 s between the prefs change and the first ping: 0 lost in 5 runs (100 pings). `mc duo` now waits 3 s.
+  - Not reproduced between two oxymesh nodes in mc-sim. Cause unknown; next step is a run with the C++ firmware on both ends.
+
+## 2026-11-06 — U0: Ratatui on the M5's e-paper (ADR-0008)
+
+- Setup: ThinkNode M5 running `ui-spike` (`firmware/esp32s3/src/bin/ui-spike.rs`): `mc_ui::demo` (header, list with a reversed selection, wrapped paragraph, sparkline, footer) drawn by Ratatui through mousefood into the panel frame, `esp-alloc` heap of 96 KB with `internal-heap-stats`. A frame every 4 s, grid switch every 6 frames. Logs `local/ui-spike-*.log`.
+- Flash: the spike image is 346 KB with esp-hal and the fonts; the companion `mc-m5` is 493 KB, for a 1.75 MB app partition.
+
+| | Large 25×15 | Compact 33×20 |
+|---|---|---|
+| Heap, steady (two cell buffers) | 21,008 B | 36,968 B |
+| Heap, peak while drawing | 22,584 B | 39,376 B |
+| Draw, whole screen | 6 ms (15 ms the first time) | 6 ms (11 ms the first time) |
+| Frame sent to the panel (SPI 4 MHz) | 20 ms | 20 ms |
+| Partial refresh until BUSY drops | 542 ms | 542 ms |
+| Input to visible | 549 ms | 549 ms |
+
+- Full refresh: 2007 ms.
+- First version, with `Layout`: peak 55.5 KB (large) and 75.2 KB (compact), draw 21 ms. The constraint solver accounted for about 30 KB and 15 ms per draw.
+- First version, with `..EmbeddedBackendConfig::default()`: 3.8 KB more heap after each grid switch. The default config builds the 6×10 font atlas and leaks it (`FontAtlas::leak`); it now has zero leak (host counting allocator: 0 B after create, draw and drop).
+- RAM of `mc-m5` (static): `.data` 156.5 KB (of which `Device` 147 KB), `.bss` 16.8 KB, `.rwdata` 10.7 KB. The stack takes the rest of the 334 KB main DRAM (≈ 158 KB); `dram2` (72 KB) is free for Bluetooth.
+
+## 2026-11-05 — one-hour fuzz runs
 
 | Target | Executions | Duration | Crashes |
 |---|---|---|---|
 | `air_decode` (MC1) | 351,327,535 | 3601 s | 0 |
+| `cmd_decode` (MC2, 2026-11-06) | 388,902,314 | 3601 s | 0 |

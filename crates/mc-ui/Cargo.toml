@@ -1,0 +1,18 @@
+[package]
+name = "mc-ui"
+description = "oxymesh on-device interface: screens, two-button gestures, e-paper panel (docs/spec/ui.md)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+heapless.workspace = true
+ratatui-core = { version = "0.1", default-features = false }
+ratatui-widgets = { version = "0.3", default-features = false }
+mousefood = { version = "0.5.3", default-features = false, features = ["fonts", "monochrome"] }
+embedded-graphics = "0.8"
+
+[lints]
+workspace = true

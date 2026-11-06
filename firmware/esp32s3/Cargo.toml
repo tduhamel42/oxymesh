@@ -11,6 +11,11 @@ version      = "0.1.0"
 name = "mc-m5"
 path = "./src/bin/mc-m5.rs"
 
+# U0 spike (docs/decisions/0008): Ratatui + mousefood on the e-paper, heap and timing measurements.
+[[bin]]
+name = "ui-spike"
+path = "./src/bin/ui-spike.rs"
+
 [dependencies]
 esp-hal = { version = "~1.2.2", features = ["esp32s3", "log-04", "unstable"] }
 esp-rtos = { version = "0.4.0", features = ["embassy", "esp32s3", "log-04"] }
@@ -31,6 +36,9 @@ mc-core = { path = "../../crates/mc-core" }
 mc-air = { path = "../../crates/mc-air" }
 mc-node = { path = "../../crates/mc-node" }
 mc-proto = { path = "../../crates/mc-proto" }
+mc-ui = { path = "../../crates/mc-ui" }
+ratatui-core = { version = "0.1", default-features = false }
+esp-alloc = { version = "0.11", features = ["esp32s3", "internal-heap-stats"] }
 esp-storage = { version = "0.10", features = ["esp32s3"] }
 sequential-storage = "8.0"
 embassy-embedded-hal = "0.6"

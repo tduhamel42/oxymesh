@@ -23,6 +23,9 @@ pkgs=()
 for p in "${NOSTD[@]}"; do pkgs+=(-p "$p"); done
 cargo build --quiet --target thumbv7em-none-eabihf "${pkgs[@]}"
 
+step "no_std with alloc (mc-ui)"
+cargo build --quiet --target thumbv7em-none-eabihf -p mc-ui
+
 step "no floats in the no_std crates"
 found=0
 for p in "${NOSTD[@]}"; do

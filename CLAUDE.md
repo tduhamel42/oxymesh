@@ -40,7 +40,7 @@ crates/
   mc-proto/   no_std  companion protocol (docs/spec/companion.md), both directions; Strict (app) and Device decoding
   mc-node/    no_std  the state machine: dispatcher, mesh, chat, companion, settings; persistence as StoreOp
   mc-spiffs/  no_std  read-only SPIFFS reader and importers for the C++ firmware
-  mc-ui/      no_std  200×200 screens (docs/spec/ui.md) on embedded-graphics, e-paper refresh policy
+  mc-ui/      no_std  200×200 screens (docs/spec/ui.md) on Ratatui + mousefood, with alloc (ADR-0008); gestures, e-paper refresh policy
   mc-sim/     std     simple simulated radio linking several mc-node instances
   mc-cli/     std     `mc` binary: info, probe, sniff, inject, emu, conform, spiffs, ui
 firmware/esp32s3/     SEPARATE workspace (Xtensa `esp` toolchain): boards, drivers, runner
@@ -56,6 +56,7 @@ Part of the code comes from loranet (`~/Documents/Perso/Dev/loranet`, same autho
 ## 3. Code rules
 
 - Core crates: `#![no_std]`, `#![forbid(unsafe_code)]` (workspace lints), **no allocation, no floats** (`clippy::float_arithmetic` denied, `scripts/ci.sh` searches for `f32`/`f64`).
+- `mc-ui` is the one `no_std` crate that allocates (Ratatui's cell buffers, ADR-0008). On the device: one long-lived `Terminal`, plain `Rect` arithmetic instead of `Layout`, mousefood config built field by field (its `default()` leaks a font atlas).
 - **Hardened parsers** (they read bytes from strangers over the air or from an app):
   - zero-copy on `&[u8]`, never panic on external input: clippy `deny(unwrap_used, expect_used, indexing_slicing, panic)` outside tests;
   - over the air: `decode → encode` must give back exactly the same bytes, otherwise reject;
@@ -113,8 +114,9 @@ python3 -I testdata/air/gen.py > testdata/air/vectors.toml   # over-the-air vect
 cargo run --release -p mc-cli -- info /dev/cu.wchusbserial120          # query a USB companion
 cargo run --release -p mc-cli -- sniff /dev/cu.usbmodem141101 --channel '#test'   # packets heard, decoded
 cargo run --release -p mc-cli -- airtest --ref /dev/cu.usbmodem141101 --dut /dev/cu.wchusbserial120   # mc-air against a C++ node, zero-hop
+cargo run --release -p mc-cli -- duo --a /dev/cu.wchusbserial120 --b /dev/cu.usbmodem141101   # two companions talk (adverts, DMs, channel, pings), zero-hop; --flood for more
 ```
 
 The Heltec also runs loranet's echo bot (`ln mc bot`, started from `../loranet`): ask Tanguy before stopping it, then restart it afterwards with the same command and the same `--state`.
 
-Devices on Tanguy's Mac: Heltec V4 (C++ reference) on `/dev/cu.usbmodem141101`, ThinkNode M5 on `/dev/cu.wchusbserial120` (CH340 bridge, WCH driver installed).
+Devices on Tanguy's Mac: Heltec V4 (C++ reference) on `/dev/cu.usbmodem*`, ThinkNode M5 on `/dev/cu.wchusbserial*` (CH340 bridge, WCH driver installed). The numbers change whenever USB re-enumerates: check `ls /dev/cu.*` first.
