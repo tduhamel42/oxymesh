@@ -18,13 +18,13 @@ use crate::port::{Port, now_unix};
 const ALICE_NAME: &str = "oxymesh-alice";
 const CHANNEL: &str = "#oxymesh-test";
 
-struct Report {
-    ok: usize,
-    failed: usize,
+pub(crate) struct Report {
+    pub(crate) ok: usize,
+    pub(crate) failed: usize,
 }
 
 impl Report {
-    fn check(&mut self, what: &str, res: Result<String, String>) {
+    pub(crate) fn check(&mut self, what: &str, res: Result<String, String>) {
         match res {
             Ok(detail) => {
                 self.ok += 1;
@@ -84,7 +84,7 @@ fn heard<T>(
     })
 }
 
-fn expect_ok(frame: &[u8], what: &str) -> Result<(), String> {
+pub(crate) fn expect_ok(frame: &[u8], what: &str) -> Result<(), String> {
     match Response::decode(frame) {
         Ok(Response::Ok) => Ok(()),
         other => Err(format!("{what}: {other:?}")),

@@ -217,9 +217,9 @@ Only one request (login, status, telemetry, discovery, binary) pending at a time
 
 **CONTACT_MSG_RECV_V3 (16)** (M:440-467): SNR×4, 0, 0, sender prefix (6), path_len (the packet's if received by flood, **0xFF if direct**), txt_type, ts (4), author prefix (4, only for txt_type 2), text. **Legacy (7)**: the same without `[1..3]`.
 
-**CHANNEL_MSG_RECV_V3 (17)** (M:558-583): SNR×4, 0, 0, channel, path_len, txt_type (0), ts (4), `"Name: text"`. **Legacy (8)**: the same without `[1..3]`.
+**CHANNEL_MSG_RECV_V3 (17)** (M:558-583): SNR×4, 0, 0, channel, path_len (the packet's if received by flood, **0xFF if direct**, M:572), txt_type (0), ts (4), `"Name: text"`. **Legacy (8)**: the same without `[1..3]`.
 
-**CHANNEL_DATA_RECV (27)** (M:601-627): SNR×4, 0, 0, channel, path_len, data_type u16, length, data.
+**CHANNEL_DATA_RECV (27)** (M:601-627): SNR×4, 0, 0, channel, path_len (as for 17, M:617), data_type u16, length, data.
 
 `app_target_ver` (DEVICE_QUERY, RAM, 0 at boot): **≥ 3 → V3 frames (16/17), otherwise 7/8** (M:443, 561). Txt_type 1 received: queued. Txt_type 3 received: executed if the contact has flag 0x10, otherwise queued (M:538-548).
 

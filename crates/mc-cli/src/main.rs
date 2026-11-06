@@ -2,6 +2,7 @@
 
 mod airtest;
 mod describe;
+mod duo;
 mod port;
 
 use clap::{Parser, Subcommand};
@@ -49,6 +50,21 @@ enum Cmd {
         #[arg(short, long)]
         verbose: bool,
     },
+    /// Two companions talk to each other (adverts, DMs, channel, pings), zero-hop unless `--flood`.
+    Duo {
+        #[arg(long)]
+        a: String,
+        #[arg(long)]
+        b: String,
+        /// Also run the checks that flood: channel text and route learning.
+        #[arg(long)]
+        flood: bool,
+        /// Telemetry pings in each direction.
+        #[arg(long, default_value_t = 3)]
+        pings: u32,
+        #[arg(short, long)]
+        verbose: bool,
+    },
 }
 
 fn main() {
@@ -66,6 +82,13 @@ fn main() {
             dut,
             verbose,
         } => airtest::run(&ref_port, &dut, verbose),
+        Cmd::Duo {
+            a,
+            b,
+            flood,
+            pings,
+            verbose,
+        } => duo::run(&a, &b, flood, pings, verbose),
     };
     if let Err(e) = res {
         eprintln!("error: {e}");

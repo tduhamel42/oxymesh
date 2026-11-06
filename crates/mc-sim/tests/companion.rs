@@ -344,3 +344,116 @@ fn error_codes_match_cpp() {
     }
     assert_eq!(w.nodes[a].st.identity.unwrap().1, *other.pub_key());
 }
+
+/// A zero-hop channel datagram reaches the other device's app, in both directions
+/// (`mc duo` found the C++ → oxymesh direction failing on hardware).
+#[test]
+fn zero_hop_channel_data_both_ways() {
+    let mut w = World::new(12);
+    let a = w.add("alice", |_| {});
+    let b = w.add("bob", |_| {});
+    w.link(a, b);
+    start(&mut w, a);
+    start(&mut w, b);
+    let chan = mc_air::crypto::ChannelSecret::from_hashtag("#oxymesh-test");
+    let mut secret = [0u8; 16];
+    secret.copy_from_slice(&chan.0[..16]);
+    for (i, idx) in [(a, 3u8), (b, 1u8)] {
+        let r = first(
+            &mut w,
+            i,
+            &Command::SetChannel {
+                idx,
+                name: to_fixed::<32>(b"#oxymesh-test"),
+                secret,
+            },
+        );
+        assert!(matches!(Response::decode(&r).unwrap(), Response::Ok));
+    }
+    for (from, fi, to, ti, data) in [
+        (a, 3u8, b, 1u8, b"oxymesh duo data 1793976000"),
+        (b, 1u8, a, 3u8, b"oxymesh duo data 1793976002"),
+    ] {
+        let r = first(
+            &mut w,
+            from,
+            &Command::SendChannelData {
+                idx: fi,
+                path: Some((0, &[])),
+                data_type: 0xFF00,
+                data,
+            },
+        );
+        assert!(matches!(Response::decode(&r).unwrap(), Response::Ok));
+        w.run(secs(5));
+        let r = first(&mut w, to, &Command::SyncNextMessage);
+        match Response::decode(&r).unwrap() {
+            Response::ChannelData {
+                idx,
+                data_type,
+                data: d,
+                path_len,
+                ..
+            } => {
+                assert_eq!((idx, data_type, d), (ti, 0xFF00, &data[..]));
+                // Zero hop is a direct route: the app sees 0xFF, like with the C++ firmware.
+                assert_eq!(path_len, 0xFF);
+            }
+            other => panic!("{from} → {to}: expected CHANNEL_DATA, got {other:?}"),
+        }
+    }
+}
+
+/// Back-to-back telemetry requests over a zero-hop route all get an answer (`mc duo` lost the
+/// second one on hardware).
+#[test]
+fn telemetry_pings_back_to_back() {
+    let mut w = World::new(13);
+    let a = w.add("alice", |_| {});
+    let b = w.add("bob", |p| p.telemetry_base = 2);
+    w.link(a, b);
+    start(&mut w, a);
+    start(&mut w, b);
+    let kb = *w.node(b).id.pub_key();
+    let ka = *w.node(a).id.pub_key();
+    // Each knows the other, zero hop.
+    for (i, k, name) in [(a, kb, "bob"), (b, ka, "alice")] {
+        let r = first(
+            &mut w,
+            i,
+            &Command::AddUpdateContact {
+                key: k,
+                kind: 1,
+                flags: 0,
+                path_len: 0,
+                path: [0; 64],
+                name: to_fixed::<32>(name.as_bytes()),
+                last_advert: mc_sim::EPOCH,
+                lat_lon: None,
+                lastmod: None,
+            },
+        );
+        assert!(matches!(Response::decode(&r).unwrap(), Response::Ok));
+    }
+    let mut answered = Vec::new();
+    for n in 0..10 {
+        w.nodes[a].app.clear();
+        let r = first(
+            &mut w,
+            a,
+            &Command::SendTelemetryReq {
+                reserved: [0; 3],
+                key: Some(kb),
+            },
+        );
+        assert!(matches!(
+            Response::decode(&r).unwrap(),
+            Response::Sent { flood: false, .. }
+        ));
+        let ok = w.run_until(secs(10), |w| {
+            pushed(w, a, |r| matches!(r, Response::TelemetryResponse { .. }))
+        });
+        answered.push((n, ok));
+    }
+    assert!(answered.iter().all(|(_, ok)| *ok), "{answered:?}");
+}

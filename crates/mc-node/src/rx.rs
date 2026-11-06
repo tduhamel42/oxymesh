@@ -185,7 +185,8 @@ impl Node {
                     };
                     let mut buf = [0u8; 184];
                     if let Ok(plain) = crypto::open(&ch.secret.0, &sealed, &mut buf) {
-                        let path_len = pkt.path_len.byte();
+                        // The app sees 0xFF for a direct (zero-hop) packet (`MyMesh.cpp:572, 617`).
+                        let path_len = if direct { 0xFF } else { pkt.path_len.byte() };
                         self.on_group(ptype, idx, plain, snr4, path_len);
                         break;
                     }
