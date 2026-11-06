@@ -18,6 +18,7 @@ enum Link {
 
 pub struct Port {
     pub name: String,
+    path: String,
     link: Link,
     /// Frames received but not yet consumed.
     pending: Vec<Vec<u8>>,
@@ -32,6 +33,7 @@ impl Port {
             let c = crate::ble::Client::connect(want, Duration::from_secs(20))?;
             return Ok(Self {
                 name: name.into(),
+                path: path.into(),
                 link: Link::Ble(c),
                 pending: Vec::new(),
                 verbose: false,
@@ -45,6 +47,7 @@ impl Port {
         let _ = port.clear(serialport::ClearBuffer::Input);
         Ok(Self {
             name: name.into(),
+            path: path.into(),
             link: Link::Serial {
                 port,
                 deframer: UsbDeframer::new(FROM_DEVICE),
@@ -52,6 +55,18 @@ impl Port {
             pending: Vec::new(),
             verbose: false,
         })
+    }
+
+    /// After the device rebooted: a Bluetooth link is gone and is made again (the bond makes it
+    /// quick); the USB bridge stays open through the reset, nothing to do.
+    pub fn reconnect(&mut self) -> Result<(), String> {
+        if let Link::Ble(_) = self.link
+            && let Some(want) = self.path.strip_prefix("ble:")
+        {
+            self.link = Link::Ble(crate::ble::Client::connect(want, Duration::from_secs(30))?);
+            self.pending.clear();
+        }
+        Ok(())
     }
 
     pub fn send(&mut self, cmd: &Command<'_>) -> Result<(), String> {

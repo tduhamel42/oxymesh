@@ -58,6 +58,36 @@ Findings:
   - With 100 to 300 ms before each ping: 0 lost in 2 runs. With 3 s between the prefs change and the first ping: 0 lost in 5 runs (100 pings). `mc duo` now waits 3 s.
   - Not reproduced between two oxymesh nodes in mc-sim. Cause unknown; next step is a run with the C++ firmware on both ends.
 
+## 2026-11-06 — Bluetooth (MC5)
+
+- M5 `/dev/cu.wchusbserial120` running oxymesh with Bluetooth, advertised as `MeshCore-2E97BC45`; Heltec (C++) `/dev/cu.usbmodem14301`; the Mac as the central (`mc`, btleplug).
+- **First pairing** (`mc info ble:MeshCore-2E97BC45`, Tanguy typed the PIN shown on the M5's panel into macOS's dialog):
+  - passkey entry, the Mac typing and the M5 displaying;
+  - EncryptedAuthenticated, bond stored in `mcdata`;
+  - ATT MTU 247, so a 176-byte frame fits one notification.
+- `mc duo --a ble:MeshCore-2E97BC45 --b /dev/cu.usbmodem14301 --pings 3 --reboot`: **13/13**.
+  - DM delivery 1.08–1.24 s; ping RTT 1.14 s (M5 → Heltec) and 1.02 s.
+  - After the reboot, the Mac reconnects in 2.0 s with the bond read back from flash, without a PIN.
+  - The same over USB with this build: 13/13.
+- `mc latency`: over Bluetooth, 35 / 49 / 85 ms (min / median / max); over USB, 10 / 12 / 37 ms.
+- **RAM** (`debug-log` build: stack painted at boot, heap peak counted by esp-alloc):
+
+| | Size | Idle | Peak seen |
+|---|---|---|---|
+| Heap (24 KB in main DRAM + 72 KB in `dram2`) | 98,300 B | 52,564 B | 53,968 B (a connection adds nothing: the controller allocates at boot) |
+| Main stack | 68,180 B | 28,736 B | 37,112 B pairing (P-256), 39,888 B after the duo runs |
+
+  - Bluetooth's share of the heap is ≈ 31 KB.
+  - 15 minutes idle with Bluetooth on: the heap did not move.
+- **First build: the stack overflowed at boot.** It was 27,300 B; the stack guard caught it. The fix moved 40 KB of the UI heap to `dram2`.
+- **Controller trims** (`esp_radio::ble::Config`):
+  - `max_connections(1)`: advertising fails ("Memory Capacity Exceeded");
+  - `max_connections(2)` saves 3.3 KB;
+  - a scan duplicate list of 10 (we never scan) saves 1.1 KB.
+- **Flash:** image 1,269,568 B of 1,835,008 (69 %). Bluetooth adds ≈ 300 KB of code and 27 KB of IRAM.
+- **Interface heap on the host** (`crates/mc-ui/tests/heap.rs`): worst screen is compose on the compact grid, 62.7 KB on the host. The host is 64-bit, ≈ 1.45× the device, so ≈ 43 KB on the M5.
+- **One connection only.** An app that reconnects at once (seen here: an app running the companion startup sequence, APP_START, DEVICE_QUERY, default scope, contacts) holds it, and the M5 stops advertising, like the C++. `mc` then cannot get in. `mc` reaches a companion it knows by its CoreBluetooth identifier, cached in `~/Library/Caches/oxymesh/ble-peripherals`.
+
 ## 2026-11-06 — message bursts while the M5 redraws (U6)
 
 - `mc burst --a <receiver> --b <sender> --count N --gap MS`: the sender's companion sends N direct messages MS apart without waiting for them, then counts its delivery confirmations; the receiver's waiting messages are fetched last. Each message the M5 receives redraws its screen (partial refresh: 542 ms, see U0).

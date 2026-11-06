@@ -518,7 +518,9 @@ fn reboot_keeps(a: &mut Peer, b: &mut Peer) -> Result<String, String> {
     a.port.send(&Command::Reboot)?;
     std::thread::sleep(Duration::from_secs(3));
     let t0 = Instant::now();
-    // The USB bridge stays open through the ESP32's reset: same port, new session.
+    // The USB bridge stays open through the ESP32's reset: same port, new session. Over
+    // Bluetooth, connect again.
+    a.port.reconnect()?;
     let _ = a.port.drain();
     let mut back = false;
     for _ in 0..5 {

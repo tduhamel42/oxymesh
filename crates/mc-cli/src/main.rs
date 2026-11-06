@@ -132,9 +132,10 @@ fn main() {
         Cmd::Info { port } => info(&port),
         Cmd::BleScan { secs, all } => ble::scan(secs, all).map(|found| {
             for f in &found {
-                match f.rssi {
-                    Some(r) => println!("{}  {r} dBm", f.name),
-                    None => println!("{}", f.name),
+                match (f.system, f.rssi) {
+                    (true, _) => println!("{}  connected to this computer", f.name),
+                    (false, Some(r)) => println!("{}  {r} dBm", f.name),
+                    (false, None) => println!("{}", f.name),
                 }
             }
             println!("{} companion(s)", found.len());

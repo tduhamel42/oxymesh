@@ -121,6 +121,7 @@ cargo run --release -p mc-cli -- advert <port> [--flood]   # make a companion ad
 cargo run --release -p mc-cli -- send <port> <key prefix hex> "text"   # direct message, waits for the delivery
 cargo run --release -p mc-cli -- inbox <port>               # fetch and print the messages waiting on a companion
 cargo run --release -p mc-cli -- burst --a <receiver> --b <sender> --count 20 --gap 1500   # B sends A a burst of DMs; confirmations and what A queued
+cargo run --release -p mc-cli -- ble-scan [--all]           # companions advertising over Bluetooth (ports `ble:<name>` everywhere)
 cargo run --release -p mc-cli -- latency <port> --count 150   # USB command round trips (a stalled main loop shows here)
 cargo run --release -p mc-cli -- duo --a /dev/cu.wchusbserial120 --b /dev/cu.usbmodem141101   # two companions talk (adverts, DMs, channel, pings), zero-hop; --flood for more
 ```
