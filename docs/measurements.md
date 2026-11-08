@@ -26,6 +26,16 @@ Other findings:
 - The M5 reports 869618 kHz in `SELF_INFO`: deviation 2 as predicted by the study (869617) does not occur in the usual bands (ADR-0001 corrected).
 - `mc sniff` on the M5 for 2 min (22:15): no packet heard, the network was quiet at that time.
 
+## 2026-11-08 — clock chip, noise, temperature, GPS, C++ import (H1, H2, MC6)
+
+- Setup: ThinkNode M5 on `/dev/cu.wchusbserial210`, `debug-log` build (status line every 10 s on UART0, uptime first: the boot lines can be lost on the CH340, and the line at 5 s comes before anything has arrived). Tanguy's phone connected over Bluetooth. Indoors.
+- **C++ SPIFFS of the M5** read with `espflash read-flash --block-size 0x400 --max-in-flight 1 0x290000 0x160000` (the default block size dropped bytes on the CH340), kept in the scratchpad, never committed. `mc spiffs`: 8 files (identity, `/prefs.json`, `/contacts3`, `/channels2`, 4 stored adverts); identity checked (the private key gives the public key); settings parsed (869.618 MHz, 62.5 kHz, SF8, CR 8, 22 dBm); 5 contacts, 1 channel. The ESP-IDF layout constants hold on a real image. Not imported yet: it would replace the M5's current identity.
+- **Clock chip**: `mc advert` set the clock (SET_DEVICE_TIME); after a reset the M5 started at that time (1794168574 at boot against 1794168576 on the Mac when read) instead of 2026-11-05. Power-off not checked yet.
+- **Noise floor**: −111 to −115 dBm once the first round has ended (0 before, like the C++).
+- **Chip temperature**: 42.0 to 49.9 °C over the session (default range DAC); not compared with the Heltec yet.
+- **GPS**: board v1.0 (IO7 low 10 times out of 10), switch on (GPIO10 high). The L76K sends about 325 bytes/s; 18 RMC/GGA sentences per 10 s parsed, no read error; 0 satellites and no fix indoors. A first round of tests read "0 B" only because every look was at the first status line; `gps-probe` (a small binary: UART1 RX 19 at 9600 receives about 340 bytes/s, GPIO19 toggles) ruled out the wiring. The pins swapped (RX 20) receive nothing.
+- RAM (`debug-log`, GPS off at the time): stack peak 41,224 of 67,460 B; heap peak 54,044 of 98,300 B. Flash: `mc-m5` 1,313,664 of 1,835,008 B (72 %).
+
 ## 2026-11-06 — `mc airtest` with oxymesh as the device under test (MC4)
 
 - Setup: Heltec V4 running `companion_radio_usb` v1.18.0 (reference, `/dev/cu.usbmodem2141101`); ThinkNode M5 running **oxymesh** `mc-m5` over USB (device under test, `/dev/cu.wchusbserial2120`). Same radio settings as above.

@@ -322,6 +322,10 @@ async fn main(_spawner: Spawner) -> ! {
         gps::Revision::V1
     };
     info!("gps: board {revision:?} ({highs}/10 high)");
+    // GPIO10: the GPS switch on board v1.0 (high = on); only read, like the C++.
+    #[cfg_attr(not(feature = "debug-log"), allow(unused_variables))]
+    let gps_switch = Input::new(p.GPIO10, InputConfig::default());
+
     let mut gps_rx = match revision {
         gps::Revision::V1 => Uart::new(p.UART1, UartConfig::default().with_baudrate(9600))
             .ok()
@@ -718,7 +722,28 @@ async fn main(_spawner: Spawner) -> ! {
                 next_battery = Instant::now() + Duration::from_secs(10);
                 dev.mcu_temp_deci = chip_temp.read();
                 #[cfg(feature = "debug-log")]
-                diag::log();
+                {
+                    diag::log();
+                    // Boot lines can be lost on the CH340 (FIFO overrun); the state again here.
+                    info!(
+                        "status: up {} s; gps board {revision:?} ({highs}/10 high) {} (switch {}, {} B, {} sentences, {} errors, {} sats, fix {}); noise {} dBm; chip {:?} (0.1 °C); clock {}",
+                        Instant::now().as_secs(),
+                        if gps_rx.as_ref().is_some_and(|g| g.is_on()) {
+                            "on"
+                        } else {
+                            "off"
+                        },
+                        if gps_switch.is_high() { "on" } else { "off" },
+                        gps_rx.as_ref().map_or(0, |g| g.bytes),
+                        gps_rx.as_ref().map_or(0, |g| g.sentences),
+                        gps_rx.as_ref().map_or(0, |g| g.errors),
+                        gps_rx.as_ref().map_or(0, |g| g.satellites()),
+                        dev.gps().is_some(),
+                        dev.noise_floor,
+                        dev.mcu_temp_deci,
+                        dev.node.rtc.now(mc_now()),
+                    );
+                }
                 let raw_mv = adc.read_blocking(&mut bat_pin);
                 dev.battery_mv =
                     bat.push((u32::from(raw_mv) * m5::BATTERY_DIVIDER_MILLI / 1000) as u16);

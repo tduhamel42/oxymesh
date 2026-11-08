@@ -123,6 +123,7 @@ cargo run --release -p mc-cli -- inbox <port>               # fetch and print th
 cargo run --release -p mc-cli -- burst --a <receiver> --b <sender> --count 20 --gap 1500   # B sends A a burst of DMs; confirmations and what A queued
 cargo run --release -p mc-cli -- ble-scan [--all]           # companions advertising over Bluetooth (ports `ble:<name>` everywhere)
 cargo run --release -p mc-cli -- latency <port> --count 150   # USB command round trips (a stalled main loop shows here)
+cargo run --release -p mc-cli -- var <port> [gps:1]                 # custom variables (gps, gps_interval): read, or set one
 cargo run --release -p mc-cli -- spiffs <image>             # what the C++ firmware left in a SPIFFS image (espflash read-flash 0x290000 0x160000; keep it out of git)
 python3 -I testdata/spiffs/gen.py                           # the made-up C++ SPIFFS test image (testdata/spiffs/cpp.bin)
 cargo run --release -p mc-cli -- duo --a /dev/cu.wchusbserial120 --b /dev/cu.usbmodem141101   # two companions talk (adverts, DMs, channel, pings), zero-hop; --flood for more

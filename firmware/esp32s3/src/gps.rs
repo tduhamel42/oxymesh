@@ -33,6 +33,10 @@ pub struct Gps<'d> {
     lines: Lines,
     state: State,
     sync: TimeSync,
+    /// Bytes, RMC/GGA sentences and read errors since boot (diagnostics).
+    pub bytes: u32,
+    pub sentences: u32,
+    pub errors: u32,
 }
 
 /// `$` + payload + `*` + checksum + CRLF.
@@ -69,6 +73,9 @@ impl<'d> Gps<'d> {
             lines: Lines::new(),
             state: State::default(),
             sync: TimeSync::new(),
+            bytes: 0,
+            sentences: 0,
+            errors: 0,
         }
     }
 
@@ -109,13 +116,23 @@ impl<'d> Gps<'d> {
             let _ = self.uart.write(&b[..n]);
         }
         let mut buf = [0u8; 64];
-        while self.uart.read_ready() {
-            let Ok(n) = self.uart.read(&mut buf) else {
+        for _ in 0..8 {
+            if !self.uart.read_ready() {
                 break;
+            }
+            // An error (glitch, overflow) is reported once and cleared; the bytes stay.
+            let n = match self.uart.read(&mut buf) {
+                Ok(n) => n,
+                Err(_) => {
+                    self.errors = self.errors.wrapping_add(1);
+                    continue;
+                }
             };
+            self.bytes = self.bytes.wrapping_add(n as u32);
             for &b in &buf[..n] {
                 if let Some(s) = self.lines.push(b) {
                     self.state.apply(&s);
+                    self.sentences = self.sentences.wrapping_add(1);
                 }
             }
         }

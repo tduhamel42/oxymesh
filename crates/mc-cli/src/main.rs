@@ -79,6 +79,8 @@ enum Cmd {
     /// `espflash read-flash 0x290000 0x160000 <file>`): files and what an import would bring.
     /// Prints no secret; the image itself holds the private key, keep it out of the repository.
     Spiffs { image: std::path::PathBuf },
+    /// The device's custom variables (`GET_CUSTOM_VARS`), or set one: `gps:1`, `gps_interval:60`.
+    Var { port: String, set: Option<String> },
     /// Make the device send its advert (zero hop unless `--flood`).
     Advert {
         port: String,
@@ -153,6 +155,7 @@ fn main() {
         Cmd::Advert { port, flood } => advert(&port, flood),
         Cmd::Inbox { port } => inbox(&port),
         Cmd::Spiffs { image } => spiffs(&image),
+        Cmd::Var { port, set } => var(&port, set.as_deref()),
         Cmd::Latency { port, count } => latency(&port, count),
         Cmd::Burst {
             a,
@@ -323,6 +326,17 @@ fn advert(path: &str, flood: bool) -> Result<(), String> {
         unix_s: crate::port::now_unix(),
     })?;
     p.ask(&Command::SendSelfAdvert { flood: Some(flood) })?;
+    Ok(())
+}
+
+fn var(path: &str, set: Option<&str>) -> Result<(), String> {
+    let mut p = Port::open(path, "device")?;
+    p.verbose = true;
+    p.ask(&Command::DeviceQuery { app_ver: APP_VER })?;
+    match set {
+        Some(v) => p.ask(&Command::SetCustomVar { var: v.as_bytes() })?,
+        None => p.ask(&Command::GetCustomVars)?,
+    };
     Ok(())
 }
 
