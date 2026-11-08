@@ -246,7 +246,9 @@ Name = first 4 bytes of the key as 8 uppercase hex digits; 869.618 MHz / 62.5 kH
 
 ### 8.1 C++ firmware (to read for migration, ADR-0006)
 
-SPIFFS (`SPIFFS.begin(true)`), default arduino-esp32 table: `spiffs` at 0x290000, 0x160000 (to be confirmed on the device).
+SPIFFS (`SPIFFS.begin(true)`), default arduino-esp32 table: `spiffs` at 0x290000, 0x160000 (confirmed on the M5 on 2026-11-05). ESP-IDF's SPIFFS settings: 256-byte pages, 4 KB blocks, 16-bit ids, 32-byte names, 4-byte metadata, magic with length (`mc-spiffs`).
+
+Import (MC6, `mc_spiffs::cpp`): at first boot when `mcdata` has no identity, or from Settings → System → Import from C++ (hold-to-confirm, then reboot). Read through a view that cannot write. The identity is checked (the private key must give the stored public key); everything is read before anything is written. `/new_prefs` is not read: v1.18 rewrites it as `/prefs.json` at its first boot. The screen's own settings are kept, except the time zone (hours in the C++) and the buzzer (off when `buzz_q`). `mc spiffs <image>` shows what an image holds.
 
 | File | Format | Source |
 |---|---|---|

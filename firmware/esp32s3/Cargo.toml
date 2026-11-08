@@ -39,13 +39,14 @@ embedded-graphics = "0.8"
 
 mc-core = { path = "../../crates/mc-core" }
 mc-nmea = { path = "../../crates/mc-nmea" }
+mc-spiffs = { path = "../../crates/mc-spiffs" }
 mc-air = { path = "../../crates/mc-air" }
 mc-node = { path = "../../crates/mc-node" }
 mc-proto = { path = "../../crates/mc-proto" }
 mc-ui = { path = "../../crates/mc-ui" }
 ratatui-core = { version = "0.1", default-features = false }
 esp-alloc = { version = "0.11", features = ["esp32s3", "internal-heap-stats"] }
-esp-storage = { version = "0.10", features = ["esp32s3"] }
+esp-storage = { version = "0.10", features = ["esp32s3", "embedded-storage"] }
 sequential-storage = "8.0"
 embassy-embedded-hal = "0.6"
 embedded-storage = "0.3"

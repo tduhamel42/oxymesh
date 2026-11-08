@@ -11,6 +11,7 @@ license.workspace = true
 mc-core.workspace = true
 mc-air.workspace = true
 mc-node.workspace = true
+mc-spiffs.workspace = true
 heapless.workspace = true
 rand_core.workspace = true
 qrcodegen-no-heap = "1.8"

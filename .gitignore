@@ -10,3 +10,5 @@ node_modules/
 /local/
 .DS_Store
 /.claude/
+# Images read from a device's C++ SPIFFS hold its private key.
+*.spiffs.bin

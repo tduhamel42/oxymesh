@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/screens.rs
+expression: "text(&mut app, LARGE, &c)"
+---
+|Import from… ●2 18:33 87%|
+|Looking for the MeshCore |
+|C++ firmware's data…     |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                   B◂back|

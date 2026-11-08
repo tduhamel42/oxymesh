@@ -1,0 +1,20 @@
+[package]
+name = "mc-spiffs"
+description = "Read-only SPIFFS reader and the importer of the MeshCore C++ firmware's data (identity, settings, contacts, channels)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+mc-core.workspace = true
+mc-air.workspace = true
+mc-node.workspace = true
+heapless.workspace = true
+
+[dev-dependencies]
+mc-sim.workspace = true
+
+[lints]
+workspace = true

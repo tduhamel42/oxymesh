@@ -14,6 +14,8 @@
 
 extern crate alloc;
 
+use core::cell::RefCell;
+
 use embassy_embedded_hal::adapter::BlockingAsync;
 use embassy_executor::Spawner;
 use embassy_futures::join::{join, join5};
@@ -45,6 +47,7 @@ use mc_core::noise::NoiseFloor;
 use mc_node::device::{Action, Info, UiEvent};
 use mc_node::{Device, Prefs};
 use mc_proto::{FROM_DEVICE, TO_DEVICE, USB_MAX, UsbDeframer, usb_frame};
+use mc_spiffs::{Spiffs, cpp};
 use mc_ui::input::{Button, Gestures};
 use mc_ui::overlay::{self, Overlay, PixelRect};
 use mc_ui::panel::{self, COMPACT, Grid, LARGE};
@@ -56,6 +59,7 @@ use oxymesh_esp32s3::buzzer;
 use oxymesh_esp32s3::flashstore::{BONDS_MAX, FlashStore};
 use oxymesh_esp32s3::gps;
 use oxymesh_esp32s3::m5;
+use oxymesh_esp32s3::partition::{ReadOnly, Region};
 use oxymesh_esp32s3::pca9557::{Pca9557, pin};
 use oxymesh_esp32s3::pcf8563::Pcf8563;
 use oxymesh_esp32s3::ssd1681::{Frame, Ssd1681};
@@ -334,23 +338,30 @@ async fn main(_spawner: Spawner) -> ! {
         }
     };
 
-    // Storage: `mcdata` partition.
-    let mut flash = FlashStorage::new(p.FLASH).multicore_auto_park();
+    // Storage: `mcdata` partition, and the C++ firmware's SPIFFS, read only (ADR-0006).
+    let flash = RefCell::new(FlashStorage::new(p.FLASH).multicore_auto_park());
     let mut table = [0u8; PARTITION_TABLE_MAX_LEN];
-    let part = read_partition_table(&mut flash, &mut table)
-        .ok()
-        .and_then(|t| t.iter().find(|e| e.label_as_str() == "mcdata"));
-    let Some(part) = part else {
+    let (data_part, cpp_part) = {
+        let mut f = flash.borrow_mut();
+        let t = read_partition_table(&mut f, &mut table).ok();
+        let find = |label: &str| {
+            t.as_ref()
+                .and_then(|t| t.iter().find(|e| e.label_as_str() == label))
+                .map(|e| (e.offset(), e.len()))
+        };
+        (find("mcdata"), find("spiffs"))
+    };
+    let Some((data_off, data_len)) = data_part else {
         panic!("no mcdata partition")
     };
-    let part_len = part.len();
-    let mut region = part.as_flash_region(&mut flash);
-    let Ok(nor) = region.as_nor_flash() else {
-        panic!("flash")
-    };
-    let Some(mut store) = FlashStore::new(BlockingAsync::new(nor), part_len) else {
+    let Some(mut store) = FlashStore::new(
+        BlockingAsync::new(Region::new(&flash, data_off, data_len)),
+        data_len,
+    ) else {
         panic!("mcdata too small")
     };
+    let cpp_fs =
+        || cpp_part.and_then(|(off, len)| Spiffs::new(ReadOnly::new(&flash, off, len), len).ok());
 
     let hw = esp_hal::rng::Rng::new();
     let mut rng =
@@ -358,19 +369,38 @@ async fn main(_spawner: Spawner) -> ! {
     let id = match store.identity() {
         Some(prv) => LocalIdentity::from_private(&prv),
         None => {
-            // First boot: new identity (migration from the C++ firmware comes in MC6).
-            let id = loop {
-                let mut seed = [0u8; 32];
-                for c in seed.chunks_exact_mut(4) {
-                    c.copy_from_slice(&hw.random().to_le_bytes());
+            // First boot: the C++ firmware's node if it left one (ADR-0006), else a new one.
+            let imported = cpp_fs().and_then(|mut fs| {
+                match cpp::import(&mut fs, mc_node::node::UiPrefs::DEFAULT, &mut store) {
+                    Ok(s) => {
+                        info!(
+                            "import: C++ node, {} contacts, {} channels",
+                            s.contacts, s.channels
+                        );
+                        store.identity()
+                    }
+                    Err(e) => {
+                        info!("import: nothing from the C++ firmware ({e:?})");
+                        None
+                    }
                 }
-                let id = LocalIdentity::from_seed(&seed);
-                if !id.is_reserved() {
-                    break id;
-                }
-            };
-            mc_node::Storage::save_identity(&mut store, id.private_key(), id.pub_key());
-            id
+            });
+            if let Some(prv) = imported {
+                LocalIdentity::from_private(&prv)
+            } else {
+                let id = loop {
+                    let mut seed = [0u8; 32];
+                    for c in seed.chunks_exact_mut(4) {
+                        c.copy_from_slice(&hw.random().to_le_bytes());
+                    }
+                    let id = LocalIdentity::from_seed(&seed);
+                    if !id.is_reserved() {
+                        break id;
+                    }
+                };
+                mc_node::Storage::save_identity(&mut store, id.private_key(), id.pub_key());
+                id
+            }
         }
     };
     let prefs = Prefs::defaults(id.pub_key());
@@ -736,8 +766,24 @@ async fn main(_spawner: Spawner) -> ! {
                 }
             }
             for i in app.take_intents() {
-                let o = perform(&i, dev, mc_now(), &mut rng, &mut store);
+                let mut o = perform(&i, dev, mc_now(), &mut rng, &mut store);
+                if o == Outcome::CppFind {
+                    o = Outcome::Cpp(match cpp_fs() {
+                        Some(mut fs) => cpp::summary(&mut fs),
+                        None => Err(cpp::ImportError::Spiffs(mc_spiffs::Error::NotSpiffs)),
+                    });
+                }
                 match o {
+                    Outcome::CppImport => {
+                        if let Some(mut fs) = cpp_fs() {
+                            let r = cpp::import(&mut fs, dev.node.prefs.ui, &mut store);
+                            info!("import: {r:?}");
+                            if r.is_ok() {
+                                Timer::after(Duration::from_millis(500)).await;
+                                esp_hal::system::software_reset();
+                            }
+                        }
+                    }
                     Outcome::Light => {
                         light = !light;
                         dimmed = false;

@@ -17,6 +17,7 @@ mc-air.workspace = true
 mc-proto.workspace = true
 mc-node.workspace = true
 mc-sim.workspace = true
+mc-spiffs.workspace = true
 mc-ui = { path = "../mc-ui" }
 clap.workspace = true
 serialport.workspace = true

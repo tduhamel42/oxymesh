@@ -9,8 +9,11 @@ use ratatui_core::terminal::Frame;
 use ratatui_core::text::Line;
 use ratatui_widgets::paragraph::{Paragraph, Wrap};
 
+use mc_spiffs::cpp::{ImportError, Summary};
+
 use super::{name_of, rows, short_key};
-use crate::app::{Paint, Screen, Ui};
+use crate::act::{Intent, Outcome};
+use crate::app::{Confirm, Input, Nav, Paint, Screen, Ui};
 use crate::chrome::{self, Footer};
 
 /// A feature not built yet: says which milestone brings it.
@@ -206,5 +209,103 @@ impl Screen for Card {
             rows(body, 0, body.height.saturating_sub(1)),
             Paint::Qr(link)
         )]
+    }
+}
+
+/// System → Import from C++ (MC6): what the MeshCore C++ firmware left on the device, and a
+/// hold to bring it over. The runner reads the partition (`Intent::CppFind`).
+#[derive(Debug, Default)]
+pub struct ImportCpp {
+    found: Option<Result<Summary, ImportError>>,
+}
+
+impl Screen for ImportCpp {
+    fn title(&self, _ui: &Ui<'_>) -> String {
+        String::from("Import from C++")
+    }
+
+    fn draw(&mut self, f: &mut Frame<'_>, body: Rect, ui: &Ui<'_>) {
+        let w = usize::from(body.width);
+        let lines: Vec<String> = match &self.found {
+            None => alloc::vec![String::from(
+                "Looking for the MeshCore C++ firmware's data…"
+            )],
+            Some(Err(ImportError::NoIdentity)) => alloc::vec![String::from(
+                "No MeshCore C++ data on this device: nothing to import."
+            )],
+            Some(Err(e)) => alloc::vec![
+                String::from("The C++ data cannot be read:"),
+                format!("{e:?}"),
+            ],
+            Some(Ok(s)) => {
+                let radio = s.radio.map_or(String::from("defaults"), |r| {
+                    format!(
+                        "{}.{:03} MHz SF{} CR{}",
+                        r.freq_khz / 1000,
+                        r.freq_khz % 1000,
+                        r.sf,
+                        r.cr
+                    )
+                });
+                let mut v = alloc::vec![
+                    format!("Name {}", name_of(&s.name)),
+                    format!("Key {}", short_key(&s.key)),
+                    format!(
+                        "{} contacts {} {} channels",
+                        s.contacts, ui.sym.dot, s.channels
+                    ),
+                    format!("Radio {radio}"),
+                    String::new(),
+                ];
+                let same = s.key == *ui.ctx.dev.node.id.pub_key();
+                v.push(String::from(if same {
+                    "This device already has this identity."
+                } else {
+                    "Hold A: it replaces this device's identity, contacts, channels and settings, then reboots."
+                }));
+                v
+            }
+        };
+        let text: Vec<Line<'_>> = lines
+            .iter()
+            .map(|l| Line::from(chrome::fit(l, w * 4)))
+            .collect();
+        f.render_widget(
+            Paragraph::new(text).wrap(Wrap { trim: true }),
+            rows(body, 0, body.height),
+        );
+    }
+
+    fn input(&mut self, input: Input, _ui: &Ui<'_>) -> Nav {
+        match (&self.found, input) {
+            (Some(Ok(_)), Input::Open) => Nav::Confirm(
+                Confirm::new(
+                    "Import",
+                    "Replace this device's identity, contacts, channels and settings with the C++ firmware's, then reboot.",
+                    Intent::CppImport,
+                )
+                .with_toast("Importing"),
+            ),
+            _ => Nav::Stay,
+        }
+    }
+
+    fn result(&mut self, _intent: &Intent, outcome: &Outcome, _ui: &Ui<'_>) -> Nav {
+        if let Outcome::Cpp(r) = outcome {
+            self.found = Some(*r);
+        }
+        Nav::Stay
+    }
+
+    fn footer(&self, _ui: &Ui<'_>) -> Footer {
+        match self.found {
+            Some(Ok(_)) => Footer {
+                a_click: None,
+                a_hold: Some("import"),
+                b_click: Some("back"),
+                b_hold: None,
+            },
+            _ => Footer::BACK,
+        }
     }
 }

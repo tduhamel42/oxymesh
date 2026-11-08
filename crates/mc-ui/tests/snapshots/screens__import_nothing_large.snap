@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/screens.rs
+expression: "text(&mut app, LARGE, &c)"
+---
+|Import from… ●2 18:33 87%|
+|No MeshCore C++ data on  |
+|this device: nothing to  |
+|import.                  |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                   B◂back|

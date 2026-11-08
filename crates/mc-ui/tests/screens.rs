@@ -387,3 +387,42 @@ fn a_muted_channel_counts_quietly() {
     let _ = press(&mut app, &c, &[Long(A)]);
     insta::assert_snapshot!("messages_muted_large", text(&mut app, LARGE, &c));
 }
+
+#[test]
+fn import_from_cpp_shows_what_it_brings_then_needs_a_hold() {
+    const IMAGE: &[u8] = include_bytes!("../../../testdata/spiffs/cpp.bin");
+    let w = world();
+    let c = ctx(&w);
+    let mut app = App::new(LARGE, false);
+    // Home → Settings → System (last) → Import from C++ (last).
+    let intents = press(
+        &mut app,
+        &c,
+        &[Double(A), Long(A), Double(A), Long(A), Double(A), Long(A)],
+    );
+    assert_eq!(intents, vec![Intent::CppFind]);
+    insta::assert_snapshot!("import_looking_large", text(&mut app, LARGE, &c));
+    let mut fs = mc_spiffs::Spiffs::new(IMAGE, IMAGE.len() as u32).unwrap();
+    let found = mc_spiffs::cpp::summary(&mut fs);
+    app.done(&Intent::CppFind, &mc_ui::Outcome::Cpp(found), &c);
+    insta::assert_snapshot!("import_found_large", text(&mut app, LARGE, &c));
+    assert!(press(&mut app, &c, &[Long(A)]).is_empty());
+    assert!(app.popup().is_some());
+    let intents = press(&mut app, &c, &[Held(A, 1000), Held(A, CONFIRM_MS)]);
+    assert_eq!(intents, vec![Intent::CppImport]);
+
+    let mut app = App::new(LARGE, false);
+    press(
+        &mut app,
+        &c,
+        &[Double(A), Long(A), Double(A), Long(A), Double(A), Long(A)],
+    );
+    app.done(
+        &Intent::CppFind,
+        &mc_ui::Outcome::Cpp(Err(mc_spiffs::cpp::ImportError::NoIdentity)),
+        &c,
+    );
+    insta::assert_snapshot!("import_nothing_large", text(&mut app, LARGE, &c));
+    assert!(press(&mut app, &c, &[Long(A)]).is_empty());
+    assert!(app.popup().is_none());
+}

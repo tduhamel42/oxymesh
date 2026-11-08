@@ -75,6 +75,10 @@ enum Cmd {
     },
     /// Fetch and print the messages waiting on the device (SYNC_NEXT_MESSAGE until empty).
     Inbox { port: String },
+    /// What the C++ firmware left in a SPIFFS image (the M5's partition at 0x290000, read with
+    /// `espflash read-flash 0x290000 0x160000 <file>`): files and what an import would bring.
+    /// Prints no secret; the image itself holds the private key, keep it out of the repository.
+    Spiffs { image: std::path::PathBuf },
     /// Make the device send its advert (zero hop unless `--flood`).
     Advert {
         port: String,
@@ -148,6 +152,7 @@ fn main() {
         Cmd::Inject { port, hex, prio } => inject(&port, &hex, prio),
         Cmd::Advert { port, flood } => advert(&port, flood),
         Cmd::Inbox { port } => inbox(&port),
+        Cmd::Spiffs { image } => spiffs(&image),
         Cmd::Latency { port, count } => latency(&port, count),
         Cmd::Burst {
             a,
@@ -332,4 +337,41 @@ fn inject(path: &str, hex: &str, prio: u8) -> Result<(), String> {
         raw: &raw[..n],
     })?;
     Ok(())
+}
+
+fn spiffs(path: &std::path::Path) -> Result<(), String> {
+    use mc_spiffs::{Spiffs, cpp};
+    let img = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut fs = Spiffs::new(&img[..], img.len() as u32).map_err(|e| format!("{e:?}"))?;
+    let mut files = Vec::new();
+    fs.list(|n, size| files.push((String::from_utf8_lossy(n).into_owned(), size)))
+        .map_err(|e| format!("{e:?}"))?;
+    files.sort();
+    println!("{} files:", files.len());
+    for (n, size) in &files {
+        println!("  {n:<24} {size:>6} B");
+    }
+    match cpp::summary(&mut fs) {
+        Ok(s) => {
+            let name = String::from_utf8_lossy(&s.name);
+            println!("node      {}", name.trim_end_matches('\0'));
+            println!("key       {}…", mc_core::Hex(&s.key[..8]));
+            match s.radio {
+                Some(r) => println!(
+                    "radio     {}.{:03} MHz, {} kHz, SF{}, CR {}, {} dBm",
+                    r.freq_khz / 1000,
+                    r.freq_khz % 1000,
+                    r.bw_hz as f64 / 1000.0,
+                    r.sf,
+                    r.cr,
+                    r.tx_power_dbm
+                ),
+                None => println!("radio     (no readable /prefs.json: defaults)"),
+            }
+            println!("contacts  {}", s.contacts);
+            println!("channels  {}", s.channels);
+            Ok(())
+        }
+        Err(e) => Err(format!("nothing to import: {e:?}")),
+    }
 }

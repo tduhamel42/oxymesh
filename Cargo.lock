@@ -1156,6 +1156,7 @@ dependencies = [
  "mc-node",
  "mc-proto",
  "mc-sim",
+ "mc-spiffs",
  "mc-ui",
  "rand_chacha",
  "rand_core",
@@ -1218,6 +1219,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mc-spiffs"
+version = "0.0.0"
+dependencies = [
+ "heapless",
+ "mc-air",
+ "mc-core",
+ "mc-node",
+ "mc-sim",
+]
+
+[[package]]
 name = "mc-ui"
 version = "0.0.0"
 dependencies = [
@@ -1231,6 +1243,7 @@ dependencies = [
  "mc-node",
  "mc-proto",
  "mc-sim",
+ "mc-spiffs",
  "mousefood",
  "qrcodegen-no-heap",
  "rand_chacha",

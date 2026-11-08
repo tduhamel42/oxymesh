@@ -13,6 +13,7 @@ mc-core = { path = "../crates/mc-core" }
 mc-air = { path = "../crates/mc-air" }
 mc-proto = { path = "../crates/mc-proto" }
 mc-nmea = { path = "../crates/mc-nmea" }
+mc-spiffs = { path = "../crates/mc-spiffs" }
 
 # Separate workspace: nightly toolchain and instrumentation specific to fuzzing.
 [workspace]
@@ -35,6 +36,13 @@ bench = false
 [[bin]]
 name = "nmea_parse"
 path = "fuzz_targets/nmea_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "spiffs_read"
+path = "fuzz_targets/spiffs_read.rs"
 test = false
 doc = false
 bench = false

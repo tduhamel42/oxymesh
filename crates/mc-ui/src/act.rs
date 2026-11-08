@@ -86,6 +86,10 @@ pub enum Intent {
     SetGps(bool),
     /// Seconds between GPS position updates (`gps_interval`).
     SetGpsInterval(u32),
+    /// Look for the MeshCore C++ firmware's data (the runner reads its partition).
+    CppFind,
+    /// Import it, then reboot (the runner).
+    CppImport,
     /// The screen's own settings.
     SetUi(UiPrefs),
     /// Turn off until B is pressed.
@@ -113,6 +117,12 @@ pub enum Outcome {
     Hibernate,
     /// For the runner: erase the Bluetooth bonds and hang up.
     ForgetPaired,
+    /// For the runner: read the C++ data and answer with [`Outcome::Cpp`].
+    CppFind,
+    /// For the runner: import the C++ data, then reboot.
+    CppImport,
+    /// What the runner found of the C++ firmware's data.
+    Cpp(Result<mc_spiffs::cpp::Summary, mc_spiffs::cpp::ImportError>),
 }
 
 fn of(r: Result<(), u8>) -> Outcome {
@@ -244,6 +254,11 @@ pub fn perform(
         Intent::SetGpsInterval(s) => {
             dev.set_gps_interval(*s, st);
             Outcome::Ok
+        }
+        Intent::CppFind => Outcome::CppFind,
+        Intent::CppImport => {
+            dev.flush_contacts(st);
+            Outcome::CppImport
         }
         Intent::SetUi(ui) => {
             dev.set_ui(*ui, st);

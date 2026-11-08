@@ -1245,6 +1245,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ef0e785f54e316f64a1e14a7a2f061a2ea0b038b284902ca71e1e1f5574cf47"
 dependencies = [
  "document-features",
+ "embedded-storage",
  "esp-hal",
  "esp-hal-procmacros",
  "esp-metadata-generated",
@@ -1953,6 +1954,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mc-spiffs"
+version = "0.0.0"
+dependencies = [
+ "heapless 0.9.3",
+ "mc-air",
+ "mc-core",
+ "mc-node",
+]
+
+[[package]]
 name = "mc-ui"
 version = "0.0.0"
 dependencies = [
@@ -1962,6 +1973,7 @@ dependencies = [
  "mc-air",
  "mc-core",
  "mc-node",
+ "mc-spiffs",
  "mousefood",
  "qrcodegen-no-heap",
  "rand_core 0.10.1",
@@ -2080,6 +2092,7 @@ dependencies = [
  "mc-nmea",
  "mc-node",
  "mc-proto",
+ "mc-spiffs",
  "mc-ui",
  "rand_chacha 0.10.0",
  "rand_core 0.10.1",

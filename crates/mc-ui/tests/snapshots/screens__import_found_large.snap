@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/screens.rs
+expression: "text(&mut app, LARGE, &c)"
+---
+|Import from… ●2 18:33 87%|
+|Name C++ M5 "test"       |
+|Key 99be776c             |
+|200 contacts · 2 channels|
+|Radio 869.432 MHz SF9 CR6|
+|                         |
+|Hold A: it replaces this |
+|device's identity,       |
+|contacts, channels and   |
+|settings, then reboots.  |
+|                         |
+|                         |
+|                         |
+|                         |
+|hold▸import        B◂back|

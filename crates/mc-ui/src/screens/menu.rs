@@ -228,7 +228,9 @@ pub fn system() -> Menu {
             ),
             item(
                 "Import from C++",
-                Action::Soon("Import from the MeshCore C++ firmware arrives in MC6."),
+                Action::Run(|_| {
+                    Nav::PushWith(Box::new(super::info::ImportCpp::default()), Intent::CppFind)
+                }),
             ),
         ],
     )

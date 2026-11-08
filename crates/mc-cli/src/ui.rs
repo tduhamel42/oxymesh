@@ -378,7 +378,10 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
         for i in app.take_intents() {
             let now = w.now;
             let sn = &mut w.nodes[ME];
-            let o = perform(&i, &mut sn.dev, now, &mut rng, &mut sn.st);
+            let mut o = perform(&i, &mut sn.dev, now, &mut rng, &mut sn.st);
+            if o == Outcome::CppFind {
+                o = Outcome::Cpp(cpp_sample());
+            }
             log.push(format!("  → {i:?}: {o:?}"));
             if let Intent::SetPin(p) = i
                 && o == Outcome::Ok
@@ -395,7 +398,10 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
                     ble.paired = 0;
                     ble.state = BleState::Advertising;
                 }
-                Outcome::Reboot | Outcome::FactoryReset | Outcome::Hibernate => {
+                Outcome::Reboot
+                | Outcome::FactoryReset
+                | Outcome::Hibernate
+                | Outcome::CppImport => {
                     app.toast("Ignored by the emulator", ms(w.now));
                 }
                 _ => {}
@@ -450,4 +456,11 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
             f.render_widget(Paragraph::new(lines), side);
         })?;
     }
+}
+
+/// The emulated device's C++ data: the test image (`testdata/spiffs`, made-up data).
+fn cpp_sample() -> Result<mc_spiffs::cpp::Summary, mc_spiffs::cpp::ImportError> {
+    const IMAGE: &[u8] = include_bytes!("../../../testdata/spiffs/cpp.bin");
+    let mut fs = mc_spiffs::Spiffs::new(IMAGE, IMAGE.len() as u32)?;
+    mc_spiffs::cpp::summary(&mut fs)
 }
