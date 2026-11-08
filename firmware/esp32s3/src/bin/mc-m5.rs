@@ -367,8 +367,9 @@ async fn main(_spawner: Spawner) -> ! {
     let mut rng =
         ChaCha20Rng::seed_from_u64((u64::from(hw.random()) << 32) | u64::from(hw.random()));
     let id = match store.identity() {
-        Some(prv) => LocalIdentity::from_private(&prv),
-        None => {
+        Ok(Some(prv)) => LocalIdentity::from_private(&prv),
+        Err(()) => panic!("mcdata unreadable: the identity is left alone"),
+        Ok(None) => {
             // First boot: the C++ firmware's node if it left one (ADR-0006), else a new one.
             let imported = cpp_fs().and_then(|mut fs| {
                 match cpp::import(&mut fs, mc_node::node::UiPrefs::DEFAULT, &mut store) {
@@ -377,7 +378,7 @@ async fn main(_spawner: Spawner) -> ! {
                             "import: C++ node, {} contacts, {} channels",
                             s.contacts, s.channels
                         );
-                        store.identity()
+                        store.identity().ok().flatten()
                     }
                     Err(e) => {
                         info!("import: nothing from the C++ firmware ({e:?})");
