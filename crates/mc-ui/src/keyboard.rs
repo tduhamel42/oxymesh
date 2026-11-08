@@ -76,7 +76,7 @@ pub enum Cand {
     /// Completes the word being typed (and adds a space).
     Word(String),
     /// Replaces the whole text.
-    Reply(&'static str),
+    Reply(String),
 }
 
 impl Cand {
@@ -86,7 +86,7 @@ impl Cand {
             Cand::Space => String::from("space"),
             Cand::Char(c) => c.to_string(),
             Cand::Word(w) => w.clone(),
-            Cand::Reply(r) => String::from(*r),
+            Cand::Reply(r) => r.clone(),
         }
     }
 }
@@ -108,6 +108,8 @@ pub struct Keyboard {
     pub sel: usize,
     cands: Vec<Cand>,
     recent: Vec<String>,
+    /// "My position: …", offered with the quick replies while the GPS has a fix.
+    position: Option<String>,
 }
 
 /// The word being typed: after the last space.
@@ -138,9 +140,18 @@ impl Keyboard {
             sel: 0,
             cands: Vec::new(),
             recent,
+            position: None,
         };
         k.refresh();
         k
+    }
+
+    /// Offers the position (degrees × 1e6) as a quick reply.
+    pub fn with_position(mut self, pos: Option<(i32, i32)>) -> Self {
+        self.position =
+            pos.map(|(lat, lon)| alloc::format!("My position: {}, {}", degrees(lat), degrees(lon)));
+        self.refresh();
+        self
     }
 
     pub fn candidates(&self) -> &[Cand] {
@@ -200,7 +211,8 @@ impl Keyboard {
         }
         let msg = matches!(self.mode, Mode::Message { .. });
         if msg && self.text.is_empty() {
-            c.extend(QUICK_REPLIES.iter().map(|r| Cand::Reply(r)));
+            c.extend(QUICK_REPLIES.iter().map(|r| Cand::Reply(String::from(*r))));
+            c.extend(self.position.clone().map(Cand::Reply));
         }
         c.extend(self.completions().into_iter().map(Cand::Word));
         let can_space = !self.text.is_empty() && !self.text.ends_with(' ');
@@ -288,7 +300,7 @@ impl Keyboard {
             }
             Cand::Reply(r) => {
                 if r.len() <= self.mode.limit() {
-                    self.text = String::from(r);
+                    self.text = r;
                 }
                 self.refresh();
                 // A quick reply is complete: the cursor goes to Send.
@@ -312,6 +324,13 @@ impl Keyboard {
         self.refresh();
         Key::Typing
     }
+}
+
+/// Degrees × 1e6 as `45.12345` (five decimals, about a metre).
+fn degrees(v: i32) -> String {
+    let sign = if v < 0 { "-" } else { "" };
+    let a = v.unsigned_abs();
+    alloc::format!("{sign}{}.{:05}", a / 1_000_000, a % 1_000_000 / 10)
 }
 
 /// Distinct words of `texts`, most recent first (texts are given oldest first).
@@ -344,9 +363,26 @@ mod tests {
     }
 
     #[test]
+    fn my_position_is_a_quick_reply_with_a_fix() {
+        let k = Keyboard::new(Mode::Message { limit: 160 }, "", vec![]);
+        assert!(
+            !k.candidates()
+                .iter()
+                .any(|c| c.label(k.mode).starts_with("My position"))
+        );
+        let mut k = k.with_position(Some((45_123_456, -5_000_042)));
+        pick(
+            &mut k,
+            &Cand::Reply(String::from("My position: 45.12345, -5.00004")),
+        );
+        assert_eq!(k.text, "My position: 45.12345, -5.00004");
+        assert_eq!(k.selected(), Some(&Cand::Done));
+    }
+
+    #[test]
     fn quick_reply_then_send_is_two_long_presses() {
         let mut k = Keyboard::new(Mode::Message { limit: 160 }, "", vec![]);
-        assert_eq!(k.selected(), Some(&Cand::Reply("OK")));
+        assert_eq!(k.selected(), Some(&Cand::Reply(String::from("OK"))));
         k.insert();
         assert_eq!(k.text, "OK");
         assert_eq!(k.selected(), Some(&Cand::Done));

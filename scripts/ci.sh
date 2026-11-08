@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Core crates: no_std, no allocator, no floats.
-NOSTD=(mc-core mc-air mc-proto mc-node)
+NOSTD=(mc-core mc-air mc-proto mc-node mc-nmea)
 step() { printf '\n== %s\n' "$*"; }
 
 step "fmt"

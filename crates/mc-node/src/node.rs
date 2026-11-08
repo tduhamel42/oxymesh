@@ -43,6 +43,9 @@ pub struct Prefs {
     pub interference_threshold: i8,
     pub cad_enabled: bool,
     pub gps_enabled: bool,
+    /// Seconds between position updates from the GPS (`gps_interval`, 0 to 86400; 0 = every
+    /// second, like the C++).
+    pub gps_interval: u32,
     pub buzzer_quiet: bool,
     /// The device's own screen (prefs record v2, `docs/spec/ui.md`).
     pub ui: UiPrefs,
@@ -136,6 +139,7 @@ impl Prefs {
         interference_threshold: 0,
         cad_enabled: false,
         gps_enabled: false,
+        gps_interval: 0,
         buzzer_quiet: false,
         ui: UiPrefs::DEFAULT,
     };
@@ -185,6 +189,7 @@ impl Prefs {
             interference_threshold: 0,
             cad_enabled: false,
             gps_enabled: false,
+            gps_interval: 0,
             buzzer_quiet: false,
             ui: UiPrefs::DEFAULT,
         }
@@ -365,6 +370,11 @@ pub struct Node {
     pub boot: Instant,
     /// Tag of a path discovery in progress (`pending_discovery`).
     pub pending_discovery: u32,
+    /// Position from the GPS, in RAM only (the C++'s `sensors.node_lat/lon`): adverts and
+    /// `SELF_INFO` use it over the stored one until `SET_ADVERT_LATLON`.
+    pub gps_pos: Option<(i32, i32)>,
+    /// Altitude from the GPS, mm (`node_altitude`).
+    pub gps_alt_mm: i32,
 }
 
 impl core::fmt::Debug for Node {
@@ -403,6 +413,8 @@ impl Node {
             last_rssi: 0,
             boot: Instant::ZERO,
             pending_discovery: 0,
+            gps_pos: None,
+            gps_alt_mm: 0,
         }
     }
 
@@ -426,6 +438,13 @@ impl Node {
         self.last_rssi = 0;
         self.boot = now;
         self.pending_discovery = 0;
+        self.gps_pos = None;
+        self.gps_alt_mm = 0;
+    }
+
+    /// Our position for adverts and the app: the GPS's, else the stored one.
+    pub fn position(&self) -> (i32, i32) {
+        self.gps_pos.unwrap_or((self.prefs.lat, self.prefs.lon))
     }
 
     pub(crate) fn emit(&mut self, e: Event) {

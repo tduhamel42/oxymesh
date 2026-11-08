@@ -1928,6 +1928,13 @@ name = "mc-core"
 version = "0.0.0"
 
 [[package]]
+name = "mc-nmea"
+version = "0.0.0"
+dependencies = [
+ "mc-core",
+]
+
+[[package]]
 name = "mc-node"
 version = "0.0.0"
 dependencies = [
@@ -2070,6 +2077,7 @@ dependencies = [
  "log",
  "mc-air",
  "mc-core",
+ "mc-nmea",
  "mc-node",
  "mc-proto",
  "mc-ui",

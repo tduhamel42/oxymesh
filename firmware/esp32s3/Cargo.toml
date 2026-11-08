@@ -38,6 +38,7 @@ rand_chacha = { version = "0.10", default-features = false }
 embedded-graphics = "0.8"
 
 mc-core = { path = "../../crates/mc-core" }
+mc-nmea = { path = "../../crates/mc-nmea" }
 mc-air = { path = "../../crates/mc-air" }
 mc-node = { path = "../../crates/mc-node" }
 mc-proto = { path = "../../crates/mc-proto" }

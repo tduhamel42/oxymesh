@@ -193,8 +193,7 @@ impl Node {
         let name = self.prefs.name;
         let ad = AppData {
             kind: mc_air::advert::TYPE_CHAT,
-            location: (self.prefs.advert_loc_policy != 0)
-                .then_some((self.prefs.lat, self.prefs.lon)),
+            location: (self.prefs.advert_loc_policy != 0).then_some(self.position()),
             feat1: None,
             feat2: None,
             name: Some(name_str(&name)),

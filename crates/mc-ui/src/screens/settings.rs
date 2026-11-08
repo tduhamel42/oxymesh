@@ -707,6 +707,34 @@ pub fn telemetry() -> Menu {
 
 // ------------------------------------------------------------------ power, time
 
+/// GPS position updates: (seconds, label); 0 is every second, like the C++.
+const GPS_INTERVALS: [(u32, &str); 7] = [
+    (0, "1 s"),
+    (10, "10 s"),
+    (30, "30 s"),
+    (60, "1 min"),
+    (300, "5 min"),
+    (900, "15 min"),
+    (3600, "1 h"),
+];
+
+fn interval_label(s: u32) -> String {
+    match GPS_INTERVALS.iter().find(|(v, _)| *v == s) {
+        Some((_, l)) => String::from(*l),
+        None => format!("{s} s"),
+    }
+}
+
+fn gps_interval_choice(ui: &Ui<'_>) -> Box<dyn Screen> {
+    let cur = prefs(ui).gps_interval;
+    let options = GPS_INTERVALS
+        .iter()
+        .map(|(s, l)| (String::from(*l), Intent::SetGpsInterval(*s)))
+        .collect();
+    let current = GPS_INTERVALS.iter().position(|(s, _)| *s == cur);
+    Box::new(Choice::new("GPS updates", options, current))
+}
+
 pub fn power() -> Menu {
     Menu::new(
         "Power",
@@ -718,6 +746,11 @@ pub fn power() -> Menu {
                     let on = !prefs(ui).gps_enabled;
                     Nav::IntentToast(Intent::SetGps(on), if on { "GPS on" } else { "GPS off" })
                 }),
+            ),
+            Item::with(
+                "GPS updates",
+                |ui| interval_label(prefs(ui).gps_interval),
+                Action::Build(gps_interval_choice),
             ),
             Item::plain(
                 "Hibernate",

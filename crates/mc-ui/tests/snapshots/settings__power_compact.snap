@@ -4,8 +4,8 @@ expression: r.draw()
 ---
 |Power                   17:33 80%|
 |► GPS                         off|
+|  GPS updates                 1 s|
 |  Hibernate                      |
-|                                 |
 |                                 |
 |                                 |
 |                                 |

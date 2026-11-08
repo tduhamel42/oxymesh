@@ -318,6 +318,7 @@ impl Compose {
                 .map(|m| m.text.as_slice())
                 .collect();
             Keyboard::new(mode, initial, recent_words(sent.into_iter()))
+                .with_position(ui.ctx.gps.map(|g| (g.lat, g.lon)))
         })
     }
 

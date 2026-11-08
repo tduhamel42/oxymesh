@@ -108,7 +108,7 @@ Each outgoing frame goes out on **all** active interfaces; the first available f
 | 38 | SET_OTHER_PARAMS | `[1]` manual_add (read without length check); optional, if len ≥ 3, 4, 5: `[2]` telemetry (bits 0-1 base, 2-3 location, 4-5 environment), `[3]` advert_loc_policy, `[4]` multi_acks | saved; OK | M:1488-1503 |
 | 39 | SEND_TELEMETRY_REQ | len ≥ 36: `[4..35]` key → remote; len == 4 → self; other → ERR 1 | remote: SENT then 0x8B. Self: **immediate 0x8B notification** (voltage, MCU temperature, sensors as CayenneLPP) | M:1680-1719 |
 | 40 | GET_CUSTOM_VARS | — | CUSTOM_VARS (21) + `"k:v,k:v"`; M5 with GPS: `"gps:0"` or `"gps:1"` | M:1853-1866 |
-| 41 | SET_CUSTOM_VAR | len ≥ 4; `"name:value"` | OK / ERR 6; `gps` and `gps_interval` saved | M:1867-1892 |
+| 41 | SET_CUSTOM_VAR | len ≥ 4; `"name:value"` | OK / ERR 6; `gps` and `gps_interval` saved (`gps_interval` 0 to 86400 s, 0 = every second; prefs record bytes 139-142) | M:1867-1892 |
 | 42 | GET_ADVERT_PATH | len ≥ 34; `[1]` reserved, key (compared on 7 bytes) | ADVERT_PATH (22): received ts u32, path_len, path / ERR 2 | M:1893-1913 |
 | 43 | GET_TUNING_PARAMS | — | TUNING_PARAMS (23): rx_delay ×1000, airtime_factor ×1000 | M:1481-1487 |
 | 44-49 | (WiFi, reserved) | | ERR 1 | M:52 |

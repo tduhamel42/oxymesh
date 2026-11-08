@@ -12,6 +12,7 @@ libfuzzer-sys = "0.4"
 mc-core = { path = "../crates/mc-core" }
 mc-air = { path = "../crates/mc-air" }
 mc-proto = { path = "../crates/mc-proto" }
+mc-nmea = { path = "../crates/mc-nmea" }
 
 # Separate workspace: nightly toolchain and instrumentation specific to fuzzing.
 [workspace]
@@ -27,6 +28,13 @@ bench = false
 [[bin]]
 name = "cmd_decode"
 path = "fuzz_targets/cmd_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nmea_parse"
+path = "fuzz_targets/nmea_parse.rs"
 test = false
 doc = false
 bench = false

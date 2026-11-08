@@ -246,6 +246,13 @@ name = "mc-core"
 version = "0.0.0"
 
 [[package]]
+name = "mc-nmea"
+version = "0.0.0"
+dependencies = [
+ "mc-core",
+]
+
+[[package]]
 name = "mc-proto"
 version = "0.0.0"
 dependencies = [
@@ -259,6 +266,7 @@ dependencies = [
  "libfuzzer-sys",
  "mc-air",
  "mc-core",
+ "mc-nmea",
  "mc-proto",
 ]
 

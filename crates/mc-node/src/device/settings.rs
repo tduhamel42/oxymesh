@@ -73,8 +73,16 @@ impl Device {
         }
         self.node.prefs.lat = lat;
         self.node.prefs.lon = lon;
+        // Like the C++'s `sensors.node_lat`: the GPS takes over again at its next update.
+        self.node.gps_pos = None;
         self.save_prefs(st);
         Ok(())
+    }
+
+    /// `gps_interval` (custom variable): seconds between GPS position updates, 0 to 86400.
+    pub fn set_gps_interval(&mut self, secs: u32, st: &mut impl Storage) {
+        self.node.prefs.gps_interval = secs.min(86_400);
+        self.save_prefs(st);
     }
 
     /// `SET_TUNING_PARAMS`, values × 1000.

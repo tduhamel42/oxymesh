@@ -142,8 +142,10 @@ pub fn encode_prefs(p: &Prefs) -> [u8; PREFS_RECORD] {
         )?;
         w.put_u8(u.buzzer)?;
         w.put(&u.tz_offset_min.to_le_bytes())?;
-        // Added within v2: the bytes were zero before, which reads as nothing muted.
-        w.put(u.muted.to_le_bytes().get(..MUTED_BYTES).unwrap_or(&[]))
+        // Added within v2: the bytes were zero before, which reads as nothing muted and a GPS
+        // update every second.
+        w.put(u.muted.to_le_bytes().get(..MUTED_BYTES).unwrap_or(&[]))?;
+        w.put_u32_le(p.gps_interval)
     })();
     out
 }
@@ -212,6 +214,9 @@ pub fn decode_prefs(b: &[u8], defaults: &Prefs) -> Option<Prefs> {
             }
             u.muted = u64::from_le_bytes(b);
         }
+        if let Ok(v) = r.u32_le() {
+            p.gps_interval = v.min(86_400);
+        }
     }
     Some(p)
 }
@@ -250,6 +255,7 @@ mod tests {
         q.ui.setup_done = true;
         q.ui.light_timeout_s = 30;
         q.ui.muted = (1 << 39) | (1 << 3) | 1;
+        q.gps_interval = 600;
         let back = decode_prefs(&encode_prefs(&q), &p).unwrap();
         assert_eq!(encode_prefs(&back), encode_prefs(&q));
         assert_eq!(back.ui, q.ui);
@@ -263,7 +269,9 @@ mod tests {
         assert_eq!(old.ui, p.ui);
         // A v2 record written before the mask existed: nothing muted.
         let mut early = encode_prefs(&q);
-        early[134..139].fill(0);
-        assert_eq!(decode_prefs(&early, &p).unwrap().ui.muted, 0);
+        early[134..143].fill(0);
+        let early = decode_prefs(&early, &p).unwrap();
+        assert_eq!((early.ui.muted, early.gps_interval), (0, 0));
+        assert_eq!(back.gps_interval, 600);
     }
 }

@@ -83,6 +83,15 @@ pub enum UiEvent {
     Discovered,
 }
 
+/// The GPS fix the runner reports (degrees × 1e6, altitude in mm).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GpsFix {
+    pub lat: i32,
+    pub lon: i32,
+    pub alt_mm: i32,
+    pub satellites: u8,
+}
+
 /// Offline queue index entry; the frame itself is in storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Queued {
@@ -168,8 +177,10 @@ pub struct Device {
     /// Copies of every node event, for the simulator's tests.
     #[cfg(feature = "tap")]
     tap: heapless::Deque<Event, 64>,
-    /// Custom variables (`GET_CUSTOM_VARS`): the `gps` setting.
-    pub gps_interval: u32,
+    /// The receiver's latest valid fix (`Device::report_gps`).
+    gps: Option<GpsFix>,
+    /// Next time the node takes the GPS position (`EnvironmentSensorManager::loop`).
+    next_gps_update: Instant,
 }
 
 impl core::fmt::Debug for Device {
@@ -270,7 +281,8 @@ impl Device {
             ui: heapless::Deque::new(),
             #[cfg(feature = "tap")]
             tap: heapless::Deque::new(),
-            gps_interval: 0,
+            gps: None,
+            next_gps_update: Instant::ZERO,
         }
     }
 
@@ -302,6 +314,39 @@ impl Device {
         {
             self.flush_contacts(st);
         }
+        // The node takes the GPS position every `gps_interval` s (`EnvironmentSensorManager.cpp:
+        // 924-950`): adverts and the app then carry it.
+        if now >= self.next_gps_update {
+            if self.gps_active()
+                && let Some(f) = self.gps
+            {
+                self.node.gps_pos = Some((f.lat, f.lon));
+                self.node.gps_alt_mm = f.alt_mm;
+            }
+            let secs = u64::from(self.node.prefs.gps_interval.max(1));
+            self.next_gps_update = now + mc_core::Duration::from_secs(secs);
+        }
+    }
+
+    /// The GPS is on (the board has one and the setting enables it).
+    pub fn gps_active(&self) -> bool {
+        self.info.has_gps && self.node.prefs.gps_enabled
+    }
+
+    /// The receiver's latest valid fix, or `None` without one; the runner calls it as
+    /// sentences arrive.
+    pub fn report_gps(&mut self, fix: Option<GpsFix>) {
+        self.gps = fix;
+    }
+
+    pub fn gps(&self) -> Option<GpsFix> {
+        self.gps.filter(|_| self.gps_active())
+    }
+
+    /// Sets the clock (from the app or the GPS); the board's clock chip follows.
+    pub fn set_time(&mut self, now: Instant, unix: u32) {
+        self.node.rtc.set(now, unix);
+        let _ = self.actions.push_back(Action::ClockSet);
     }
 
     /// Writes pending contacts right away (before a reboot).
@@ -960,16 +1005,38 @@ impl Device {
         self.node.pending_discovery = 0;
     }
 
-    /// Device telemetry in CayenneLPP: voltage (channel 1, type 116, 0.01 V) and
-    /// microcontroller temperature (channel 1, type 103, 0.1 °C).
-    fn telemetry(&self) -> heapless::Vec<u8, 16> {
+    /// Device telemetry in CayenneLPP, channel 1: voltage (type 116, 0.01 V), the position
+    /// when `location` is allowed and the GPS is on (type 136: 0.0001° and 0.01 m, 3 bytes each),
+    /// microcontroller temperature (type 103, 0.1 °C). A contact's request puts the position
+    /// before the temperature, the app's own request after (`MyMesh.cpp:666-675, 1701-1709`).
+    fn telemetry(&self, location: bool, position_last: bool) -> heapless::Vec<u8, 32> {
         let mut v = heapless::Vec::new();
         let cv = self.battery_mv / 10;
         let _ = v.extend_from_slice(&[1, 116]);
         let _ = v.extend_from_slice(&cv.to_be_bytes());
+        let gps = (location && self.gps_active()).then(|| {
+            let (lat, lon) = self.node.position();
+            let b3 = |x: i32| {
+                let b = x.to_be_bytes();
+                [b[1], b[2], b[3]]
+            };
+            let mut g = [0u8; 11];
+            g[0] = 1;
+            g[1] = 136;
+            g[2..5].copy_from_slice(&b3(lat / 100));
+            g[5..8].copy_from_slice(&b3(lon / 100));
+            g[8..11].copy_from_slice(&b3(self.node.gps_alt_mm / 10));
+            g
+        });
+        if !position_last && let Some(g) = &gps {
+            let _ = v.extend_from_slice(g);
+        }
         if let Some(t) = self.mcu_temp_deci {
             let _ = v.extend_from_slice(&[1, 103]);
             let _ = v.extend_from_slice(&t.to_be_bytes());
+        }
+        if position_last && let Some(g) = &gps {
+            let _ = v.extend_from_slice(g);
         }
         v
     }
@@ -1013,8 +1080,8 @@ impl Device {
         if perms & 1 == 0 {
             return;
         }
-        let lpp = self.telemetry();
-        let mut reply: heapless::Vec<u8, 32> = heapless::Vec::new();
+        let lpp = self.telemetry(perms & 2 != 0, false);
+        let mut reply: heapless::Vec<u8, 48> = heapless::Vec::new();
         let _ = reply.extend_from_slice(&ts.to_le_bytes());
         let _ = reply.extend_from_slice(&lpp);
         let id = self.node.id.clone();
@@ -1063,13 +1130,14 @@ impl Device {
 
     fn self_info(&self) -> Response<'_> {
         let p = &self.node.prefs;
+        let (lat, lon) = self.node.position();
         Response::SelfInfo(SelfInfo {
             adv_type: 1,
             tx_power: p.radio.tx_power_dbm.to_le_bytes()[0],
             max_tx_power: self.info.max_tx_power.to_le_bytes()[0],
             key: *self.node.id.pub_key(),
-            lat: p.lat,
-            lon: p.lon,
+            lat,
+            lon,
             multi_acks: p.multi_acks,
             advert_loc_policy: p.advert_loc_policy,
             telemetry: (p.telemetry_env << 4) | (p.telemetry_loc << 2) | p.telemetry_base,
@@ -1190,8 +1258,7 @@ impl Device {
             }
             Command::SetDeviceTime { unix_s } => {
                 if unix_s >= self.node.time(now) {
-                    self.node.rtc.set(now, unix_s);
-                    let _ = self.actions.push_back(Action::ClockSet);
+                    self.set_time(now, unix_s);
                     self.ok();
                 } else {
                     self.err(err::ILLEGAL_ARG);
@@ -1482,7 +1549,7 @@ impl Device {
             }
             Command::SendTelemetryReq { key, .. } => match key {
                 None => {
-                    let lpp = self.telemetry();
+                    let lpp = self.telemetry(true, true);
                     let me = prefix6(self.node.id.pub_key());
                     self.reply(&Response::TelemetryResponse {
                         reserved: 0,
@@ -1525,7 +1592,7 @@ impl Device {
                         self.done(r);
                     }
                     Some(("gps_interval", v)) if self.info.has_gps => {
-                        self.gps_interval = v.trim().parse().unwrap_or(0);
+                        self.set_gps_interval(v.trim().parse().unwrap_or(0), st);
                         self.ok();
                     }
                     _ => self.err(err::ILLEGAL_ARG),

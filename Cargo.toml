@@ -18,6 +18,7 @@ mc-air = { path = "crates/mc-air" }
 mc-proto = { path = "crates/mc-proto" }
 mc-node = { path = "crates/mc-node" }
 mc-sim = { path = "crates/mc-sim" }
+mc-nmea = { path = "crates/mc-nmea" }
 
 # no_std
 heapless = { version = "0.9", default-features = false }

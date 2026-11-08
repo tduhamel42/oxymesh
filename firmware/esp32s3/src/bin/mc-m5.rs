@@ -54,6 +54,7 @@ use oxymesh_esp32s3::battery::{Smoother, percent};
 use oxymesh_esp32s3::ble::{self as bt, Control, Server, Shared};
 use oxymesh_esp32s3::buzzer;
 use oxymesh_esp32s3::flashstore::{BONDS_MAX, FlashStore};
+use oxymesh_esp32s3::gps;
 use oxymesh_esp32s3::m5;
 use oxymesh_esp32s3::pca9557::{Pca9557, pin};
 use oxymesh_esp32s3::pcf8563::Pcf8563;
@@ -226,7 +227,11 @@ fn ui_ctx(dev: &Device, ble: Ble, charging: bool, light: bool) -> Ctx<'_> {
         battery_percent: (dev.battery_mv > 0).then(|| percent(dev.battery_mv)),
         charging,
         light,
-        gps: None,
+        gps: dev.gps().map(|f| mc_ui::app::GpsFix {
+            lat: f.lat,
+            lon: f.lon,
+            satellites: f.satellites,
+        }),
         ble,
     }
 }
@@ -298,6 +303,36 @@ async fn main(_spawner: Spawner) -> ! {
         let _ = io.set(pin::LED_ENABLE, true);
     }
     Timer::after(Duration::from_millis(10)).await;
+
+    // GPS: the board revision from the expander's IO7, read 10 times (high = v2.0, AG3352).
+    let highs = (0..10)
+        .filter(|_| {
+            io.as_mut()
+                .and_then(|io| io.read(pin::GPS_VERSION).ok())
+                .unwrap_or(false)
+        })
+        .count();
+    let revision = if highs > 5 {
+        gps::Revision::V2
+    } else {
+        gps::Revision::V1
+    };
+    info!("gps: board {revision:?} ({highs}/10 high)");
+    let mut gps_rx = match revision {
+        gps::Revision::V1 => Uart::new(p.UART1, UartConfig::default().with_baudrate(9600))
+            .ok()
+            .map(|u| {
+                gps::Gps::new(
+                    u.with_rx(p.GPIO19).with_tx(p.GPIO20),
+                    Output::new(p.GPIO11, Level::Low, OutputConfig::default()),
+                    Output::new(p.GPIO13, Level::Low, OutputConfig::default()),
+                )
+            }),
+        gps::Revision::V2 => {
+            info!("gps: the AG3352 board is not driven yet");
+            None
+        }
+    };
 
     // Storage: `mcdata` partition.
     let mut flash = FlashStorage::new(p.FLASH).multicore_auto_park();
@@ -563,6 +598,25 @@ async fn main(_spawner: Spawner) -> ! {
                     let _ = io.set(pin::LED_NOTIFY, true);
                 }
             }
+            // GPS: on as the setting says; its fix for the node, its time for the clock.
+            if let Some(g) = gps_rx.as_mut() {
+                let want = dev.gps_active();
+                if want != g.is_on() {
+                    g.power(want).await;
+                    info!("gps: {}", if want { "on" } else { "off" });
+                    want_draw = true;
+                }
+                let (fix, t) = g.poll();
+                if fix.is_some() != dev.gps().is_some() {
+                    want_draw = true;
+                }
+                dev.report_gps(fix);
+                if let Some(t) = t {
+                    dev.set_time(now, t);
+                    info!("gps: clock set to {t}");
+                }
+            }
+
             // Noise floor, sampled like the C++ while listening.
             let ms_now = Instant::now().as_millis();
             if ms_now >= next_noise_round {
@@ -719,6 +773,9 @@ async fn main(_spawner: Spawner) -> ! {
                         }
                         let _ = epd.sleep();
                         let _ = radio.sleep();
+                        if let Some(g) = gps_rx.as_mut() {
+                            g.power(false).await;
+                        }
                         if let Some(io) = io.as_mut() {
                             let _ = io.set(pin::BACKLIGHT, false);
                             let _ = io.set(pin::LED_NOTIFY, false);

@@ -190,6 +190,8 @@ fn every_setting_round_trips_and_the_app_sees_it() {
         }
         other => panic!("{other:?}"),
     }
+    apply(&mut w, Intent::SetGpsInterval(300));
+    assert_eq!(w.nodes[ME].dev.node.prefs.gps_interval, 300);
     // The screen's own settings: storage only, the app never sees them.
     let mut u = w.nodes[ME].dev.node.prefs.ui;
     u.compact = true;

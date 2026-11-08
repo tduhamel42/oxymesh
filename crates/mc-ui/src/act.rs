@@ -84,6 +84,8 @@ pub enum Intent {
     /// Forget every paired phone.
     ForgetPaired,
     SetGps(bool),
+    /// Seconds between GPS position updates (`gps_interval`).
+    SetGpsInterval(u32),
     /// The screen's own settings.
     SetUi(UiPrefs),
     /// Turn off until B is pressed.
@@ -239,6 +241,10 @@ pub fn perform(
         }
         Intent::SetPin(pin) => of(dev.set_pin(*pin, st)),
         Intent::SetGps(on) => of(dev.set_gps(*on, st)),
+        Intent::SetGpsInterval(s) => {
+            dev.set_gps_interval(*s, st);
+            Outcome::Ok
+        }
         Intent::SetUi(ui) => {
             dev.set_ui(*ui, st);
             Outcome::Ok

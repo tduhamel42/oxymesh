@@ -1175,6 +1175,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mc-nmea"
+version = "0.0.0"
+dependencies = [
+ "mc-core",
+]
+
+[[package]]
 name = "mc-node"
 version = "0.0.0"
 dependencies = [
