@@ -115,6 +115,8 @@ pub enum Action {
     RadioChanged,
     /// PIN code changed (applied at reboot, like in C++).
     PinChanged,
+    /// The clock was set (by the app, the GPS…): the board's clock chip follows.
+    ClockSet,
 }
 
 #[derive(Debug, Clone)]
@@ -1189,6 +1191,7 @@ impl Device {
             Command::SetDeviceTime { unix_s } => {
                 if unix_s >= self.node.time(now) {
                     self.node.rtc.set(now, unix_s);
+                    let _ = self.actions.push_back(Action::ClockSet);
                     self.ok();
                 } else {
                     self.err(err::ILLEGAL_ARG);

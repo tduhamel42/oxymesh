@@ -6,8 +6,10 @@ pub mod ble;
 pub mod buzzer;
 pub mod flashstore;
 pub mod pca9557;
+pub mod pcf8563;
 pub mod ssd1681;
 pub mod sx126x;
+pub mod tsens;
 
 /// ThinkNode M5 (`docs/spec/m5.md`).
 pub mod m5 {

@@ -3,6 +3,7 @@
 
 use alloc::format;
 use alloc::string::String;
+use mc_core::civil::civil_from_days;
 
 /// Before this, the device clock has not been set (2020-09-13).
 const CLOCK_SET: u32 = 1_600_000_000;
@@ -42,20 +43,6 @@ pub fn local(unix: u32, tz_offset_min: i16) -> Option<DateTime> {
         minute: (secs / 60 % 60) as u8,
         weekday: (days + 4).rem_euclid(7) as u8,
     })
-}
-
-/// Days since 1970-01-01 to (year, month, day), proleptic Gregorian (H. Hinnant's algorithm).
-fn civil_from_days(z: i64) -> (i32, u8, u8) {
-    let z = z + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = (doy - (153 * mp + 2) / 5 + 1) as u8;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 } as u8;
-    let year = (yoe + era * 400 + i64::from(month <= 2)) as i32;
-    (year, month, day)
 }
 
 /// `14:02`, or `--:--` while the clock is not set.

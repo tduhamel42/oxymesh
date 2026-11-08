@@ -15,7 +15,9 @@
 )]
 
 pub mod bytes;
+pub mod civil;
 pub mod hex;
+pub mod noise;
 pub mod radio;
 pub mod regulatory;
 pub mod time;

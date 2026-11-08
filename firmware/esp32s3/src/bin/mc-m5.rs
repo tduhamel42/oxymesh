@@ -41,6 +41,7 @@ use esp_radio::ble::controller::BleConnector;
 use esp_storage::FlashStorage;
 use log::{error, info};
 use mc_air::crypto::LocalIdentity;
+use mc_core::noise::NoiseFloor;
 use mc_node::device::{Action, Info, UiEvent};
 use mc_node::{Device, Prefs};
 use mc_proto::{FROM_DEVICE, TO_DEVICE, USB_MAX, UsbDeframer, usb_frame};
@@ -55,8 +56,10 @@ use oxymesh_esp32s3::buzzer;
 use oxymesh_esp32s3::flashstore::{BONDS_MAX, FlashStore};
 use oxymesh_esp32s3::m5;
 use oxymesh_esp32s3::pca9557::{Pca9557, pin};
+use oxymesh_esp32s3::pcf8563::Pcf8563;
 use oxymesh_esp32s3::ssd1681::{Frame, Ssd1681};
 use oxymesh_esp32s3::sx126x::{LoRaConfig, Sx126x, irq};
+use oxymesh_esp32s3::tsens::ChipTemp;
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 use ratatui_core::terminal::Terminal;
@@ -84,6 +87,9 @@ const HEAP_SIZE: usize = 24 * 1024;
 const HEAP_RECLAIMED: usize = 72 * 1024;
 /// How often screens get their tick (range test pings, toasts).
 const UI_TICK_MS: u64 = 250;
+/// The clock at boot until something sets it (2026-11-05); an older clock chip time is not
+/// trusted.
+const BOOT_EPOCH: u32 = 1_793_900_000;
 /// The unread LED blinks this often, this long.
 const BLINK_EVERY_MS: u64 = 5_000;
 const BLINK_MS: u64 = 80;
@@ -281,6 +287,13 @@ async fn main(_spawner: Spawner) -> ! {
     .with_sda(p.GPIO48)
     .with_scl(p.GPIO47);
     let mut io = Pca9557::new(i2c).ok();
+    // The clock chip, on the main I2C bus.
+    let mut rtc_chip = I2c::new(
+        p.I2C0,
+        I2cConfig::default().with_frequency(Rate::from_khz(100)),
+    )
+    .ok()
+    .map(|i2c| Pcf8563::new(i2c.with_sda(p.GPIO2).with_scl(p.GPIO1)));
     if let Some(io) = io.as_mut() {
         let _ = io.set(pin::LED_ENABLE, true);
     }
@@ -327,8 +340,16 @@ async fn main(_spawner: Spawner) -> ! {
     };
     let prefs = Prefs::defaults(id.pub_key());
     let dev = DEVICE.take();
-    dev.node.reset(id, prefs, 1_793_900_000, mc_now());
+    dev.node.reset(id, prefs, BOOT_EPOCH, mc_now());
     store.load(dev);
+    // The clock chip kept the time across the reboot or power-off, unless it lost power.
+    match rtc_chip.as_mut().and_then(Pcf8563::read) {
+        Some(t) if t >= BOOT_EPOCH => {
+            dev.node.rtc.set(mc_now(), t);
+            info!("clock: {t} from the PCF8563");
+        }
+        other => info!("clock: not set ({other:?}), until a phone or the GPS sets it"),
+    }
     dev.connected = true; // USB: always connected.
 
     // Bluetooth: name and PIN fixed at boot, like the C++ (`main.cpp:188-209`).
@@ -428,6 +449,9 @@ async fn main(_spawner: Spawner) -> ! {
     let mut transmitting = false;
     let mut tx_started = Instant::now();
     let mut next_battery = Instant::now();
+    let chip_temp = ChipTemp::new();
+    Timer::after(Duration::from_millis(1)).await;
+    info!("chip temperature: {:?} (0.1 °C)", chip_temp.read());
     let mut buf = [0u8; 255];
     let mut rx_bytes = [0u8; 64];
     let mut frame_in = [0u8; mc_proto::FRAME_MAX];
@@ -448,6 +472,8 @@ async fn main(_spawner: Spawner) -> ! {
     let mut next_ui_tick = 0u64;
     let mut next_blink = 0u64;
     let mut blink_off: Option<u64> = None;
+    let mut noise = NoiseFloor::new();
+    let mut next_noise_round = 0u64;
     let mut last_ble = ble_of(&ble_sh);
     // The loop owns the device and its peripherals; the Bluetooth side only shares `ble_sh`,
     // the buzzer only its requests.
@@ -537,6 +563,15 @@ async fn main(_spawner: Spawner) -> ! {
                     let _ = io.set(pin::LED_NOTIFY, true);
                 }
             }
+            // Noise floor, sampled like the C++ while listening.
+            let ms_now = Instant::now().as_millis();
+            if ms_now >= next_noise_round {
+                noise.trigger();
+                next_noise_round = ms_now + mc_core::noise::ROUND_MS;
+            }
+            let receiving = flags & (irq::PREAMBLE_DETECTED | irq::HEADER_VALID) != 0;
+            noise.step(!transmitting, receiving, || radio.rssi_inst().ok());
+            dev.noise_floor = noise.floor();
             dev.tick(now, &mut rng, &mut store);
 
             // Actions requested by the app.
@@ -561,6 +596,14 @@ async fn main(_spawner: Spawner) -> ! {
                             })
                             .and_then(|()| radio.start_rx(cfg.preamble));
                         transmitting = false;
+                        want_draw = true;
+                    }
+                    Action::ClockSet => {
+                        let t = dev.node.rtc.now(now);
+                        if let Some(c) = rtc_chip.as_mut() {
+                            let r = c.write(t);
+                            info!("clock: {t} to the PCF8563 ({r:?})");
+                        }
                         want_draw = true;
                     }
                     Action::PinChanged => {
@@ -588,6 +631,7 @@ async fn main(_spawner: Spawner) -> ! {
             // Battery: smoothed every 10 s.
             if Instant::now() >= next_battery {
                 next_battery = Instant::now() + Duration::from_secs(10);
+                dev.mcu_temp_deci = chip_temp.read();
                 #[cfg(feature = "debug-log")]
                 diag::log();
                 let raw_mv = adc.read_blocking(&mut bat_pin);
