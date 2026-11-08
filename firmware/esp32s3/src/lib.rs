@@ -3,6 +3,7 @@
 
 pub mod battery;
 pub mod ble;
+pub mod buzzer;
 pub mod flashstore;
 pub mod pca9557;
 pub mod ssd1681;

@@ -32,19 +32,26 @@ pub struct Messages {
     state: ListState,
 }
 
-/// Unread first, then the most recent.
+/// Unread first (muted channels aside), then the most recent.
 fn conversations(ui: &Ui<'_>) -> Vec<(Peer, String, String)> {
     let h = ui.ctx.dev.history();
+    let prefs = &ui.ctx.dev.node.prefs.ui;
+    let muted = |p: Peer| matches!(p, Peer::Channel(i) if prefs.is_muted(i));
     let mut v: Vec<(Peer, u32, usize)> = h
         .conversations()
         .iter()
         .map(|(p, m)| (*p, m.seq, h.unread_with(*p)))
         .collect();
-    v.sort_by_key(|(_, seq, unread)| (*unread == 0, core::cmp::Reverse(*seq)));
+    v.sort_by_key(|(p, seq, unread)| (*unread == 0 || muted(*p), core::cmp::Reverse(*seq)));
     v.into_iter()
         .map(|(p, seq, unread)| {
             let detail = if unread > 0 {
-                format!("{}{unread}", ui.sym.unread)
+                let mark = if muted(p) {
+                    ui.sym.quiet
+                } else {
+                    ui.sym.unread
+                };
+                format!("{mark}{unread}")
             } else {
                 h.get(seq)
                     .map(|m| clock::stamp(m.at, ui.ctx.unix, ui.ctx.tz_offset_min))

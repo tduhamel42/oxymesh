@@ -22,6 +22,8 @@ pub struct Symbols {
     pub selected: &'static str,
     /// Unread count in the header.
     pub unread: &'static str,
+    /// Unread count of a muted channel: there, but not calling.
+    pub quiet: &'static str,
     /// Backlight on, in the header.
     pub light: &'static str,
     /// Separator inside a line.
@@ -38,6 +40,7 @@ pub const LARGE_SYMBOLS: Symbols = Symbols {
     b_hold: "B",
     selected: "▸ ",
     unread: "●",
+    quiet: "○",
     light: "☀",
     dot: "·",
     left: "◂",
@@ -52,6 +55,7 @@ pub const COMPACT_SYMBOLS: Symbols = Symbols {
     b_hold: "B",
     selected: "► ",
     unread: "●",
+    quiet: "○",
     light: "☀",
     dot: "·",
     left: "◄",
@@ -90,8 +94,8 @@ mod tests {
     fn missing(font: &MonoFont<'_>, s: &Symbols) -> std::string::String {
         let unknown = font.glyph_mapping.index('\u{10FFFD}');
         [
-            s.a_click, s.a_hold, s.b_click, s.b_hold, s.selected, s.unread, s.light, s.dot, s.left,
-            s.right,
+            s.a_click, s.a_hold, s.b_click, s.b_hold, s.selected, s.unread, s.quiet, s.light,
+            s.dot, s.left, s.right,
         ]
         .iter()
         .flat_map(|t| t.chars())

@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/screens.rs
+expression: "text(&mut app, LARGE, &c)"
+---
+|Channels     ●1 18:33 87%|
+|▸ + Add #channel         |
+|  Public               ○1|
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|A▸next hold▸open   B◂back|

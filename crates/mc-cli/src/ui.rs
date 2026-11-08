@@ -243,6 +243,8 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
     let mut hold_since: Option<StdInstant> = None;
     let mut ticks_sent = 0u32;
     let mut log: Vec<String> = Vec::new();
+    // The buzzer, shown for 3 s.
+    let mut tune_shown: Option<(String, u64)> = None;
     // Alice and Bob advertise themselves a few seconds in, then every 2 minutes; the device
     // too, so they can write to it. Alice greets at 10 s and echoes; Bob posts on Public.
     let mut next_advert = [(1usize, 3_000u64), (2, 7_000), (3, 5_000), (ME, 4_000)];
@@ -290,8 +292,22 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
             let c = ctx(&w, light, ble);
             for e in &events {
                 app.event(e, &c);
+                // No sound here: the side panel names the tune the M5 would play.
+                if let Some((a, level)) =
+                    mc_ui::tune::alert(e, &w.nodes[ME].dev, ble.state == BleState::Connected)
+                {
+                    let quiet = if level == mc_ui::tune::Level::Quiet {
+                        " (quiet)"
+                    } else {
+                        ""
+                    };
+                    tune_shown = Some((format!("♪ {}{quiet}", a.label()), wall + 3_000));
+                }
             }
             app.tick(&c);
+        }
+        if tune_shown.as_ref().is_some_and(|(_, until)| wall >= *until) {
+            tune_shown = None;
         }
         // A held with Space: ticks every 250 ms from 1 s.
         let mut gestures: Vec<Gesture> = Vec::new();
@@ -426,6 +442,9 @@ fn emulate(grid: &mut Grid) -> std::io::Result<()> {
             } else {
                 ""
             }));
+            lines.push(Line::from(
+                tune_shown.as_ref().map(|(t, _)| t.as_str()).unwrap_or(""),
+            ));
             lines.push(Line::from(""));
             lines.extend(log.iter().map(|l| Line::from(l.as_str())));
             f.render_widget(Paragraph::new(lines), side);

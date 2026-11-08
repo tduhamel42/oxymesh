@@ -131,7 +131,7 @@ pub fn wrap(text: &str, width: usize) -> Vec<String> {
 pub fn status(ui: &Ui<'_>, time: bool) -> String {
     let c = ui.ctx;
     let mut parts: Vec<String> = Vec::new();
-    let unread = c.dev.history().unread();
+    let unread = c.dev.unread_alerting();
     if unread > 0 {
         parts.push(format!("{}{unread}", ui.sym.unread));
     }

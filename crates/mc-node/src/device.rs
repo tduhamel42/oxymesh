@@ -399,10 +399,21 @@ impl Device {
         self.node.disp.len()
     }
 
+    /// Saves a history slot; an emptied slot is saved as zeros, which never decode.
     fn save_history_slot(&self, slot: usize, st: &mut impl Storage) {
-        if let Some(rec) = self.history.record(slot) {
-            st.save_history(slot as u16, &rec);
-        }
+        let rec = self.history.record(slot).unwrap_or([0; HISTORY_RECORD]);
+        st.save_history(slot as u16, &rec);
+    }
+
+    /// Unread messages that call for attention: muted channels left out. Their own
+    /// conversations still count them (`History::unread_with`).
+    pub fn unread_alerting(&self) -> usize {
+        let ui = &self.node.prefs.ui;
+        self.history
+            .iter()
+            .filter(|m| m.is_unread())
+            .filter(|m| !matches!(m.peer, Peer::Channel(i) if ui.is_muted(i)))
+            .count()
     }
 
     /// The screen opened the conversation: its messages are read.

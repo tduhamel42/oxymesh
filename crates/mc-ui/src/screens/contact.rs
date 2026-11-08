@@ -217,7 +217,8 @@ impl ChannelScreen {
     }
 }
 
-const CHANNEL_ACTS: [&str; 3] = ["Messages", "Write", "Remove"];
+/// Messages, Write, Mute, Remove.
+const CHANNEL_ACTS: [&str; 4] = ["Messages", "Write", "Mute", "Remove"];
 
 impl Screen for ChannelScreen {
     fn title(&self, ui: &Ui<'_>) -> String {
@@ -246,9 +247,16 @@ impl Screen for ChannelScreen {
             Paragraph::new(crate::chrome::fit(&info, usize::from(body.width))),
             rows(body, 0, 1),
         );
+        let muted = ui.ctx.dev.node.prefs.ui.is_muted(self.idx);
         let acts: Vec<(String, String)> = CHANNEL_ACTS
             .iter()
-            .map(|l| (String::from(*l), String::new()))
+            .map(|l| {
+                let detail = match *l {
+                    "Mute" => String::from(if muted { "yes" } else { "no" }),
+                    _ => String::new(),
+                };
+                (String::from(*l), detail)
+            })
             .collect();
         draw_list(
             f,
@@ -259,7 +267,7 @@ impl Screen for ChannelScreen {
         );
     }
 
-    fn input(&mut self, input: Input, _ui: &Ui<'_>) -> Nav {
+    fn input(&mut self, input: Input, ui: &Ui<'_>) -> Nav {
         if !step(&mut self.state, CHANNEL_ACTS.len(), input) {
             return Nav::Stay;
         }
@@ -267,6 +275,14 @@ impl Screen for ChannelScreen {
         match self.state.selected().unwrap_or(0) {
             0 => Nav::PushWith(Box::new(Conversation::new(peer)), Intent::MarkRead(peer)),
             1 => Nav::Push(Box::new(Compose::to(peer))),
+            2 => {
+                let u = ui.ctx.dev.node.prefs.ui;
+                let mute = !u.is_muted(self.idx);
+                Nav::IntentToast(
+                    Intent::SetUi(u.with_muted(self.idx, mute)),
+                    if mute { "Muted" } else { "Unmuted" },
+                )
+            }
             _ => Nav::Confirm(
                 Confirm::new(
                     "Remove",

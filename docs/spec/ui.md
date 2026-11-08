@@ -70,7 +70,8 @@ Home (always-on face)
 - **Messages**: `+ New message` (pick a contact, then write), then the conversations: unread first, then the most recent; the right column shows the unread count or the time.
 - **Conversation**: received on the left, sent on the right, wrapped, newest at the bottom; A scrolls (click down, double up), a long A writes. Sent: `sending…`, `try 2…`, `flood…`, `delivered 2.4 s`, `failed`; channels: `sent`. Received: `direct` or `3 hops`; on channels, the sender's name. Messages arriving while the conversation is open are read at once.
 - **Contact**: type and route (`direct`, `2 hops`, `no route yet`), short key, last heard; then Write, Messages, Ping (round trip shown on the screen), Favourite, Reset route, Trace route (U4), Share (QR card), Remove (hold-to-confirm).
-- **Channels**: `+ Add #channel` (name typed, secret derived from it like the app), then the channels with their unread count. A channel with unread messages opens on its conversation; otherwise on its screen: Messages, Write, Remove (hold-to-confirm).
+- **Channels**: `+ Add #channel` (name typed, secret derived from it like the app), then the channels with their unread count. A channel with unread messages opens on its conversation; otherwise on its screen: Messages, Write, Mute (yes / no), Remove (hold-to-confirm).
+- **Muted channels** (oxymesh only: neither MeshCore nor its app has them, no protocol byte changes): a muted channel keeps its own unread count, marked `○3` instead of `●3` (`muted` when nothing is unread), and no longer floats to the top of Messages. It never counts in the header or on Home, never blinks the LED and never plays a tune. The mute belongs to the slot: when a slot gets another channel (a new secret, from the screen or the app's `SET_CHANNEL`), its mute and its old messages go; a rename keeps both. Stored as a 40-bit mask in the prefs record (bytes 134-138, zero in older records).
 - **Compose and quick replies**: §7. 8 quick replies by default: OK, Yes, No, On my way, Call me, Where are you?, Running late, Thanks; plus "Send my position". Sent from the device: 3 direct attempts, then `RESET_PATH` and flood (deliberate deviation 6).
 - **Tools** (U4):
   - Signal strength is shown as bars from the SNR: `▂▄▆█` at 10 dB and above, `▂▄▆` from 5, `▂▄` from 0, `▂` from −7.
@@ -112,8 +113,8 @@ Home (always-on face)
 
 ## 8. Notifications
 
-- **Blue LED**: blinks briefly every 5 s while something is unread.
-- **Buzzer**: off / quiet / on. A short tune for a DM, another one for a channel, a beep for a delivery; only when no app is connected (like the C++).
+- **Blue LED**: blinks briefly every 5 s while something is unread (muted channels left out, like the header and Home).
+- **Buzzer** (GPIO9, LEDC): the C++ tunes (`UITask.cpp:770-778`, RTTTL, `mc_ui::tune`): `MsgRcv3` for a DM, `kerplop` for a message on an unmuted channel, `ack` when a message sent from the screen is delivered. Off / quiet (the same tunes at 3 % duty) / on (50 %). Silent while a phone holds the Bluetooth link, like the C++ (`UITask.cpp:814-816`). USB does not count as an app: it is also the charger, and the C++'s USB `isConnected()` is always true. The C++ flag `buzzer_quiet` follows "off", for the import and a return to C++.
 - We never switch screens on the user's behalf while they are navigating; a new DM shows the banner (§4).
 
 ## 9. Local history and unread

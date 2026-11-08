@@ -16,7 +16,7 @@ extern crate alloc;
 
 use embassy_embedded_hal::adapter::BlockingAsync;
 use embassy_executor::Spawner;
-use embassy_futures::join::join4;
+use embassy_futures::join::{join, join5};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::mono_font::iso_8859_1::{FONT_6X13, FONT_10X20};
@@ -51,6 +51,7 @@ use mc_ui::refresh::{self, Kind, Policy};
 use mc_ui::{App, Ble, Ctx, Outcome, perform};
 use oxymesh_esp32s3::battery::{Smoother, percent};
 use oxymesh_esp32s3::ble::{self as bt, Control, Server, Shared};
+use oxymesh_esp32s3::buzzer;
 use oxymesh_esp32s3::flashstore::{BONDS_MAX, FlashStore};
 use oxymesh_esp32s3::m5;
 use oxymesh_esp32s3::pca9557::{Pca9557, pin};
@@ -448,8 +449,12 @@ async fn main(_spawner: Spawner) -> ! {
     let mut next_blink = 0u64;
     let mut blink_off: Option<u64> = None;
     let mut last_ble = ble_of(&ble_sh);
-    // The loop owns the device and its peripherals; the Bluetooth side only shares `ble_sh`.
+    // The loop owns the device and its peripherals; the Bluetooth side only shares `ble_sh`,
+    // the buzzer only its requests.
     let ble_sh = &ble_sh;
+    let buzz = buzzer::Request::new();
+    let buzz = &buzz;
+    let player = buzzer::run(p.LEDC, p.GPIO9, buzz);
     let main_loop = async move {
         let mut term = Terminal::new(panel::backend(panel_frame, app.grid())).expect("terminal");
         loop {
@@ -601,8 +606,12 @@ async fn main(_spawner: Spawner) -> ! {
             }
             {
                 let c = ui_ctx(dev, ble_of(&ble_sh), charging, light);
+                let phone = ble_sh.state.get() == mc_ui::BleState::Connected;
                 for e in &events {
                     app.event(e, &c);
+                    if let Some(a) = mc_ui::tune::alert(e, dev, phone) {
+                        buzz.signal(a);
+                    }
                 }
                 while let Some(g) = gestures.poll(now_ms) {
                     policy.input(now_ms);
@@ -706,7 +715,7 @@ async fn main(_spawner: Spawner) -> ! {
             }
 
             // Unread: a short blink every 5 s.
-            if dev.node.prefs.ui.led_unread && dev.history().unread() > 0 && now_ms >= next_blink {
+            if dev.node.prefs.ui.led_unread && dev.unread_alerting() > 0 && now_ms >= next_blink {
                 next_blink = now_ms + BLINK_EVERY_MS;
                 blink_off = Some(now_ms + BLINK_MS);
                 if let Some(io) = io.as_mut() {
@@ -785,18 +794,23 @@ async fn main(_spawner: Spawner) -> ! {
                 appearance: &appearance::UNKNOWN,
             })) {
                 Ok(server) => {
-                    join4(
+                    join5(
                         bt::run_host(runner),
                         bt::serve(ble_name, &mut peripheral, &server, &ble_sh),
                         bt::control(&stack, &ble_sh),
                         main_loop,
+                        player,
                     )
                     .await;
                 }
-                Err(_) => main_loop.await,
+                Err(_) => {
+                    join(main_loop, player).await;
+                }
             }
         }
-        None => main_loop.await,
+        None => {
+            join(main_loop, player).await;
+        }
     }
     loop {
         Timer::after(Duration::from_secs(60)).await;

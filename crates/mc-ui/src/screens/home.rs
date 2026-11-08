@@ -52,7 +52,7 @@ impl Home {
     fn info(ui: &Ui<'_>) -> Vec<String> {
         let c = ui.ctx;
         let dev = c.dev;
-        let new = dev.history().unread();
+        let new = dev.unread_alerting();
         let unread = match new {
             0 => String::from("No new messages"),
             1 => String::from("1 new message"),
@@ -136,7 +136,7 @@ impl Screen for Home {
         }
         let dev = ui.ctx.dev;
         let channels = dev.node.channels.0.iter().filter(|c| !c.is_empty()).count();
-        let new = dev.history().unread();
+        let new = dev.unread_alerting();
         let launcher: Vec<(String, String)> = LAUNCHER
             .iter()
             .map(|(label, d)| {

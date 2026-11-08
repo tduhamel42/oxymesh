@@ -1,0 +1,19 @@
+---
+source: crates/mc-ui/tests/screens.rs
+expression: "text(&mut app, LARGE, &c)"
+---
+|Public       ●1 18:33 87%|
+|Slot 0 · 1 messages · 0 …|
+|                         |
+|  Messages               |
+|  Write                  |
+|▸ Mute                yes|
+|  Remove                 |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|                         |
+|Muted                    |

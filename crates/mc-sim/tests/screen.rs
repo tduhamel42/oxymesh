@@ -313,3 +313,94 @@ fn settings_api_checks_like_the_companion_and_saves() {
     sn.dev.remove_channel(idx, &mut sn.st).unwrap();
     assert!(sn.dev.node.channels.0[usize::from(idx)].is_empty());
 }
+
+// ------------------------------------------------------------------ muted channels
+
+/// Bob writes on `#oxymesh`, a channel both have in slot `idx`.
+fn bob_on_channel(w: &mut World, idx: u8, text: &str) {
+    let now = w.now;
+    let ts = w.node(1).time(now);
+    w.node(1)
+        .send_channel_text(now, idx, ts, text.as_bytes())
+        .unwrap();
+    let before = w.nodes[0].dev.history().with(Peer::Channel(idx)).count();
+    assert!(w.run_until(secs(30), |w| {
+        w.nodes[0].dev.history().with(Peer::Channel(idx)).count() > before
+    }));
+}
+
+#[test]
+fn a_muted_channel_keeps_its_count_but_does_not_call() {
+    let mut w = bob_writes("a DM first");
+    let mut idx = 0;
+    for i in 0..2 {
+        let sn = &mut w.nodes[i];
+        idx = sn.dev.add_hashtag_channel("#oxymesh", &mut sn.st).unwrap();
+    }
+    let peer = Peer::Channel(idx);
+    bob_on_channel(&mut w, idx, "loud");
+    assert_eq!(w.nodes[0].dev.unread_alerting(), 2);
+
+    let sn = &mut w.nodes[0];
+    let ui = sn.dev.node.prefs.ui.with_muted(idx, true);
+    sn.dev.set_ui(ui, &mut sn.st);
+    let saved =
+        mc_node::persist::decode_prefs(sn.st.prefs.as_ref().unwrap(), &sn.dev.node.prefs).unwrap();
+    assert!(saved.ui.is_muted(idx));
+    bob_on_channel(&mut w, idx, "quiet");
+    let dev = &w.nodes[0].dev;
+    assert_eq!(dev.history().unread_with(peer), 2, "its own count stays");
+    assert_eq!(dev.history().unread(), 3);
+    assert_eq!(dev.unread_alerting(), 1, "only the DM calls");
+
+    // The app renames it (same secret): still muted, still the same messages.
+    let sn = &mut w.nodes[0];
+    let secret = mc_air::crypto::ChannelSecret::from_hashtag("#oxymesh");
+    let mut psk = [0u8; 16];
+    psk.copy_from_slice(&secret.0[..16]);
+    let mut name = [0u8; 32];
+    name[..4].copy_from_slice(b"#oxy");
+    sn.dev.set_channel(idx, name, psk, &mut sn.st).unwrap();
+    assert!(sn.dev.node.prefs.ui.is_muted(idx));
+    assert_eq!(sn.dev.history().with(peer).count(), 2);
+}
+
+#[test]
+fn a_new_channel_in_a_freed_slot_starts_clean() {
+    let mut w = bob_writes("a DM first");
+    let mut idx = 0;
+    for i in 0..2 {
+        let sn = &mut w.nodes[i];
+        idx = sn.dev.add_hashtag_channel("#oxymesh", &mut sn.st).unwrap();
+    }
+    let peer = Peer::Channel(idx);
+    bob_on_channel(&mut w, idx, "before");
+    let sn = &mut w.nodes[0];
+    let ui = sn.dev.node.prefs.ui.with_muted(idx, true);
+    sn.dev.set_ui(ui, &mut sn.st);
+
+    sn.dev.remove_channel(idx, &mut sn.st).unwrap();
+    assert_eq!(sn.dev.history().with(peer).count(), 0);
+    assert!(!sn.dev.node.prefs.ui.is_muted(idx));
+    let saved =
+        mc_node::persist::decode_prefs(sn.st.prefs.as_ref().unwrap(), &sn.dev.node.prefs).unwrap();
+    assert!(!saved.ui.is_muted(idx));
+    assert_eq!(sn.dev.add_hashtag_channel("#other", &mut sn.st), Ok(idx));
+    assert_eq!(sn.dev.history().with(peer).count(), 0);
+    assert_eq!(sn.dev.history().unread(), 1, "the DM stays");
+
+    // After a reboot, the forgotten messages stay forgotten.
+    let node = mc_node::Node::new(
+        sn.dev.node.id.clone(),
+        sn.dev.node.prefs.clone(),
+        mc_sim::EPOCH,
+        w.now,
+    );
+    let sn = &w.nodes[0];
+    let mut dev = Device::new(node, SIM_INFO);
+    for rec in sn.st.history.values() {
+        dev.restore_history(rec);
+    }
+    assert_eq!(dev.history().with(peer).count(), 0);
+    assert_eq!(dev.history().unread(), 1);
+}

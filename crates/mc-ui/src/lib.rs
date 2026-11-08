@@ -25,6 +25,7 @@ pub mod regions;
 pub mod screens;
 pub mod theme;
 pub mod tour;
+pub mod tune;
 
 pub use act::{Intent, Outcome, perform};
 pub use app::{App, Ble, BleState, Ctx};

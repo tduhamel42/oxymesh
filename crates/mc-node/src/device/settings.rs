@@ -98,12 +98,25 @@ impl Device {
             .0
             .get_mut(usize::from(idx))
             .ok_or(err::NOT_FOUND)?;
-        *c = Channel {
-            name,
-            secret: mc_air::ChannelSecret::from_psk16(&secret),
-        };
+        let secret = mc_air::ChannelSecret::from_psk16(&secret);
+        // Another channel in this slot (a new secret): the old one's messages and mute go.
+        // A rename keeps them.
+        let replaced = c.secret != secret;
+        *c = Channel { name, secret };
         let rec = encode_channel(c);
         st.save_channel(idx, &rec);
+        if replaced {
+            let peer = crate::history::Peer::Channel(idx);
+            for slot in self.history.forget(peer) {
+                self.save_history_slot(slot, st);
+            }
+            let ui = &mut self.node.prefs.ui;
+            if ui.is_muted(idx) {
+                *ui = ui.with_muted(idx, false);
+                self.save_prefs(st);
+            }
+            self.notify(super::UiEvent::Contacts);
+        }
         Ok(())
     }
 
@@ -204,6 +217,8 @@ impl Device {
     /// The screen's own settings (prefs record v2); the app never sees them.
     pub fn set_ui(&mut self, ui: UiPrefs, st: &mut impl Storage) {
         self.node.prefs.ui = ui;
+        // The C++ firmware's own buzzer flag follows, for the import and a return to C++.
+        self.node.prefs.buzzer_quiet = ui.buzzer == 0;
         self.save_prefs(st);
     }
 

@@ -167,6 +167,19 @@ impl History {
         changed
     }
 
+    /// Drops the conversation (its channel slot now holds another channel); returns the slots
+    /// to save, now empty.
+    pub fn forget(&mut self, peer: Peer) -> heapless::Vec<usize, HISTORY> {
+        let mut changed = heapless::Vec::new();
+        for (i, s) in self.slots.iter_mut().enumerate() {
+            if s.as_ref().is_some_and(|m| m.peer == peer) {
+                *s = None;
+                let _ = changed.push(i);
+            }
+        }
+        changed
+    }
+
     /// The record of a slot, to save.
     pub fn record(&self, slot: usize) -> Option<[u8; HISTORY_RECORD]> {
         self.slots.get(slot)?.as_ref().map(encode)

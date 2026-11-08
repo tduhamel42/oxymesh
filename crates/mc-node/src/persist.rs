@@ -18,6 +18,8 @@ pub const PREFS_RECORD: usize = 160;
 /// v1 records (128 bytes) are still read.
 pub const PREFS_RECORD_V1: usize = 128;
 const PREFS_VERSION: u8 = 2;
+/// The muted-channel mask: 40 channels, 5 bytes.
+const MUTED_BYTES: usize = 5;
 
 /// Write requested from the runner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,7 +141,9 @@ pub fn encode_prefs(p: &Prefs) -> [u8; PREFS_RECORD] {
                 | (u8::from(u.rotate) << 4),
         )?;
         w.put_u8(u.buzzer)?;
-        w.put(&u.tz_offset_min.to_le_bytes())
+        w.put(&u.tz_offset_min.to_le_bytes())?;
+        // Added within v2: the bytes were zero before, which reads as nothing muted.
+        w.put(u.muted.to_le_bytes().get(..MUTED_BYTES).unwrap_or(&[]))
     })();
     out
 }
@@ -201,6 +205,13 @@ pub fn decode_prefs(b: &[u8], defaults: &Prefs) -> Option<Prefs> {
         u.rotate = f & 16 != 0;
         u.buzzer = r.u8().ok()?;
         u.tz_offset_min = i16::from_le_bytes(*r.array::<2>().ok()?);
+        if let Ok(m) = r.array::<MUTED_BYTES>() {
+            let mut b = [0u8; 8];
+            for (o, i) in b.iter_mut().zip(m) {
+                *o = *i;
+            }
+            u.muted = u64::from_le_bytes(b);
+        }
     }
     Some(p)
 }
@@ -238,6 +249,7 @@ mod tests {
         q.ui.compact = true;
         q.ui.setup_done = true;
         q.ui.light_timeout_s = 30;
+        q.ui.muted = (1 << 39) | (1 << 3) | 1;
         let back = decode_prefs(&encode_prefs(&q), &p).unwrap();
         assert_eq!(encode_prefs(&back), encode_prefs(&q));
         assert_eq!(back.ui, q.ui);
@@ -249,5 +261,9 @@ mod tests {
         let old = decode_prefs(&v1, &p).unwrap();
         assert_eq!(old.radio, q.radio);
         assert_eq!(old.ui, p.ui);
+        // A v2 record written before the mask existed: nothing muted.
+        let mut early = encode_prefs(&q);
+        early[134..139].fill(0);
+        assert_eq!(decode_prefs(&early, &p).unwrap().ui.muted, 0);
     }
 }

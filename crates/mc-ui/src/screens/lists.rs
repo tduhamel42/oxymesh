@@ -5,6 +5,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use mc_node::history::Peer;
 use ratatui_core::layout::Rect;
 use ratatui_core::terminal::Frame;
 use ratatui_widgets::list::ListState;
@@ -159,11 +160,13 @@ fn channels(ui: &Ui<'_>) -> Vec<(u8, String, String)> {
         .filter(|(_, c)| !c.is_empty())
         .map(|(i, c)| {
             let idx = i as u8;
-            let unread = h.unread_with(mc_node::history::Peer::Channel(idx));
-            let detail = if unread > 0 {
-                format!("{}{unread}", ui.sym.unread)
-            } else {
-                String::new()
+            let unread = h.unread_with(Peer::Channel(idx));
+            let muted = ui.ctx.dev.node.prefs.ui.is_muted(idx);
+            let detail = match (unread, muted) {
+                (0, false) => String::new(),
+                (0, true) => String::from("muted"),
+                (u, false) => format!("{}{u}", ui.sym.unread),
+                (u, true) => format!("{}{u}", ui.sym.quiet),
             };
             (idx, name_of(&c.name), detail)
         })
@@ -190,10 +193,12 @@ impl Screen for Channels {
         match self.state.selected().unwrap_or(0) {
             0 => Nav::Push(Box::new(Compose::new(Target::Hashtag, ""))),
             i => match list.get(i - 1) {
-                Some((idx, _, d)) if !d.is_empty() => Nav::PushWith(
-                    Box::new(Conversation::new(mc_node::history::Peer::Channel(*idx))),
-                    Intent::MarkRead(mc_node::history::Peer::Channel(*idx)),
-                ),
+                Some((idx, _, _)) if ui.ctx.dev.history().unread_with(Peer::Channel(*idx)) > 0 => {
+                    Nav::PushWith(
+                        Box::new(Conversation::new(Peer::Channel(*idx))),
+                        Intent::MarkRead(Peer::Channel(*idx)),
+                    )
+                }
                 Some((idx, _, _)) => Nav::Push(Box::new(ChannelScreen::new(*idx))),
                 None => Nav::Stay,
             },

@@ -335,3 +335,55 @@ fn forgetting_paired_phones_needs_a_hold() {
     let intents = press(&mut app, &c, &[Held(A, 1000), Held(A, CONFIRM_MS)]);
     assert_eq!(intents, vec![Intent::ForgetPaired]);
 }
+
+#[test]
+fn a_muted_channel_counts_quietly() {
+    let mut w = world();
+    let public = mc_node::history::Peer::Channel(0);
+    // Public read once, so it opens on its own screen rather than its messages.
+    {
+        let sn = &mut w.nodes[0];
+        sn.dev.mark_read(public, &mut sn.st);
+    }
+    let c = ctx(&w);
+    let mut app = App::new(LARGE, false);
+    // Home → Channels → Public → Mute (third).
+    let intents = press(
+        &mut app,
+        &c,
+        &[
+            Click(A),
+            Click(A),
+            Long(A),
+            Click(A),
+            Long(A),
+            Click(A),
+            Click(A),
+            Long(A),
+        ],
+    );
+    let muted = w.nodes[0].dev.node.prefs.ui.with_muted(0, true);
+    assert_eq!(intents, vec![Intent::SetUi(muted)]);
+    {
+        let sn = &mut w.nodes[0];
+        sn.dev.set_ui(muted, &mut sn.st);
+    }
+    let c = ctx(&w);
+    insta::assert_snapshot!("channel_large", text(&mut app, LARGE, &c));
+    // Alice writes on Public again: its own count shows it, nothing else calls.
+    let now = w.now;
+    let ts = w.node(1).time(now);
+    w.node(1)
+        .send_channel_text(now, 0, ts, "Chains on, it's icy".as_bytes())
+        .unwrap();
+    w.run(Duration::from_secs(5));
+    assert_eq!(w.nodes[0].dev.history().unread_with(public), 1);
+    assert_eq!(w.nodes[0].dev.unread_alerting(), 1, "Bob's DM only");
+    let c = ctx(&w);
+    let mut app = App::new(LARGE, false);
+    let _ = press(&mut app, &c, &[Click(A), Click(A), Long(A)]);
+    insta::assert_snapshot!("channels_muted_large", text(&mut app, LARGE, &c));
+    let mut app = App::new(LARGE, false);
+    let _ = press(&mut app, &c, &[Long(A)]);
+    insta::assert_snapshot!("messages_muted_large", text(&mut app, LARGE, &c));
+}

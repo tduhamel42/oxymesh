@@ -67,6 +67,10 @@ pub struct UiPrefs {
     pub invert: bool,
     /// Upside down (buttons on top).
     pub rotate: bool,
+    /// Muted channels, one bit per slot (0..39): they keep their own unread count but never
+    /// blink the LED, count in the header or play a tune. Cleared when a slot gets another
+    /// channel (`Device::set_channel`).
+    pub muted: u64,
 }
 
 impl UiPrefs {
@@ -79,7 +83,24 @@ impl UiPrefs {
         setup_done: false,
         invert: false,
         rotate: false,
+        muted: 0,
     };
+
+    pub fn is_muted(&self, channel: u8) -> bool {
+        channel < 64 && self.muted & (1 << channel) != 0
+    }
+
+    /// The same settings with `channel` muted or not.
+    pub fn with_muted(mut self, channel: u8, muted: bool) -> Self {
+        if channel < 64 {
+            if muted {
+                self.muted |= 1 << channel;
+            } else {
+                self.muted &= !(1 << channel);
+            }
+        }
+        self
+    }
 }
 
 impl Prefs {
