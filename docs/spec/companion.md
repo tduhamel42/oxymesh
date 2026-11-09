@@ -263,6 +263,15 @@ Import (MC6, `mc_spiffs::cpp`): at first boot when `mcdata` has no identity, or 
 
 `mcdata` partition (sequential-storage, ADR-0006): identity, settings (versioned binary), contacts, channels, stored adverts, offline queue, local screen history. The format is defined in MC4 in this document.
 
+Settings record v2 (160 bytes, `mc_node::persist`). Fields were added within v2 in bytes that used to be zero, so zero reads as the old behaviour:
+
+| Bytes | Field | Zero means |
+|---|---|---|
+| 134-138 | muted channels, one bit per slot | nothing muted |
+| 139-142 | `gps_interval`, u32 LE | every second |
+| 143 | `agc_reset_interval` (4 s units) | no AGC reset |
+| 144 | bit 0 = boosted RX gain **off**, bit 1 = front-end LNA **off** (inverted) | both on (C++ defaults) |
+
 ## 9. Deliberate deviations (ADR-0001)
 
 1. Offline queue kept in flash.

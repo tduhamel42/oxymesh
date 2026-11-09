@@ -42,6 +42,8 @@ pub struct LoRaConfig {
     pub preamble: u16,
     /// Sync word in the SX127x sense (0x12 private, 0x34 public, 0x2B Meshtastic).
     pub sync_word: u8,
+    /// Boosted RX gain (register 0x08AC = 0x96) or power saving (0x94).
+    pub rx_boosted: bool,
 }
 
 impl LoRaConfig {
@@ -215,8 +217,8 @@ impl<'d> Sx126x<'d> {
             return Err(Error::Param);
         }
         self.cmd(&[0x80, 0x00])?;
-        // Image calibration for 863-870 MHz (§9.2.1).
-        self.cmd(&[0x98, 0xD7, 0xDB])?;
+        let (lo, hi) = image_band(c.freq_hz);
+        self.cmd(&[0x98, lo, hi])?; // CalibrateImage
         let f = ((u64::from(c.freq_hz) << 25) / 32_000_000) as u32;
         let fb = f.to_be_bytes();
         self.cmd(&[0x86, fb[0], fb[1], fb[2], fb[3]])?; // SetRfFrequency
@@ -229,7 +231,12 @@ impl<'d> Sx126x<'d> {
         self.write_reg(0x0736, &[iq[0] | 0x04])?;
         let s = c.sync_word;
         self.write_reg(0x0740, &[(s & 0xF0) | 0x04, ((s & 0x0F) << 4) | 0x04])?;
-        self.write_reg(0x08AC, &[0x96]) // boosted RX gain
+        self.set_rx_gain(c.rx_boosted)
+    }
+
+    /// RX gain (§9.6): boosted, or power saving.
+    pub fn set_rx_gain(&mut self, boosted: bool) -> Result<(), Error> {
+        self.write_reg(0x08AC, &[if boosted { 0x96 } else { 0x94 }])
     }
 
     /// SetPacketParams: preamble, explicit header, length, CRC, standard IQ.
@@ -306,7 +313,72 @@ impl<'d> Sx126x<'d> {
     }
 
     pub fn clear_irq(&mut self) -> Result<(), Error> {
-        self.cmd(&[0x02, 0xFF, 0xFF])
+        self.clear_irq_mask(0xFFFF)
+    }
+
+    /// Clears only these IRQ flags, so that a flag raised meanwhile (a packet just received)
+    /// survives.
+    pub fn clear_irq_mask(&mut self, mask: u16) -> Result<(), Error> {
+        let m = mask.to_be_bytes();
+        self.cmd(&[0x02, m[0], m[1]])
+    }
+
+    /// The C++ AGC reset (`sx126xResetAGC`, `src/helpers/radiolib/SX126xReset.h`, MeshCore, MIT):
+    /// warm sleep powers the analog front end down, then a full calibration (§13.1.12) and the
+    /// RF switch again. The caller then reconfigures the radio (frequency and image calibration,
+    /// modulation, RX gain, TX power) and restarts reception.
+    pub fn reset_agc(&mut self) -> Result<(), Error> {
+        self.cmd(&[0x80, 0x00])?;
+        self.cmd(&[0x84, 0x04])?; // SetSleep, warm start: the configuration is kept
+        self.wake()?;
+        self.cmd(&[0x80, 0x00])?; // SetStandby(STDBY_RC)
+        self.cmd(&[0x89, 0x7F])?; // Calibrate(all blocks)
+        self.delay.delay_millis(5);
+        let start = Instant::now();
+        while self.busy.is_high() && start.elapsed() < Duration::from_millis(50) {}
+        self.cmd(&[0x9D, 0x01]) // SetDIO2AsRfSwitchCtrl
+    }
+
+    /// Wakes the chip from sleep: a falling edge on NSS (§13.1.1), then BUSY falls.
+    fn wake(&mut self) -> Result<(), Error> {
+        self.delay.delay_micros(600);
+        self.cs.set_low();
+        self.delay.delay_micros(100);
+        self.cs.set_high();
+        let start = Instant::now();
+        while self.busy.is_high() {
+            if start.elapsed() > Duration::from_millis(10) {
+                return Err(Error::Busy);
+            }
+        }
+        Ok(())
+    }
+
+    /// Channel activity detection (§6.4) on the configured settings, then standby: true if a LoRa
+    /// preamble was seen. The caller restarts reception. Parameters: 2 symbols up to SF8 and 4
+    /// above, detection peak SF + 13, minimum 10 (Semtech's AN1200.48 starting values; RadioLib,
+    /// which the C++ uses, starts from similar ones, not cross-checked here).
+    pub fn cad(&mut self, sf: u8) -> Result<bool, Error> {
+        let symbols = if sf <= 8 { 0x01 } else { 0x02 };
+        self.cmd(&[0x80, 0x00])?;
+        // SetCadParams: symbols, detPeak, detMin, exit mode CAD_ONLY, no timeout.
+        self.cmd(&[0x88, symbols, sf + 13, 10, 0x00, 0, 0, 0])?;
+        let m = (irq::CAD_DONE | irq::CAD_DETECTED).to_be_bytes();
+        self.cmd(&[0x08, m[0], m[1], m[0], m[1], 0, 0, 0, 0])?;
+        self.clear_irq()?;
+        self.cmd(&[0xC5])?; // SetCad
+        let start = Instant::now();
+        loop {
+            let f = self.irq_status()?;
+            if f & irq::CAD_DONE != 0 {
+                self.clear_irq()?;
+                return Ok(f & irq::CAD_DETECTED != 0);
+            }
+            if start.elapsed() > Duration::from_millis(500) {
+                self.cmd(&[0x80, 0x00])?;
+                return Err(Error::Busy);
+            }
+        }
     }
 
     /// Reads the last received packet into `out` (up to its size).
@@ -337,4 +409,28 @@ impl<'d> Sx126x<'d> {
         self.xfer(&mut b)?;
         Ok(-(i16::from(b[2]) / 2))
     }
+}
+
+/// CalibrateImage parameters (§9.2.1, table 9-2) for the band around `freq_hz`; outside the
+/// table's bands, ±4 MHz around the frequency, in 4 MHz steps.
+pub fn image_band(freq_hz: u32) -> (u8, u8) {
+    const BANDS: [(u32, u32, u8, u8); 5] = [
+        (430, 440, 0x6B, 0x6F),
+        (470, 510, 0x75, 0x81),
+        (779, 787, 0xC1, 0xC5),
+        (863, 870, 0xD7, 0xDB),
+        (902, 928, 0xE1, 0xE9),
+    ];
+    let mhz = freq_hz / 1_000_000;
+    for (lo, hi, a, b) in BANDS {
+        if (lo..=hi).contains(&mhz) {
+            return (a, b);
+        }
+    }
+    let lo = (freq_hz.saturating_sub(4_000_000)) / 4_000_000;
+    let hi = (freq_hz + 4_000_000).div_ceil(4_000_000);
+    (
+        u8::try_from(lo).unwrap_or(u8::MAX),
+        u8::try_from(hi).unwrap_or(u8::MAX),
+    )
 }

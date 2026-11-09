@@ -20,6 +20,7 @@ pub mod hex;
 pub mod noise;
 pub mod radio;
 pub mod regulatory;
+pub mod rx_watch;
 pub mod time;
 
 pub use bytes::{Overflow, Reader, Truncated, Writer};

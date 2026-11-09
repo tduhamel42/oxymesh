@@ -42,6 +42,14 @@ pub struct Prefs {
     pub default_scope_key: [u8; 16],
     pub interference_threshold: i8,
     pub cad_enabled: bool,
+    /// AGC reset every this many 4-second units (`agc_reset_interval`; 0 = never, the C++
+    /// default).
+    pub agc_reset_interval: u8,
+    /// SX126x boosted RX gain (`rx_boosted_gain`, on by default like the C++).
+    pub rx_boosted_gain: bool,
+    /// The front end's low-noise amplifier, on boards that have one (`radio_fem_rxgain`, on by
+    /// default like the C++).
+    pub fem_rxgain: bool,
     pub gps_enabled: bool,
     /// Seconds between position updates from the GPS (`gps_interval`, 0 to 86400; 0 = every
     /// second, like the C++).
@@ -138,6 +146,9 @@ impl Prefs {
         default_scope_key: [0; 16],
         interference_threshold: 0,
         cad_enabled: false,
+        agc_reset_interval: 0,
+        rx_boosted_gain: true,
+        fem_rxgain: true,
         gps_enabled: false,
         gps_interval: 0,
         buzzer_quiet: false,
@@ -188,6 +199,9 @@ impl Prefs {
             default_scope_key: [0; 16],
             interference_threshold: 0,
             cad_enabled: false,
+            agc_reset_interval: 0,
+            rx_boosted_gain: true,
+            fem_rxgain: true,
             gps_enabled: false,
             gps_interval: 0,
             buzzer_quiet: false,
@@ -460,10 +474,21 @@ impl Node {
     }
 
     /// Next frame to transmit now. `busy`: the radio is receiving (listen before talk).
-    pub fn poll_tx(&mut self, now: Instant, busy: bool, rng: &mut impl Rng) -> Option<TxFrame> {
+    pub fn poll_tx(
+        &mut self,
+        now: Instant,
+        busy: impl FnOnce() -> bool,
+        rng: &mut impl Rng,
+    ) -> Option<TxFrame> {
         let radio = self.prefs.radio;
         self.disp
             .poll_tx(now, busy, &radio, self.prefs.airtime_factor_milli, rng)
+    }
+
+    /// Is an AGC reset of the radio due (`agc_reset_interval` × 4 s)?
+    pub fn agc_due(&mut self, now: Instant) -> bool {
+        self.disp
+            .agc_due(now, u64::from(self.prefs.agc_reset_interval) * 4000)
     }
 
     pub fn tx_done(&mut self, now: Instant) {

@@ -142,10 +142,13 @@ pub fn encode_prefs(p: &Prefs) -> [u8; PREFS_RECORD] {
         )?;
         w.put_u8(u.buzzer)?;
         w.put(&u.tz_offset_min.to_le_bytes())?;
-        // Added within v2: the bytes were zero before, which reads as nothing muted and a GPS
-        // update every second.
+        // Added within v2: the bytes were zero before, which reads as nothing muted, a GPS
+        // update every second and no AGC reset.
         w.put(u.muted.to_le_bytes().get(..MUTED_BYTES).unwrap_or(&[]))?;
-        w.put_u32_le(p.gps_interval)
+        w.put_u32_le(p.gps_interval)?;
+        w.put_u8(p.agc_reset_interval)?;
+        // Inverted, so that the zero bytes of older records read as the defaults (both on).
+        w.put_u8(u8::from(!p.rx_boosted_gain) | (u8::from(!p.fem_rxgain) << 1))
     })();
     out
 }
@@ -217,6 +220,13 @@ pub fn decode_prefs(b: &[u8], defaults: &Prefs) -> Option<Prefs> {
         if let Ok(v) = r.u32_le() {
             p.gps_interval = v.min(86_400);
         }
+        if let Ok(v) = r.u8() {
+            p.agc_reset_interval = v;
+        }
+        if let Ok(f) = r.u8() {
+            p.rx_boosted_gain = f & 1 == 0;
+            p.fem_rxgain = f & 2 == 0;
+        }
     }
     Some(p)
 }
@@ -256,6 +266,8 @@ mod tests {
         q.ui.light_timeout_s = 30;
         q.ui.muted = (1 << 39) | (1 << 3) | 1;
         q.gps_interval = 600;
+        q.agc_reset_interval = 15;
+        q.fem_rxgain = false;
         let back = decode_prefs(&encode_prefs(&q), &p).unwrap();
         assert_eq!(encode_prefs(&back), encode_prefs(&q));
         assert_eq!(back.ui, q.ui);
@@ -269,9 +281,14 @@ mod tests {
         assert_eq!(old.ui, p.ui);
         // A v2 record written before the mask existed: nothing muted.
         let mut early = encode_prefs(&q);
-        early[134..143].fill(0);
+        early[134..145].fill(0);
         let early = decode_prefs(&early, &p).unwrap();
-        assert_eq!((early.ui.muted, early.gps_interval), (0, 0));
-        assert_eq!(back.gps_interval, 600);
+        assert_eq!(
+            (early.ui.muted, early.gps_interval, early.agc_reset_interval),
+            (0, 0, 0)
+        );
+        assert!(early.rx_boosted_gain && early.fem_rxgain);
+        assert!(back.rx_boosted_gain && !back.fem_rxgain);
+        assert_eq!((back.gps_interval, back.agc_reset_interval), (600, 15));
     }
 }

@@ -264,7 +264,7 @@ impl World {
             }
             let busy = self.busy(n);
             let sn = &mut self.nodes[n];
-            if let Some(f) = sn.dev.poll_tx(now, busy, &mut sn.rng) {
+            if let Some(f) = sn.dev.poll_tx(now, || busy, &mut sn.rng) {
                 let end = now + f.airtime;
                 sn.tx_until = Some(end);
                 self.log.push((now, n, f.raw.to_vec()));

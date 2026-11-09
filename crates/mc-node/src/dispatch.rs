@@ -72,6 +72,9 @@ pub struct Dispatcher {
     next_tx: Instant,
     busy_since: Option<Instant>,
     in_flight: Option<(Instant, Instant, bool)>,
+    /// Next AGC reset (`next_agc_reset_time`); a transmission that just ended re-arms it.
+    next_agc: Instant,
+    tx_ended: Option<Instant>,
     /// Regulatory limit of the sub-band (config/eu868.toml), enforced on top.
     pub regulatory: Option<DutyBudget>,
     pub stats: Stats,
@@ -123,6 +126,8 @@ impl Dispatcher {
             next_tx: now,
             busy_since: None,
             in_flight: None,
+            next_agc: now,
+            tx_ended: None,
             regulatory: None,
             stats: Stats::ZERO,
         }
@@ -161,6 +166,25 @@ impl Dispatcher {
         }
     }
 
+    /// Is an AGC reset due (`Dispatcher::loop`, `Dispatcher.cpp:127-136`)? `interval_ms` 0 = never.
+    /// The first one is due at once; each transmission pushes the next one `interval_ms` after
+    /// it ends; none while transmitting. When this says yes, the next one is already scheduled,
+    /// whether or not the radio could do it (the C++ skips it while a packet is coming in).
+    pub fn agc_due(&mut self, now: Instant, interval_ms: u64) -> bool {
+        if self.in_flight.is_some() {
+            return false;
+        }
+        let interval = Duration::from_millis(interval_ms);
+        if let Some(t) = self.tx_ended.take() {
+            self.next_agc = t + interval;
+        }
+        if interval_ms == 0 || now < self.next_agc {
+            return false;
+        }
+        self.next_agc = now + interval;
+        true
+    }
+
     /// Next instant when something may change on the transmit side.
     pub fn next_wakeup(&self) -> Option<Instant> {
         if let Some((_, expiry, _)) = self.in_flight {
@@ -169,12 +193,13 @@ impl Dispatcher {
         self.queue.iter().map(|o| o.due.max(self.next_tx)).min()
     }
 
-    /// Picks the frame to transmit now (`checkSend`). `busy`: the radio is receiving (preamble or
-    /// header detected); this is listen before talk.
+    /// Picks the frame to transmit now (`checkSend`). `busy` is listen before talk: is a packet
+    /// coming in, or the channel otherwise in use (`isReceiving`)? Like the C++, it is only asked
+    /// when a frame is ready to go.
     pub fn poll_tx(
         &mut self,
         now: Instant,
-        busy: bool,
+        busy: impl FnOnce() -> bool,
         radio: &RadioParams,
         af_milli: u32,
         rng: &mut impl Rng,
@@ -185,6 +210,7 @@ impl Dispatcher {
             }
             // Transmission never completed: abandoned (`outbound_expiry`).
             self.in_flight = None;
+            self.tx_ended = Some(now);
         }
         if !self.queue.iter().any(|o| o.due <= now) {
             return None;
@@ -199,7 +225,7 @@ impl Dispatcher {
         if now < self.next_tx {
             return None;
         }
-        if busy {
+        if busy() {
             let since = *self.busy_since.get_or_insert(now);
             if now.saturating_duration_since(since) > BUSY_MAX {
                 self.stats.err_flags |= ERR_EVENT_CAD_TIMEOUT;
@@ -252,6 +278,7 @@ impl Dispatcher {
         let Some((start, _, flood)) = self.in_flight.take() else {
             return;
         };
+        self.tx_ended = Some(now);
         let t = now.saturating_duration_since(start).as_millis();
         self.stats.tx_airtime_ms += t;
         self.refill(now, af_milli);
@@ -280,4 +307,31 @@ pub fn next_int(rng: &mut impl Rng, a: u32, b: u32) -> u32 {
         return a;
     }
     rng.next_u32() % (b - a) + a
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn at(ms: u64) -> Instant {
+        Instant::from_nanos(ms * 1_000_000)
+    }
+
+    #[test]
+    fn agc_reset_schedule() {
+        let mut d = Dispatcher::new(at(0), 1000);
+        // Off: never.
+        assert!(!d.agc_due(at(0), 0));
+        assert!(!d.agc_due(at(100_000), 0));
+        // On: due at once, then every interval.
+        assert!(d.agc_due(at(100_000), 60_000));
+        assert!(!d.agc_due(at(159_999), 60_000));
+        assert!(d.agc_due(at(160_000), 60_000));
+        // A transmission: nothing while it is in the air, then the interval counts from its end.
+        d.in_flight = Some((at(200_000), at(210_000), true));
+        assert!(!d.agc_due(at(220_001), 60_000));
+        d.tx_done(at(230_000), 1000);
+        assert!(!d.agc_due(at(280_000), 60_000));
+        assert!(d.agc_due(at(290_000), 60_000));
+    }
 }

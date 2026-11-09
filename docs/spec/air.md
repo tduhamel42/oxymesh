@@ -183,7 +183,9 @@ Ring of 160 8-byte hashes, checked **before** decryption. Our own transmissions 
 | forwarded TRACE | 5 |
 
 - Duty cycle (`src/Dispatcher.cpp:19-53, 92-106, 275-286`): budget = 1 h window × 1/(1 + af) (af = 1 → 50 %). A transmission requires a budget ≥ airtime(255)/2; below 100 ms of budget, we wait. Transmit guard timeout: 1.5 × airtime (`:327-339`). **On our side, the regulatory limit from `config/eu868.toml` applies on top** (g3: 10 %).
-- Listen before talk (`src/Dispatcher.cpp:289-305`): the channel is busy if a preamble or header is detected, if RSSI > floor + `interference_threshold` (0 = disabled by default), or on hardware CAD (disabled by default). Busy: retry after 120, 240 or 360 ms; after 4 s, transmit anyway (`ERR_EVENT_CAD_TIMEOUT`).
+- Listen before talk (`src/Dispatcher.cpp:289-305`), asked only when a frame is ready: the channel is busy if a packet is coming in, if RSSI > floor + `interference_threshold` (0 = disabled by default), or on hardware CAD (disabled by default; reception restarts after it) (`RadioLibWrappers.cpp:198-214`). Busy: retry after 120, 240 or 360 ms; after 4 s, transmit anyway (`ERR_EVENT_CAD_TIMEOUT`).
+- "A packet is coming in" (`CustomSX1262::isReceiving`, `CustomSX1262.h:108-149`; `mc_core::rx_watch`): HEADER_VALID for at most the airtime of a 255-byte payload, or PREAMBLE_DETECTED alone for at most the preamble and header time (`calcMaxPacketMillis`, `RadioLibWrappers.cpp:244-260`: about 182 ms and 2.1 s at SF8 / 62.5 kHz / CR 4/8). Past that, or on HEADER_ERR, the latched flags are cleared (0x0004 for a preamble alone, 0x003C otherwise) and the channel reads free again. The noise floor sampler uses the same answer.
+- AGC reset (`agc_reset_interval`, in 4 s units, 0 = off by default; `Dispatcher.cpp:127-136`, `RadioLibWrappers.cpp:74-88`, `SX126xReset.h`): due at once, then every interval, counted from the end of the last transmission; skipped when a packet is coming in or waiting. The radio goes to warm sleep, then standby, full calibration (0x89 0x7F), the RF switch again, then its settings (image calibration for the frequency, RX gain) and reception; the noise floor starts over from 0.
 
 ### 4.6 Who forwards (`allow_forward`)
 
@@ -234,7 +236,8 @@ Per-region scope (repeaters, rpt:556-569): TRANSPORT_FLOOD must match a region w
 | Preamble | 32 symbols if SF ≤ 8, otherwise 16 | `RadioLibWrappers.h:56`, `CustomSX1262Wrapper.h:20` |
 | CRC | enabled | `CustomSX1262.h:69` |
 | Header, IQ, LDRO | RadioLib defaults: explicit, normal IQ, automatic LDRO (symbol ≥ 16 ms) | to be confirmed against the Heltec in MC1 |
-| Boosted RX gain | enabled | comp:936-941 |
+| Boosted RX gain | enabled (`rx_boosted_gain`, `radio.rxgain` in the console) | comp:936-941 |
+| Image calibration | the SX126x table band around the frequency (datasheet §9.2.1); ±4 MHz outside the table | RadioLib `calibrateImage` |
 | SNR | packet SNR × 4, as i8 | `src/Dispatcher.cpp:206` |
 | Noise floor | average of 64 instantaneous RSSI readings while idle, keeping those < floor + 14, floor ≥ −120; recalibrated every 2 s | `RadioLibWrappers.cpp:90-110`, `src/Dispatcher.cpp:15-17, 67-71` |
 

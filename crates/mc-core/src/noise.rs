@@ -39,6 +39,12 @@ impl NoiseFloor {
         self.floor
     }
 
+    /// After an AGC reset (`RadioLibWrapper::resetAGC`): back to 0, sampling again from scratch, so
+    /// a floor stuck low cannot keep rejecting normal samples.
+    pub fn reset(&mut self) {
+        *self = Self::new();
+    }
+
     /// Every [`ROUND_MS`]: a new round, unless one is still sampling (`triggerNoiseFloorCalibrate`).
     pub fn trigger(&mut self) {
         if self.n >= SAMPLES {

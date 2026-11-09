@@ -359,7 +359,7 @@ impl Device {
     pub fn poll_tx(
         &mut self,
         now: Instant,
-        busy: bool,
+        busy: impl FnOnce() -> bool,
         rng: &mut impl Rng,
     ) -> Option<crate::dispatch::TxFrame> {
         self.node.poll_tx(now, busy, rng)

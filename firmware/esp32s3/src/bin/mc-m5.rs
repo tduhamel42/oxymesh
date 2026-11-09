@@ -44,6 +44,7 @@ use esp_storage::FlashStorage;
 use log::{error, info};
 use mc_air::crypto::LocalIdentity;
 use mc_core::noise::NoiseFloor;
+use mc_core::rx_watch::{self, RxWatch};
 use mc_node::device::{Action, Info, UiEvent};
 use mc_node::{Device, Prefs};
 use mc_proto::{FROM_DEVICE, TO_DEVICE, USB_MAX, UsbDeframer, usb_frame};
@@ -119,7 +120,37 @@ fn lora_of(p: &Prefs) -> LoRaConfig {
         cr: p.radio.cr.saturating_sub(4).clamp(1, 4),
         preamble: if p.radio.sf <= 8 { 32 } else { 16 },
         sync_word: 0x12,
+        rx_boosted: p.rx_boosted_gain,
     }
+}
+
+/// Listen before talk, when a frame is ready (`RadioLibWrapper::isReceiving`,
+/// `RadioLibWrappers.h:44-48` and `.cpp:198-214`): a packet coming in; the channel louder than
+/// the noise floor by `int.thresh` (when set); a LoRa preamble found by CAD (when on), after
+/// which reception restarts.
+fn channel_busy(
+    radio: &mut Sx126x<'_>,
+    receiving: bool,
+    (int_thresh, cad): (i8, bool),
+    floor: i16,
+    cfg: &LoRaConfig,
+) -> bool {
+    if receiving {
+        return true;
+    }
+    let thr = i16::from(int_thresh);
+    if thr != 0
+        && let Ok(rssi) = radio.rssi_inst()
+        && rssi > floor + thr
+    {
+        return true;
+    }
+    if cad {
+        let seen = radio.cad(cfg.sf);
+        let _ = radio.start_rx(cfg.preamble);
+        return !matches!(seen, Ok(false));
+    }
+    false
 }
 
 fn grid_of(p: &Prefs) -> Grid {
@@ -544,6 +575,8 @@ async fn main(_spawner: Spawner) -> ! {
     let mut blink_off: Option<u64> = None;
     let mut noise = NoiseFloor::new();
     let mut next_noise_round = 0u64;
+    let mut watch = RxWatch::new();
+    watch.configure(&dev.node.prefs.radio.lora(), dev.node.prefs.radio.cr);
     let mut last_ble = ble_of(&ble_sh);
     // The loop owns the device and its peripherals; the Bluetooth side only shares `ble_sh`,
     // the buzzer only its requests.
@@ -591,6 +624,7 @@ async fn main(_spawner: Spawner) -> ! {
 
             // Radio.
             let flags = radio.irq_status().unwrap_or(0);
+            let mut cleared = true;
             if flags & irq::TX_DONE != 0 && transmitting {
                 dev.tx_done(now);
                 transmitting = false;
@@ -614,17 +648,40 @@ async fn main(_spawner: Spawner) -> ! {
                     );
                 }
                 let _ = radio.clear_irq();
-            } else if flags & (irq::HEADER_ERR | irq::CRC_ERR) != 0 {
-                let _ = radio.clear_irq();
+            } else if flags & irq::CRC_ERR != 0 {
+                let _ = radio.clear_irq_mask(irq::CRC_ERR | rx_watch::HEADER_FLAGS);
+            } else {
+                cleared = false;
+            }
+            // A preamble or header the radio left latched: cleared like the C++ does.
+            let rx = if cleared || transmitting {
+                watch.reset();
+                rx_watch::Watch {
+                    receiving: false,
+                    clear: 0,
+                }
+            } else {
+                watch.step(flags, Instant::now().as_millis())
+            };
+            if rx.clear != 0 {
+                let _ = radio.clear_irq_mask(rx.clear);
             }
             if transmitting && Instant::now() > tx_started + Duration::from_secs(10) {
                 dev.tx_done(now);
                 transmitting = false;
                 let _ = radio.start_rx(cfg.preamble);
             }
-            let busy = !transmitting && flags & irq::HEADER_VALID != 0 && flags & irq::RX_DONE == 0;
+            let floor = noise.floor();
+            let lbt = (
+                dev.node.prefs.interference_threshold,
+                dev.node.prefs.cad_enabled,
+            );
             if !transmitting
-                && let Some(f) = dev.poll_tx(now, busy, &mut rng)
+                && let Some(f) = dev.poll_tx(
+                    now,
+                    || channel_busy(&mut radio, rx.receiving, lbt, floor, &cfg),
+                    &mut rng,
+                )
                 && radio.transmit(cfg.preamble, &f.raw).is_ok()
             {
                 transmitting = true;
@@ -658,10 +715,24 @@ async fn main(_spawner: Spawner) -> ! {
                 noise.trigger();
                 next_noise_round = ms_now + mc_core::noise::ROUND_MS;
             }
-            let receiving = flags & (irq::PREAMBLE_DETECTED | irq::HEADER_VALID) != 0;
-            noise.step(!transmitting, receiving, || radio.rssi_inst().ok());
+            noise.step(!transmitting, rx.receiving, || radio.rssi_inst().ok());
             dev.noise_floor = noise.floor();
             dev.tick(now, &mut rng, &mut store);
+
+            // AGC reset, when set (`agc.reset.interval`): skipped if a packet is coming in or
+            // waiting to be read, like the C++.
+            if dev.node.agc_due(now) && !transmitting && !rx.receiving && flags & irq::RX_DONE == 0 {
+                let r = radio
+                    .reset_agc()
+                    .and_then(|()| radio.configure(&cfg))
+                    .and_then(|()| radio.set_tx_power(dev.node.prefs.radio.tx_power_dbm, m5::OCP_MA))
+                    .and_then(|()| radio.start_rx(cfg.preamble));
+                if let Err(e) = r {
+                    error!("AGC reset: {e:?}");
+                }
+                noise.reset();
+                watch.reset();
+            }
 
             // Actions requested by the app.
             while let Some(a) = dev.poll_action() {
@@ -678,6 +749,8 @@ async fn main(_spawner: Spawner) -> ! {
                     }
                     Action::RadioChanged => {
                         cfg = lora_of(&dev.node.prefs);
+                        watch.configure(&dev.node.prefs.radio.lora(), dev.node.prefs.radio.cr);
+                        watch.reset();
                         let _ = radio
                             .configure(&cfg)
                             .and_then(|()| {
