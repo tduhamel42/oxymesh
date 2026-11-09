@@ -103,13 +103,17 @@ pub struct Radio<'d, F: FrontEnd> {
     next_noise_round: u64,
     transmitting: bool,
     tx_started: Instant,
+    /// The SX1262 power in use: the setting within the sub-band's limit
+    /// (`Device::radio_tx_dbm`).
+    tx_dbm: i8,
     buf: [u8; 255],
 }
 
 impl<'d, F: FrontEnd> Radio<'d, F> {
-    /// Resets and configures the radio from the prefs, then listens. A failure is logged: the
-    /// node runs on, without a radio.
-    pub fn new(sx: Sx126x<'d>, fe: F, chip: Chip, prefs: &Prefs) -> Self {
+    /// Resets and configures the radio from the prefs, at `tx_dbm`
+    /// (`Device::radio_tx_dbm`), then listens. A failure is logged: the node runs on, without
+    /// a radio.
+    pub fn new(sx: Sx126x<'d>, fe: F, chip: Chip, prefs: &Prefs, tx_dbm: i8) -> Self {
         let mut r = Self {
             sx,
             fe,
@@ -120,11 +124,12 @@ impl<'d, F: FrontEnd> Radio<'d, F> {
             next_noise_round: 0,
             transmitting: false,
             tx_started: Instant::now(),
+            tx_dbm,
             buf: [0; 255],
         };
         let init =
             r.sx.init(chip.tcxo_millivolts, chip.dcdc)
-                .and_then(|()| r.setup(prefs));
+                .and_then(|()| r.setup());
         if let Err(e) = init {
             error!("SX1262: {e:?}");
         }
@@ -134,22 +139,23 @@ impl<'d, F: FrontEnd> Radio<'d, F> {
         r
     }
 
-    fn setup(&mut self, p: &Prefs) -> Result<(), Error> {
+    fn setup(&mut self) -> Result<(), Error> {
         self.sx.configure(&self.cfg)?;
-        self.sx
-            .set_tx_power(p.radio.tx_power_dbm, self.chip.ocp_ma)?;
+        self.sx.set_tx_power(self.tx_dbm, self.chip.ocp_ma)?;
         if self.chip.rx_patch {
             self.sx.patch_rx()?;
         }
         self.sx.start_rx(self.cfg.preamble)
     }
 
-    /// The radio settings changed (`Action::RadioChanged`).
-    pub fn reconfigure(&mut self, p: &Prefs) {
+    /// The radio settings changed (`Action::RadioChanged`); `tx_dbm` from
+    /// `Device::radio_tx_dbm`.
+    pub fn reconfigure(&mut self, p: &Prefs, tx_dbm: i8) {
         self.cfg = lora_of(p);
+        self.tx_dbm = tx_dbm;
         self.watch.configure(&p.radio.lora(), p.radio.cr);
         self.watch.reset();
-        if let Err(e) = self.setup(p) {
+        if let Err(e) = self.setup() {
             error!("SX1262: {e:?}");
         }
         self.fe.apply(p);
@@ -257,10 +263,7 @@ impl<'d, F: FrontEnd> Radio<'d, F> {
         // waiting to be read, like the C++.
         if dev.node.agc_due(now) && !self.transmitting && !rx.receiving && flags & irq::RX_DONE == 0
         {
-            let r = self
-                .sx
-                .reset_agc()
-                .and_then(|()| self.setup(&dev.node.prefs));
+            let r = self.sx.reset_agc().and_then(|()| self.setup());
             if let Err(e) = r {
                 error!("AGC reset: {e:?}");
             }

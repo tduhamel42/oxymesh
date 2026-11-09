@@ -131,6 +131,24 @@ pub enum FrontEnd {
     PaLna,
 }
 
+impl FrontEnd {
+    /// What the amplifier adds at this SX1262 setting, in dB. GC1109 (Heltec V4.2), as
+    /// Meshtastic measured it (`variants/esp32s3/heltec_v4/variant.h`, a hardware fact): +11 dB
+    /// up to 15 dBm in, +10 at 16-17, +9 at 18-19, +7 at 21; 20 dBm is taken as +9 and 22 as
+    /// +7. The KCT8103L (V4.3) is taken to be the same: both are rated 28 dBm out.
+    pub fn gain_db(self, tx_dbm: i8) -> i8 {
+        match self {
+            FrontEnd::None => 0,
+            FrontEnd::Pa | FrontEnd::PaLna => match tx_dbm {
+                ..=15 => 11,
+                16 | 17 => 10,
+                18..=20 => 9,
+                _ => 7,
+            },
+        }
+    }
+}
+
 /// Actions requested from the runner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
@@ -418,6 +436,14 @@ impl Device {
         frame_of(&Response::EndOfContacts {
             lastmod: it.most_recent,
         })
+    }
+
+    /// The SX1262 power to apply now: the setting, lowered if this board's radiated power
+    /// would exceed the sub-band's limit (`Node::apply_regulatory`); also picks the sub-band's
+    /// duty budget. The runner calls it at boot and whenever the radio settings change.
+    pub fn radio_tx_dbm(&mut self) -> i8 {
+        let fe = self.info.front_end;
+        self.node.apply_regulatory(|t| fe.gain_db(t))
     }
 
     pub fn poll_action(&mut self) -> Option<Action> {

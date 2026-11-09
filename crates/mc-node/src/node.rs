@@ -487,6 +487,45 @@ impl Node {
             .poll_tx(now, busy, &radio, self.prefs.airtime_factor_milli, rng)
     }
 
+    /// The SX1262 power to use, and the sub-band's duty budget (`docs/spec/air.md` §4.5): within
+    /// the EU profile (`config/eu868.toml`), the setting is lowered until the radiated power
+    /// (setting + `gain(setting)`, the front end's amplification) fits the most permissive
+    /// sub-band rule; outside it the setting is used as is and only the C++ airtime budget
+    /// applies.
+    pub fn apply_regulatory(&mut self, gain: impl Fn(i8) -> i8) -> i8 {
+        use mc_core::regulatory::{self, applicable_rule};
+        let setting = self.prefs.radio.tx_power_dbm.clamp(-9, 22);
+        let cfg = mc_core::RadioConfig {
+            freq_hz: self.prefs.radio.freq_khz.saturating_mul(1000),
+            modulation: mc_core::Modulation::LoRa(self.prefs.radio.lora()),
+        };
+        let (lo, hi) = cfg.span_hz();
+        let Some(rules) = regulatory::parse(regulatory::EU868).filter(|r| {
+            r.as_slice()
+                .iter()
+                .any(|r| lo >= r.low_hz && hi <= r.high_hz)
+        }) else {
+            // Not within one of the profile's sub-bands (another region, or a band that
+            // straddles two): the C++'s own airtime budget only.
+            self.disp.set_rule(None);
+            return setting;
+        };
+        let rules = rules.as_slice();
+        let mut tx = setting;
+        loop {
+            let erp = (i32::from(tx) + i32::from(gain(tx))) * 100;
+            if let Some(i) = applicable_rule(rules, &cfg, erp) {
+                self.disp.set_rule(rules.get(i).copied());
+                return tx;
+            }
+            if tx <= -9 {
+                self.disp.set_rule(None);
+                return tx;
+            }
+            tx -= 1;
+        }
+    }
+
     /// Is an AGC reset of the radio due (`agc_reset_interval` × 4 s)?
     pub fn agc_due(&mut self, now: Instant) -> bool {
         self.disp

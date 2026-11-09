@@ -319,6 +319,7 @@ Settings record v2 (160 bytes, `mc_node::persist`). Fields were added within v2 
 9. A new PIN (`SET_DEVICE_PIN`, the console's `set pin`, or the screen) applies at once instead of at the next boot; back to 0 draws a new random PIN. The app does not see the active PIN either way.
 10. USB stays a companion interface next to Bluetooth (the M5's C++ BLE build has Bluetooth only). As in §1.3, every frame goes out on both and either can send commands. With nothing on the USB port this is invisible.
 11. The GAP device name (read after connecting) holds at most 22 bytes, the `trouble-host` limit: `MeshCore-` and the first 13 bytes of the node name. The advertised name, which apps show while scanning, is whole up to 29 bytes as in the C++.
+12. Within the EU profile (`config/eu868.toml`), the radio transmits at most at the power the sub-band allows, counting the board's amplifier, and keeps the sub-band's duty cycle on top of the C++ airtime budget (`docs/spec/air.md` §4.5). The setting itself is untouched: the app reads back what it set.
 
 ## 10. Device-side decoding (ADR-0002)
 

@@ -353,6 +353,7 @@ async fn main(_spawner: Spawner) -> ! {
     .with_sck(p.GPIO16)
     .with_mosi(p.GPIO15)
     .with_miso(p.GPIO7);
+    let tx_dbm = dev.radio_tx_dbm();
     let mut radio = Radio::new(
         Sx126x::new(
             spi,
@@ -369,6 +370,7 @@ async fn main(_spawner: Spawner) -> ! {
             rx_patch: false,
         },
         &dev.node.prefs,
+        tx_dbm,
     );
 
     // Display, buttons, battery.
@@ -495,7 +497,8 @@ async fn main(_spawner: Spawner) -> ! {
                         esp_hal::system::software_reset();
                     }
                     Action::RadioChanged => {
-                        radio.reconfigure(&dev.node.prefs);
+                        let tx = dev.radio_tx_dbm();
+                        radio.reconfigure(&dev.node.prefs, tx);
                         want_draw = true;
                     }
                     Action::ClockSet => {

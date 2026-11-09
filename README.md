@@ -140,7 +140,9 @@ The cost is size. The image is 1.31 MB of the 1.75 MB app partition; Bluetooth i
 ## Radio use
 
 You are responsible for using the radio legally where you are.
-- The EU 868 MHz limits (sub-bands, power, duty cycle) are in [`config/eu868.toml`](config/eu868.toml), with their sources. The firmware enforces the duty cycle.
+- The EU 868 MHz limits (sub-bands, power, duty cycle) are in [`config/eu868.toml`](config/eu868.toml), with their sources.
+- Within those sub-bands, the firmware keeps each one's duty cycle on top of MeshCore's own airtime budget. It also lowers the transmit power when the board's radiated power, amplifier included, would exceed the limit.
+- Outside them, only MeshCore's budget applies.
 - Region presets are in [`config/regions.toml`](config/regions.toml).
 
 ## Contributing

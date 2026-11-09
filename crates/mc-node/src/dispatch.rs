@@ -2,7 +2,7 @@
 //! (`Dispatcher.cpp`, `StaticPoolPacketManager.cpp`; `docs/spec/air.md` §4.5).
 
 use mc_air::PacketBuf;
-use mc_core::{Bandwidth, CodingRate, Duration, DutyBudget, FRAME_MAX, Instant, LoRa};
+use mc_core::{Bandwidth, CodingRate, Duration, DutyBudget, FRAME_MAX, Instant, LoRa, Rule};
 use rand_core::Rng;
 
 /// Frames waiting to be transmitted (the C++ has a pool of 16 packets, `MyMesh.cpp:901`).
@@ -77,6 +77,7 @@ pub struct Dispatcher {
     tx_ended: Option<Instant>,
     /// Regulatory limit of the sub-band (config/eu868.toml), enforced on top.
     pub regulatory: Option<DutyBudget>,
+    regulatory_rule: Option<Rule>,
     pub stats: Stats,
 }
 
@@ -129,8 +130,21 @@ impl Dispatcher {
             next_agc: now,
             tx_ended: None,
             regulatory: None,
+            regulatory_rule: None,
             stats: Stats::ZERO,
         }
+    }
+
+    /// The sub-band rule transmissions now fall under (`None`: no regulatory profile applies).
+    /// The budget starts afresh only when the rule changes, so that changing a setting does not
+    /// forget the last hour's airtime.
+    pub fn set_rule(&mut self, rule: Option<Rule>) {
+        if rule == self.regulatory_rule {
+            return;
+        }
+        self.regulatory_rule = rule;
+        // 1 % margin for clock drift and rounding.
+        self.regulatory = rule.map(|r| DutyBudget::new(&r, 10_000));
     }
 
     /// Queues a frame. False if the queue is full (the C++ drops the frame: pool empty).
