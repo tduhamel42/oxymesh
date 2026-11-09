@@ -234,6 +234,14 @@ impl<'d> Sx126x<'d> {
         self.set_rx_gain(c.rx_boosted)
     }
 
+    /// Bit 0 of register 0x08B5, set like the C++ `SX126X_REGISTER_PATCH` on the Heltec V4
+    /// ("improved RX"; undocumented in the datasheet).
+    pub fn patch_rx(&mut self) -> Result<(), Error> {
+        let mut r = [0u8];
+        self.read_reg(0x08B5, &mut r)?;
+        self.write_reg(0x08B5, &[r[0] | 0x01])
+    }
+
     /// RX gain (§9.6): boosted, or power saving.
     pub fn set_rx_gain(&mut self, boosted: bool) -> Result<(), Error> {
         self.write_reg(0x08AC, &[if boosted { 0x96 } else { 0x94 }])

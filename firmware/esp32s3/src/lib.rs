@@ -9,6 +9,7 @@ pub mod gps;
 pub mod partition;
 pub mod pca9557;
 pub mod pcf8563;
+pub mod run;
 pub mod ssd1681;
 pub mod sx126x;
 pub mod tsens;

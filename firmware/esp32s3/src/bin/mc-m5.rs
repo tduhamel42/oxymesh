@@ -16,9 +16,8 @@ extern crate alloc;
 
 use core::cell::RefCell;
 
-use embassy_embedded_hal::adapter::BlockingAsync;
 use embassy_executor::Spawner;
-use embassy_futures::join::{join, join5};
+use embassy_futures::join::join;
 use embassy_time::{Duration, Instant, Timer};
 use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::mono_font::iso_8859_1::{FONT_6X13, FONT_10X20};
@@ -26,7 +25,6 @@ use embedded_graphics::pixelcolor::BinaryColor;
 use embedded_graphics::prelude::*;
 use embedded_graphics::text::Text;
 use esp_backtrace as _;
-use esp_bootloader_esp_idf::partitions::{PARTITION_TABLE_MAX_LEN, read_partition_table};
 use esp_hal::analog::adc::{Adc, AdcCalCurve, AdcConfig, Attenuation};
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{
@@ -41,39 +39,32 @@ use esp_hal::timer::timg::TimerGroup;
 use esp_hal::uart::{Config as UartConfig, Uart};
 use esp_radio::ble::controller::BleConnector;
 use esp_storage::FlashStorage;
-use log::{error, info};
-use mc_air::crypto::LocalIdentity;
-use mc_core::noise::NoiseFloor;
-use mc_core::rx_watch::{self, RxWatch};
+use log::info;
 use mc_node::device::{Action, FrontEnd, Info, UiEvent};
 use mc_node::{Device, Prefs};
-use mc_proto::{FROM_DEVICE, TO_DEVICE, USB_MAX, UsbDeframer, usb_frame};
-use mc_spiffs::{Spiffs, cpp};
+use mc_spiffs::cpp;
 use mc_ui::input::{Button, Gestures};
 use mc_ui::overlay::{self, Overlay, PixelRect};
 use mc_ui::panel::{self, COMPACT, Grid, LARGE};
 use mc_ui::refresh::{self, Kind, Policy};
 use mc_ui::{App, Ble, Ctx, Intent, Outcome, perform};
 use oxymesh_esp32s3::battery::{Smoother, percent};
-use oxymesh_esp32s3::ble::{self as bt, Control, Server, Shared};
+use oxymesh_esp32s3::ble::{Control, Shared};
 use oxymesh_esp32s3::buzzer;
-use oxymesh_esp32s3::flashstore::{BONDS_MAX, FlashStore};
 use oxymesh_esp32s3::gps;
 use oxymesh_esp32s3::m5;
-use oxymesh_esp32s3::partition::{ReadOnly, Region};
 use oxymesh_esp32s3::pca9557::{Pca9557, pin};
 use oxymesh_esp32s3::pcf8563::Pcf8563;
+use oxymesh_esp32s3::run::link::AppLink;
+use oxymesh_esp32s3::run::radio::{Chip, NoFrontEnd, Radio, Tx};
+use oxymesh_esp32s3::run::{self, boot, mc_now};
 use oxymesh_esp32s3::ssd1681::{Frame, Ssd1681};
-use oxymesh_esp32s3::sx126x::{LoRaConfig, Sx126x, irq};
+use oxymesh_esp32s3::sx126x::Sx126x;
 use oxymesh_esp32s3::tsens::ChipTemp;
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 use ratatui_core::terminal::Terminal;
 use static_cell::{ConstStaticCell, StaticCell};
-use trouble_host::prelude::{
-    Address, DefaultPacketPool, ExternalController, GapConfig, HostResources, IoCapabilities,
-    PeripheralConfig, appearance,
-};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -107,52 +98,6 @@ static DEVICE: ConstStaticCell<Device> = ConstStaticCell::new(Device::empty(INFO
 static FRAMES: StaticCell<[Frame; 2]> = StaticCell::new();
 /// What Ratatui draws into.
 static PANEL: StaticCell<Frame> = StaticCell::new();
-
-fn mc_now() -> mc_core::Instant {
-    mc_core::Instant::from_nanos(Instant::now().as_micros().saturating_mul(1000))
-}
-
-/// SX1262 radio settings from the node prefs (preamble 32 if SF ≤ 8, otherwise 16).
-fn lora_of(p: &Prefs) -> LoRaConfig {
-    LoRaConfig {
-        freq_hz: p.radio.freq_khz.saturating_mul(1000),
-        sf: p.radio.sf,
-        bw_hz: p.radio.bw_hz,
-        cr: p.radio.cr.saturating_sub(4).clamp(1, 4),
-        preamble: if p.radio.sf <= 8 { 32 } else { 16 },
-        sync_word: 0x12,
-        rx_boosted: p.rx_boosted_gain,
-    }
-}
-
-/// Listen before talk, when a frame is ready (`RadioLibWrapper::isReceiving`,
-/// `RadioLibWrappers.h:44-48` and `.cpp:198-214`): a packet coming in; the channel louder than
-/// the noise floor by `int.thresh` (when set); a LoRa preamble found by CAD (when on), after
-/// which reception restarts.
-fn channel_busy(
-    radio: &mut Sx126x<'_>,
-    receiving: bool,
-    (int_thresh, cad): (u8, bool),
-    floor: i16,
-    cfg: &LoRaConfig,
-) -> bool {
-    if receiving {
-        return true;
-    }
-    let thr = i16::from(int_thresh);
-    if thr != 0
-        && let Ok(rssi) = radio.rssi_inst()
-        && rssi > floor + thr
-    {
-        return true;
-    }
-    if cad {
-        let seen = radio.cad(cfg.sf);
-        let _ = radio.start_rx(cfg.preamble);
-        return !matches!(seen, Ok(false));
-    }
-    false
-}
 
 fn grid_of(p: &Prefs) -> Grid {
     if p.ui.compact { COMPACT } else { LARGE }
@@ -241,15 +186,6 @@ fn ble_of(sh: &Shared) -> Ble {
         state: sh.state.get(),
         pin: sh.pin.get(),
         paired: sh.paired.get(),
-    }
-}
-
-/// The PIN pairing asks for: the fixed one, or one drawn at boot (`main.cpp:188-202`).
-fn pin_of(fixed: u32, hw: &esp_hal::rng::Rng) -> u32 {
-    if fixed != 0 {
-        fixed
-    } else {
-        100_000 + hw.random() % 900_000
     }
 }
 
@@ -376,70 +312,14 @@ async fn main(_spawner: Spawner) -> ! {
 
     // Storage: `mcdata` partition, and the C++ firmware's SPIFFS, read only (ADR-0006).
     let flash = RefCell::new(FlashStorage::new(p.FLASH).multicore_auto_park());
-    let mut table = [0u8; PARTITION_TABLE_MAX_LEN];
-    let (data_part, cpp_part) = {
-        let mut f = flash.borrow_mut();
-        let t = read_partition_table(&mut f, &mut table).ok();
-        let find = |label: &str| {
-            t.as_ref()
-                .and_then(|t| t.iter().find(|e| e.label_as_str() == label))
-                .map(|e| (e.offset(), e.len()))
-        };
-        (find("mcdata"), find("spiffs"))
-    };
-    let Some((data_off, data_len)) = data_part else {
-        panic!("no mcdata partition")
-    };
-    let Some(mut store) = FlashStore::new(
-        BlockingAsync::new(Region::new(&flash, data_off, data_len)),
-        data_len,
-    ) else {
-        panic!("mcdata too small")
-    };
-    let cpp_fs =
-        || cpp_part.and_then(|(off, len)| Spiffs::new(ReadOnly::new(&flash, off, len), len).ok());
+    let (data_part, cpp_part) = boot::partitions(&flash);
+    let mut store = boot::open_store(&flash, data_part);
+    let cpp_fs = || boot::cpp_fs(&flash, cpp_part);
 
     let hw = esp_hal::rng::Rng::new();
     let mut rng =
         ChaCha20Rng::seed_from_u64((u64::from(hw.random()) << 32) | u64::from(hw.random()));
-    let id = match store.identity() {
-        Ok(Some(prv)) => LocalIdentity::from_private(&prv),
-        Err(()) => panic!("mcdata unreadable: the identity is left alone"),
-        Ok(None) => {
-            // First boot: the C++ firmware's node if it left one (ADR-0006), else a new one.
-            let imported = cpp_fs().and_then(|mut fs| {
-                match cpp::import(&mut fs, mc_node::node::UiPrefs::DEFAULT, &mut store) {
-                    Ok(s) => {
-                        info!(
-                            "import: C++ node, {} contacts, {} channels",
-                            s.contacts, s.channels
-                        );
-                        store.identity().ok().flatten()
-                    }
-                    Err(e) => {
-                        info!("import: nothing from the C++ firmware ({e:?})");
-                        None
-                    }
-                }
-            });
-            if let Some(prv) = imported {
-                LocalIdentity::from_private(&prv)
-            } else {
-                let id = loop {
-                    let mut seed = [0u8; 32];
-                    for c in seed.chunks_exact_mut(4) {
-                        c.copy_from_slice(&hw.random().to_le_bytes());
-                    }
-                    let id = LocalIdentity::from_seed(&seed);
-                    if !id.is_reserved() {
-                        break id;
-                    }
-                };
-                mc_node::Storage::save_identity(&mut store, id.private_key(), id.pub_key());
-                id
-            }
-        }
-    };
+    let id = boot::identity(&mut store, cpp_fs, &hw);
     let prefs = Prefs::defaults(id.pub_key());
     let dev = DEVICE.take();
     dev.node.reset(id, prefs, BOOT_EPOCH, mc_now());
@@ -455,22 +335,10 @@ async fn main(_spawner: Spawner) -> ! {
     dev.connected = true; // USB: always connected.
 
     // Bluetooth: name and PIN fixed at boot, like the C++ (`main.cpp:188-209`).
-    let mut mac = [0u8; 6];
-    for (d, s) in mac
-        .iter_mut()
-        .zip(esp_hal::efuse::base_mac_address().as_bytes())
-    {
-        *d = *s;
-    }
-    let mut ble_name = [0u8; mc_proto::ble::NAME_MAX];
-    let ble_name_len = mc_proto::ble::device_name(
-        mc_node::contacts::name_str(&dev.node.prefs.name),
-        mac,
-        &mut ble_name,
-    );
-    let ble_name = &ble_name[..ble_name_len];
+    let mac = boot::mac();
+    let ble_name = boot::ble_name(&dev.node.prefs, mac);
     let ble_sh = Shared::new();
-    ble_sh.pin.set(pin_of(dev.node.prefs.ble_pin, &hw));
+    ble_sh.pin.set(boot::pin_of(dev.node.prefs.ble_pin, &hw));
     let bonds = store.bonds();
     ble_sh.paired.set(bonds.len() as u8);
 
@@ -485,22 +353,23 @@ async fn main(_spawner: Spawner) -> ! {
     .with_sck(p.GPIO16)
     .with_mosi(p.GPIO15)
     .with_miso(p.GPIO7);
-    let mut radio = Sx126x::new(
-        spi,
-        Output::new(p.GPIO17, Level::High, out),
-        Output::new(p.GPIO6, Level::High, out),
-        Input::new(p.GPIO5, InputConfig::default()),
-        Input::new(p.GPIO4, InputConfig::default()),
+    let mut radio = Radio::new(
+        Sx126x::new(
+            spi,
+            Output::new(p.GPIO17, Level::High, out),
+            Output::new(p.GPIO6, Level::High, out),
+            Input::new(p.GPIO5, InputConfig::default()),
+            Input::new(p.GPIO4, InputConfig::default()),
+        ),
+        NoFrontEnd,
+        Chip {
+            tcxo_millivolts: m5::TCXO_MILLIVOLTS,
+            dcdc: true,
+            ocp_ma: m5::OCP_MA,
+            rx_patch: false,
+        },
+        &dev.node.prefs,
     );
-    let mut cfg = lora_of(&dev.node.prefs);
-    let init = radio
-        .init(m5::TCXO_MILLIVOLTS, true)
-        .and_then(|()| radio.configure(&cfg))
-        .and_then(|()| radio.set_tx_power(dev.node.prefs.radio.tx_power_dbm, m5::OCP_MA))
-        .and_then(|()| radio.start_rx(cfg.preamble));
-    if let Err(e) = init {
-        error!("SX1262: {e:?}");
-    }
 
     // Display, buttons, battery.
     let espi = Spi::new(
@@ -537,27 +406,22 @@ async fn main(_spawner: Spawner) -> ! {
     let mut bat = Smoother::new();
 
     // Companion protocol on UART0 (CH340 bridge).
-    let mut uart = Uart::new(p.UART0, UartConfig::default())
-        .expect("UART0")
-        .with_tx(p.GPIO43)
-        .with_rx(p.GPIO44);
-    let mut deframer = UsbDeframer::new(TO_DEVICE);
+    let mut link = AppLink::new(
+        Uart::new(p.UART0, UartConfig::default())
+            .expect("UART0")
+            .with_tx(p.GPIO43)
+            .with_rx(p.GPIO44),
+    );
 
     // Heap for the interface only (ADR-0008): the protocol core never allocates.
     let mut light = false;
     // The light went off on its own: the next press only turns it back on.
     let mut dimmed = false;
     let mut light_until = 0u64;
-    let mut transmitting = false;
-    let mut tx_started = Instant::now();
     let mut next_battery = Instant::now();
     let chip_temp = ChipTemp::new();
     Timer::after(Duration::from_millis(1)).await;
     info!("chip temperature: {:?} (0.1 °C)", chip_temp.read());
-    let mut buf = [0u8; 255];
-    let mut rx_bytes = [0u8; 64];
-    let mut frame_in = [0u8; mc_proto::FRAME_MAX];
-    let mut out_buf = [0u8; USB_MAX];
 
     // Interface.
     let panel_frame = PANEL.init(Frame::new());
@@ -574,10 +438,6 @@ async fn main(_spawner: Spawner) -> ! {
     let mut next_ui_tick = 0u64;
     let mut next_blink = 0u64;
     let mut blink_off: Option<u64> = None;
-    let mut noise = NoiseFloor::new();
-    let mut next_noise_round = 0u64;
-    let mut watch = RxWatch::new();
-    watch.configure(&dev.node.prefs.radio.lora(), dev.node.prefs.radio.cr);
     let mut last_ble = ble_of(&ble_sh);
     // The loop owns the device and its peripherals; the Bluetooth side only shares `ble_sh`,
     // the buzzer only its requests.
@@ -590,106 +450,14 @@ async fn main(_spawner: Spawner) -> ! {
         loop {
             let now = mc_now();
 
-            // Frames from the app.
-            while uart.read_ready() {
-                let Ok(n) = uart.read(&mut rx_bytes) else {
-                    break;
-                };
-                for &b in &rx_bytes[..n] {
-                    if let Some(f) = deframer.push(b) {
-                        let len = f.len();
-                        frame_in[..len].copy_from_slice(f);
-                        dev.on_app_frame(now, &frame_in[..len], &mut rng, &mut store);
-                    }
-                }
-            }
-            loop {
-                let n = ble_sh.link.borrow_mut().recv(&mut frame_in);
-                let Some(n) = n else { break };
-                dev.on_app_frame(now, &frame_in[..n], &mut rng, &mut store);
-            }
-            while let Some(f) = dev.poll_app() {
-                if ble_sh.link.borrow_mut().send(&f) {
-                    ble_sh.outbound.signal(());
-                }
-                if let Ok(n) = usb_frame(FROM_DEVICE, &f, &mut out_buf) {
-                    let mut sent = 0;
-                    while sent < n {
-                        match uart.write(&out_buf[sent..n]) {
-                            Ok(k) => sent += k,
-                            Err(_) => break,
-                        }
-                    }
-                }
-            }
+            // Frames from the app, and the device's to it.
+            link.poll(dev, ble_sh, now, &mut rng, &mut store);
 
-            // Radio.
-            let flags = radio.irq_status().unwrap_or(0);
-            let mut cleared = true;
-            if flags & irq::TX_DONE != 0 && transmitting {
-                dev.tx_done(now);
-                transmitting = false;
-                if let Some(io) = io.as_mut() {
-                    let _ = io.set(pin::LED_NOTIFY, false);
-                }
-                let _ = radio.start_rx(cfg.preamble);
-            } else if flags & irq::RX_DONE != 0 {
-                let crc = flags & irq::CRC_ERR != 0;
-                if let Ok(pk) = radio.read_packet(&mut buf, crc)
-                    && !crc
-                {
-                    let snr4 = i8::try_from(pk.snr_qdb).unwrap_or(0);
-                    dev.on_rx(
-                        now,
-                        &buf[..pk.len.min(255)],
-                        snr4,
-                        pk.rssi_dbm,
-                        &mut rng,
-                        &mut store,
-                    );
-                }
-                let _ = radio.clear_irq();
-            } else if flags & irq::CRC_ERR != 0 {
-                let _ = radio.clear_irq_mask(irq::CRC_ERR | rx_watch::HEADER_FLAGS);
-            } else {
-                cleared = false;
-            }
-            // A preamble or header the radio left latched: cleared like the C++ does.
-            let rx = if cleared || transmitting {
-                watch.reset();
-                rx_watch::Watch {
-                    receiving: false,
-                    clear: 0,
-                }
-            } else {
-                watch.step(flags, Instant::now().as_millis())
-            };
-            if rx.clear != 0 {
-                let _ = radio.clear_irq_mask(rx.clear);
-            }
-            if transmitting && Instant::now() > tx_started + Duration::from_secs(10) {
-                dev.tx_done(now);
-                transmitting = false;
-                let _ = radio.start_rx(cfg.preamble);
-            }
-            let floor = noise.floor();
-            let lbt = (
-                dev.node.prefs.interference_threshold,
-                dev.node.prefs.cad_enabled,
-            );
-            if !transmitting
-                && let Some(f) = dev.poll_tx(
-                    now,
-                    || channel_busy(&mut radio, rx.receiving, lbt, floor, &cfg),
-                    &mut rng,
-                )
-                && radio.transmit(cfg.preamble, &f.raw).is_ok()
+            // Radio; the notification LED lights while transmitting.
+            if let Some(t) = radio.poll(dev, now, &mut rng, &mut store)
+                && let Some(io) = io.as_mut()
             {
-                transmitting = true;
-                tx_started = Instant::now();
-                if let Some(io) = io.as_mut() {
-                    let _ = io.set(pin::LED_NOTIFY, true);
-                }
+                let _ = io.set(pin::LED_NOTIFY, t == Tx::Started);
             }
             // GPS: on as the setting says; its fix for the node, its time for the clock.
             if let Some(g) = gps_rx.as_mut() {
@@ -710,30 +478,7 @@ async fn main(_spawner: Spawner) -> ! {
                 }
             }
 
-            // Noise floor, sampled like the C++ while listening.
-            let ms_now = Instant::now().as_millis();
-            if ms_now >= next_noise_round {
-                noise.trigger();
-                next_noise_round = ms_now + mc_core::noise::ROUND_MS;
-            }
-            noise.step(!transmitting, rx.receiving, || radio.rssi_inst().ok());
-            dev.noise_floor = noise.floor();
             dev.tick(now, &mut rng, &mut store);
-
-            // AGC reset, when set (`agc.reset.interval`): skipped if a packet is coming in or
-            // waiting to be read, like the C++.
-            if dev.node.agc_due(now) && !transmitting && !rx.receiving && flags & irq::RX_DONE == 0 {
-                let r = radio
-                    .reset_agc()
-                    .and_then(|()| radio.configure(&cfg))
-                    .and_then(|()| radio.set_tx_power(dev.node.prefs.radio.tx_power_dbm, m5::OCP_MA))
-                    .and_then(|()| radio.start_rx(cfg.preamble));
-                if let Err(e) = r {
-                    error!("AGC reset: {e:?}");
-                }
-                noise.reset();
-                watch.reset();
-            }
 
             // Actions requested by the app.
             let mut power_off = false;
@@ -750,16 +495,7 @@ async fn main(_spawner: Spawner) -> ! {
                         esp_hal::system::software_reset();
                     }
                     Action::RadioChanged => {
-                        cfg = lora_of(&dev.node.prefs);
-                        watch.configure(&dev.node.prefs.radio.lora(), dev.node.prefs.radio.cr);
-                        watch.reset();
-                        let _ = radio
-                            .configure(&cfg)
-                            .and_then(|()| {
-                                radio.set_tx_power(dev.node.prefs.radio.tx_power_dbm, m5::OCP_MA)
-                            })
-                            .and_then(|()| radio.start_rx(cfg.preamble));
-                        transmitting = false;
+                        radio.reconfigure(&dev.node.prefs);
                         want_draw = true;
                     }
                     Action::ClockSet => {
@@ -771,7 +507,7 @@ async fn main(_spawner: Spawner) -> ! {
                         want_draw = true;
                     }
                     Action::PinChanged => {
-                        let pin = pin_of(dev.node.prefs.ble_pin, &hw);
+                        let pin = boot::pin_of(dev.node.prefs.ble_pin, &hw);
                         ble_sh.pin.set(pin);
                         let _ = ble_sh.control.try_send(Control::Pin(pin));
                         want_draw = true;
@@ -922,7 +658,7 @@ async fn main(_spawner: Spawner) -> ! {
                             Timer::after(Duration::from_millis(20)).await;
                         }
                         let _ = epd.sleep();
-                        let _ = radio.sleep();
+                        radio.sleep();
                         if let Some(g) = gps_rx.as_mut() {
                             g.power(false).await;
                         }
@@ -975,7 +711,9 @@ async fn main(_spawner: Spawner) -> ! {
             }
             if blink_off.is_some_and(|t| now_ms >= t) {
                 blink_off = None;
-                if !transmitting && let Some(io) = io.as_mut() {
+                if !radio.transmitting()
+                    && let Some(io) = io.as_mut()
+                {
                     let _ = io.set(pin::LED_NOTIFY, false);
                 }
             }
@@ -1020,49 +758,15 @@ async fn main(_spawner: Spawner) -> ! {
         }
     };
 
-    match connector {
-        Some(connector) => {
-            // Static random address from the MAC (two top bits set): a phone that knew the C++
-            // firmware sees a new device and pairs afresh.
-            let mut addr = mac;
-            addr[5] |= 0xC0;
-            let controller: ExternalController<_, 20> = ExternalController::new(connector);
-            let mut resources: HostResources<_, DefaultPacketPool, 1, 2, 1, BONDS_MAX> =
-                HostResources::new();
-            let stack = trouble_host::new(controller, &mut resources)
-                .set_random_address(Address::random(addr))
-                .set_io_capabilities(IoCapabilities::DisplayOnly)
-                .set_passkey(Some(ble_sh.pin.get()))
-                .build();
-            for b in bonds {
-                let _ = stack.add_bond_information(b);
-            }
-            let mut peripheral = stack.peripheral();
-            let runner = stack.runner();
-            let gap = core::str::from_utf8(ble_name).map_or("MeshCore", bt::gap_name);
-            match Server::new_with_config(GapConfig::Peripheral(PeripheralConfig {
-                name: gap,
-                appearance: &appearance::UNKNOWN,
-            })) {
-                Ok(server) => {
-                    join5(
-                        bt::run_host(runner),
-                        bt::serve(ble_name, &mut peripheral, &server, &ble_sh),
-                        bt::control(&stack, &ble_sh),
-                        main_loop,
-                        player,
-                    )
-                    .await;
-                }
-                Err(_) => {
-                    join(main_loop, player).await;
-                }
-            }
-        }
-        None => {
-            join(main_loop, player).await;
-        }
-    }
+    run::bt::serve(
+        connector,
+        mac,
+        bonds,
+        &ble_name,
+        ble_sh,
+        join(main_loop, player),
+    )
+    .await;
     loop {
         Timer::after(Duration::from_secs(60)).await;
     }
