@@ -1,16 +1,15 @@
-//! The ThinkNode M5's GPS (`docs/spec/m5.md` §2), driven like the C++ firmware does it
-//! (`MicroNMEALocationProvider` and `EnvironmentSensorManager`, MeshCore, MIT; pins from
-//! `variants/thinknode_m5/variant.h`): board v1.0 with an L76K on UART1 at 9600 baud (MCU RX 19,
-//! TX 20), EN on GPIO11 (active high), RESET on GPIO13 (active low). On: EN high, RESET pulsed,
-//! then `$PCAS04,7` (GPS + BeiDou + GLONASS) after 250 ms. Off: EN low, RESET held.
-//!
-//! Board v2.0 (AG3352, told apart by the expander's IO7) is wired differently; the C++ does not
-//! drive it and neither does this, yet.
+//! The ThinkNode M5's GPS (`docs/spec/m5.md` §2, §6) on UART1 at 9600 baud, switched on and
+//! off by the steps of `mc_nmea::receiver`:
+//! - board v1.0: an L76K (MCU RX 19, TX 20; EN on GPIO11, RESET on GPIO13), driven like the C++
+//!   (`MicroNMEALocationProvider` and `EnvironmentSensorManager`, MeshCore, MIT);
+//! - board v2.0 (told apart by the expander's IO7): an AG3352 (MCU RX 20, TX 19) behind a 0.8 V
+//!   rail on GPIO10. Neither the C++ nor this has run it on hardware.
 
 use embassy_time::{Duration, Instant, Timer};
 use esp_hal::Blocking;
-use esp_hal::gpio::Output;
+use esp_hal::gpio::{Level, Output};
 use esp_hal::uart::Uart;
+use mc_nmea::receiver::{Line, Receiver, Step, sentence};
 use mc_nmea::{Gps as State, Lines, TimeSync};
 use mc_node::device::GpsFix;
 
@@ -23,13 +22,40 @@ pub enum Revision {
     V2,
 }
 
+/// The receiver's control lines, as the board wires them.
+#[derive(Default)]
+pub struct Pins<'d> {
+    pub enable: Option<Output<'d>>,
+    pub reset: Option<Output<'d>>,
+    pub rail: Option<Output<'d>>,
+}
+
+impl<'d> Pins<'d> {
+    fn get(&mut self, l: Line) -> Option<&mut Output<'d>> {
+        match l {
+            Line::Enable => self.enable.as_mut(),
+            Line::Reset => self.reset.as_mut(),
+            Line::Rail => self.rail.as_mut(),
+        }
+    }
+}
+
+impl Revision {
+    pub fn receiver(self) -> Receiver {
+        match self {
+            Revision::V1 => Receiver::L76k,
+            Revision::V2 => Receiver::Ag3352,
+        }
+    }
+}
+
 pub struct Gps<'d> {
     uart: Uart<'d, Blocking>,
-    en: Output<'d>,
-    reset: Output<'d>,
+    receiver: Receiver,
+    pins: Pins<'d>,
     on: bool,
-    /// When to send the constellation setting after power-up.
-    configure_at: Option<Instant>,
+    /// A sentence to send once the receiver is up.
+    configure_at: Option<(Instant, &'static [u8])>,
     lines: Lines,
     state: State,
     sync: TimeSync,
@@ -39,35 +65,13 @@ pub struct Gps<'d> {
     pub errors: u32,
 }
 
-/// `$` + payload + `*` + checksum + CRLF.
-fn sentence(payload: &[u8], out: &mut [u8; 32]) -> usize {
-    let sum = payload.iter().fold(0u8, |a, b| a ^ b);
-    let hex = b"0123456789ABCDEF";
-    let mut n = 0;
-    for &b in [b'$'].iter().chain(payload).chain(&[
-        b'*',
-        hex[usize::from(sum >> 4)],
-        hex[usize::from(sum & 15)],
-        b'\r',
-        b'\n',
-    ]) {
-        if let Some(o) = out.get_mut(n) {
-            *o = b;
-            n += 1;
-        }
-    }
-    n
-}
-
 impl<'d> Gps<'d> {
-    /// Starts off (EN low, RESET held).
-    pub fn new(uart: Uart<'d, Blocking>, mut en: Output<'d>, mut reset: Output<'d>) -> Self {
-        en.set_low();
-        reset.set_low();
-        Self {
+    /// Starts off.
+    pub fn new(uart: Uart<'d, Blocking>, receiver: Receiver, pins: Pins<'d>) -> Self {
+        let mut g = Self {
             uart,
-            en,
-            reset,
+            receiver,
+            pins,
             on: false,
             configure_at: None,
             lines: Lines::new(),
@@ -76,6 +80,18 @@ impl<'d> Gps<'d> {
             bytes: 0,
             sentences: 0,
             errors: 0,
+        };
+        g.apply_off();
+        g
+    }
+
+    fn apply_off(&mut self) {
+        for s in self.receiver.off() {
+            if let Step::Set(l, v) = *s
+                && let Some(p) = self.pins.get(l)
+            {
+                p.set_level(if v { Level::High } else { Level::Low });
+            }
         }
     }
 
@@ -83,22 +99,32 @@ impl<'d> Gps<'d> {
         self.on
     }
 
-    /// `begin()` + `reset()` + `configureL76K()`, or `stop()`.
+    /// Switches the receiver on or off (`mc_nmea::receiver`).
     pub async fn power(&mut self, on: bool) {
         if on == self.on {
             return;
         }
         self.on = on;
-        if on {
-            self.en.set_high();
-            self.reset.set_low();
-            Timer::after(Duration::from_millis(10)).await;
-            self.reset.set_high();
-            self.configure_at = Some(Instant::now() + Duration::from_millis(250));
+        self.configure_at = None;
+        let steps = if on {
+            self.receiver.on()
         } else {
-            self.en.set_low();
-            self.reset.set_low();
-            self.configure_at = None;
+            self.receiver.off()
+        };
+        for s in steps {
+            match *s {
+                Step::Set(l, v) => {
+                    if let Some(p) = self.pins.get(l) {
+                        p.set_level(if v { Level::High } else { Level::Low });
+                    }
+                }
+                Step::Wait(ms) => Timer::after(Duration::from_millis(ms)).await,
+                Step::Later(ms, payload) => {
+                    self.configure_at = Some((Instant::now() + Duration::from_millis(ms), payload));
+                }
+            }
+        }
+        if !on {
             self.state = State::default();
         }
     }
@@ -109,10 +135,12 @@ impl<'d> Gps<'d> {
         if !self.on {
             return (None, None);
         }
-        if self.configure_at.is_some_and(|t| Instant::now() >= t) {
+        if let Some((t, payload)) = self.configure_at
+            && Instant::now() >= t
+        {
             self.configure_at = None;
             let mut b = [0u8; 32];
-            let n = sentence(b"PCAS04,7", &mut b);
+            let n = sentence(payload, &mut b);
             let _ = self.uart.write(&b[..n]);
         }
         let mut buf = [0u8; 64];

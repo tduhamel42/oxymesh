@@ -23,6 +23,8 @@ use mc_core::civil::Civil;
 /// Longest sentence kept (82 by the standard, some receivers go a little over).
 pub const LINE_MAX: usize = 96;
 
+pub mod receiver;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Time {
     pub hour: u8,

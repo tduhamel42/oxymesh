@@ -290,25 +290,41 @@ async fn main(_spawner: Spawner) -> ! {
         gps::Revision::V1
     };
     info!("gps: board {revision:?} ({highs}/10 high)");
-    // GPIO10: the GPS switch on board v1.0 (high = on); only read, like the C++.
-    #[cfg_attr(not(feature = "debug-log"), allow(unused_variables))]
-    let gps_switch = Input::new(p.GPIO10, InputConfig::default());
-
-    let mut gps_rx = match revision {
-        gps::Revision::V1 => Uart::new(p.UART1, UartConfig::default().with_baudrate(9600))
-            .ok()
-            .map(|u| {
+    // The GPS, wired by board revision (`docs/spec/m5.md` §2). The switch is only read, like
+    // the C++: GPIO10 on v1.0, GPIO18 on v2.0 (where GPIO10 is the receiver's rail).
+    let uart = Uart::new(p.UART1, UartConfig::default().with_baudrate(9600)).ok();
+    let (gps_switch, mut gps_rx) = match revision {
+        gps::Revision::V1 => (
+            Input::new(p.GPIO10, InputConfig::default()),
+            uart.map(|u| {
                 gps::Gps::new(
                     u.with_rx(p.GPIO19).with_tx(p.GPIO20),
-                    Output::new(p.GPIO11, Level::Low, OutputConfig::default()),
-                    Output::new(p.GPIO13, Level::Low, OutputConfig::default()),
+                    revision.receiver(),
+                    gps::Pins {
+                        enable: Some(Output::new(p.GPIO11, Level::Low, OutputConfig::default())),
+                        reset: Some(Output::new(p.GPIO13, Level::Low, OutputConfig::default())),
+                        rail: None,
+                    },
                 )
             }),
-        gps::Revision::V2 => {
-            info!("gps: the AG3352 board is not driven yet");
-            None
-        }
+        ),
+        gps::Revision::V2 => (
+            Input::new(p.GPIO18, InputConfig::default()),
+            uart.map(|u| {
+                gps::Gps::new(
+                    u.with_rx(p.GPIO20).with_tx(p.GPIO19),
+                    revision.receiver(),
+                    gps::Pins {
+                        enable: None,
+                        reset: None,
+                        rail: Some(Output::new(p.GPIO10, Level::Low, OutputConfig::default())),
+                    },
+                )
+            }),
+        ),
     };
+    #[cfg(not(feature = "debug-log"))]
+    let _ = &gps_switch;
 
     // Storage: `mcdata` partition, and the C++ firmware's SPIFFS, read only (ADR-0006).
     let flash = RefCell::new(FlashStorage::new(p.FLASH).multicore_auto_park());
