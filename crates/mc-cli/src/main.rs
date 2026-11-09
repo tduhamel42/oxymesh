@@ -81,6 +81,15 @@ enum Cmd {
     Spiffs { image: std::path::PathBuf },
     /// The device's custom variables (`GET_CUSTOM_VARS`), or set one: `gps:1`, `gps_interval:60`.
     Var { port: String, set: Option<String> },
+    /// Radio, core and packet counters (`GET_STATS` 1, 0, 2): noise floor, airtime, errors.
+    /// `--every N` repeats every N seconds, `--count` times.
+    Stats {
+        port: String,
+        #[arg(long)]
+        every: Option<u64>,
+        #[arg(long, default_value_t = 1)]
+        count: u32,
+    },
     /// Device console commands (`RUN_CLI_COMMAND`), one reply per line: `mc cli $M5 "get radio" ver`.
     Cli {
         port: String,
@@ -166,6 +175,7 @@ fn main() {
         Cmd::Spiffs { image } => spiffs(&image),
         Cmd::Var { port, set } => var(&port, set.as_deref()),
         Cmd::Cli { port, commands } => console(&port, &commands),
+        Cmd::Stats { port, every, count } => stats(&port, every, count),
         Cmd::Latency { port, count } => latency(&port, count),
         Cmd::Burst {
             a,
@@ -351,6 +361,24 @@ fn var(path: &str, set: Option<&str>) -> Result<(), String> {
         Some(v) => p.ask(&Command::SetCustomVar { var: v.as_bytes() })?,
         None => p.ask(&Command::GetCustomVars)?,
     };
+    Ok(())
+}
+
+fn stats(path: &str, every: Option<u64>, count: u32) -> Result<(), String> {
+    let mut p = Port::open(path, "device")?;
+    p.ask(&Command::DeviceQuery { app_ver: APP_VER })?;
+    for i in 0..count.max(1) {
+        if i > 0 {
+            std::thread::sleep(std::time::Duration::from_secs(every.unwrap_or(1)));
+        }
+        for kind in [1, 0, 2] {
+            let f = p.ask(&Command::GetStats { kind })?;
+            match Response::decode(&f) {
+                Ok(r) => println!("{r}"),
+                Err(e) => println!("unreadable: {e:?}"),
+            }
+        }
+    }
     Ok(())
 }
 
