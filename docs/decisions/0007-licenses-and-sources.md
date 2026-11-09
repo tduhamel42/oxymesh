@@ -12,8 +12,8 @@ The firmware reimplements MeshCore and relies on what other projects know about 
 - **MeshCore** (MIT) and **RadioLib** (MIT): we reimplement from their sources, with attribution in `NOTICE`. We do not copy files.
 - **Meshtastic** (GPL-3.0) and **GxEPD2** (GPL-3.0): **no code taken**. We only keep hardware facts (pinouts, I2C addresses, battery voltage curve, GPS revisions). The SSD1681 driver is written from the datasheet.
 - **loranet** (same author): code copied freely, origin stated in the commit message.
-- oxymesh's license has not been chosen yet (Tanguy will decide).
-- No public contribution (PR to MeshCore, trouble-host, etc.) without Tanguy's approval.
+- oxymesh is released under the MIT license (`LICENSE`).
+- No public contribution (PR to MeshCore, trouble-host, etc.) without the maintainer's approval.
 
 ## Consequences
 

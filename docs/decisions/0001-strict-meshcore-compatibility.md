@@ -5,7 +5,7 @@
 
 ## Context
 
-Tanguy wants a Rust firmware for his ThinkNode M5 that replaces the MeshCore firmware without breaking anything: it must talk to original MeshCore nodes over the air (the French repeater network) and remain usable with the official MeshCore app, meshcore.js and loranet's web app. The only visible gain expected is the on-device interface.
+The goal is a Rust firmware for the ThinkNode M5 that replaces the MeshCore firmware without breaking anything: it must talk to original MeshCore nodes over the air (the French repeater network) and remain usable with the official MeshCore app, meshcore.js and loranet's web app. The only visible gain expected is the on-device interface.
 
 ## Decision
 

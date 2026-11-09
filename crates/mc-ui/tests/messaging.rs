@@ -43,7 +43,7 @@ fn ctx(w: &World) -> Ctx<'_> {
 impl Rig {
     fn new() -> Self {
         let mut w = World::new(77);
-        let me = w.add("Tanguy", |_| {});
+        let me = w.add("Morgan", |_| {});
         let alice = w.add("Alice", |_| {});
         w.link(me, alice);
         for (x, y) in [(me, alice), (alice, me)] {
@@ -77,7 +77,7 @@ impl Rig {
             let c = ctx(&self.w);
             self.app.done(&i, &o, &c);
         }
-        // Echo bot: Alice answers every message from Tanguy.
+        // Echo bot: Alice answers every message from Morgan.
         let km: [u8; 32] = *self.w.nodes[ME].dev.node.id.pub_key();
         let got: Vec<Vec<u8>> = std::mem::take(&mut self.w.nodes[ALICE].events)
             .into_iter()

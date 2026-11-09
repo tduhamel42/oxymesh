@@ -5,7 +5,7 @@
 
 ## Context
 
-Tanguy has two devices: a ThinkNode M5 (the target, his Bluetooth device) and a Heltec WiFi LoRa 32 V4 already flashed with MeshCore C++ v1.18 `companion_radio_usb`, driven from the Mac over native USB.
+The project has two devices: a ThinkNode M5 (the target, the Bluetooth device in daily use) and a Heltec WiFi LoRa 32 V4 already flashed with MeshCore C++ v1.18 `companion_radio_usb`, driven from the Mac over native USB.
 
 ## Decision
 
@@ -13,7 +13,6 @@ Tanguy has two devices: a ThinkNode M5 (the target, his Bluetooth device) and a 
 - The **Heltec** stays on C++ and serves as the **reference**:
   - for the companion protocol (`mc conform`);
   - over the air: `LOG_RX_DATA` (0x88) reports every received packet, `SEND_RAW_PACKET` (65) transmits an arbitrary packet.
-- No flash backup before flashing the M5 (Tanguy's choice).
 
 ## Consequences
 

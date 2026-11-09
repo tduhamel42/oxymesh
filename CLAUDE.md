@@ -2,7 +2,7 @@
 
 **MeshCore-compatible** firmware written in Rust. First target: the Elecrow **ThinkNode M5** (ESP32-S3-WROOM-1-N4, SX1262, SSD1681 200×200 e-paper, two buttons, brightness potentiometer, GPS, buzzer). Role: **companion** (Bluetooth and USB), like MeshCore's `companion_radio_ble`.
 
-Original plan: `~/.claude/plans/check-meshcore-firmware-especially-sparkling-pelican.md` (2026-11-05). Passages marked **(ADR-xxxx)** refer to `docs/decisions/`.
+Passages marked **(ADR-xxxx)** refer to `docs/decisions/`.
 
 ---
 
@@ -51,7 +51,7 @@ docs/decisions/       short ADRs (one decision = one file)
 testdata/             test vectors (independent Python oracle, meshcore.js, captures from our own devices)
 ```
 
-Part of the code comes from loranet (`~/Documents/Perso/Dev/loranet`, same author): it is **copied** then adapted, with its origin stated in the commit message. No dependency between the two repositories, and loranet is never modified from here.
+Part of the firmware base (esp-hal setup, SX1262 driver) comes from loranet, an earlier LoRa project by the same author: it is **copied** then adapted, with its origin stated in the commit message. There is no dependency between the two repositories.
 
 ## 3. Code rules
 
@@ -78,7 +78,7 @@ Part of the code comes from loranet (`~/Documents/Perso/Dev/loranet`, same autho
 
 ## 5. Roadmap
 
-Each milestone is committed locally once finished and tested. Nothing is pushed without Tanguy's approval.
+Each milestone is committed once finished and tested. Done: MC0–MC7 (plus U0–U7, H1, H2 for the interface and the hardware). Open: MC8.
 
 0. **MC0** — repository, ADRs 0001-0007, `air`, `companion`, `m5`, `ui` specs.
 1. **MC1** — `mc-core` + `mc-air`; Python oracle; `mc info|sniff|inject`.
@@ -99,21 +99,21 @@ Later: repeater and room server roles, Heltec V4, nRF52 (ThinkNode M1, T-Echo), 
 - No code copied from Meshtastic or GxEPD2.
 - No hard-coded regulatory values.
 - No captures from the real network (names, other people's messages) in the repository.
-- No mandatory flash backup before flashing (Tanguy does not want one).
-- No public PR (MeshCore, trouble-host…) without Tanguy's approval.
+- No public PR to other projects (MeshCore, trouble-host…) without the maintainer's approval.
 
 ## 7. Commands
 
 ```sh
+# M5=/dev/cu.wchusbserial…  REF=/dev/cu.usbmodem…   (the Heltec running C++; check `ls /dev/cu.*`)
 scripts/ci.sh                         # everything CI does (CI_SKIP_FUZZ=1, CI_SKIP_FIRMWARE=1 to skip)
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 scripts/fuzz.sh N [target…]           # fuzz, N seconds per target
 python3 -I testdata/air/gen.py > testdata/air/vectors.toml   # over-the-air vectors (pure Python oracle)
 (cd testdata/proto && npm ci && node gen.mjs vectors.toml)   # companion vectors, cross-checked with meshcore.js
-cargo run --release -p mc-cli -- info /dev/cu.wchusbserial120          # query a USB companion
-cargo run --release -p mc-cli -- sniff /dev/cu.usbmodem141101 --channel '#test'   # packets heard, decoded
-cargo run --release -p mc-cli -- airtest --ref /dev/cu.usbmodem141101 --dut /dev/cu.wchusbserial120   # mc-air against a C++ node, zero-hop
+cargo run --release -p mc-cli -- info $M5          # query a USB companion
+cargo run --release -p mc-cli -- sniff $REF --channel '#test'   # packets heard, decoded
+cargo run --release -p mc-cli -- airtest --ref $REF --dut $M5   # mc-air against a C++ node, zero-hop
 cargo run --release -p mc-cli -- ui                  # the device interface in a terminal, on a simulated device (--compact)
 cargo run --release -p mc-cli -- ui --png local/ui-png   # every screen of the tour as panel-exact PNG
 INSTA_UPDATE=always cargo test -p mc-ui              # accept changed screen snapshots (review the diff!)
@@ -126,9 +126,7 @@ cargo run --release -p mc-cli -- latency <port> --count 150   # USB command roun
 cargo run --release -p mc-cli -- var <port> [gps:1]                 # custom variables (gps, gps_interval): read, or set one
 cargo run --release -p mc-cli -- spiffs <image>             # what the C++ firmware left in a SPIFFS image (espflash read-flash 0x290000 0x160000; keep it out of git)
 python3 -I testdata/spiffs/gen.py                           # the made-up C++ SPIFFS test image (testdata/spiffs/cpp.bin)
-cargo run --release -p mc-cli -- duo --a /dev/cu.wchusbserial120 --b /dev/cu.usbmodem141101   # two companions talk (adverts, DMs, channel, pings), zero-hop; --flood for more
+cargo run --release -p mc-cli -- duo --a $M5 --b $REF   # two companions talk (adverts, DMs, channel, pings), zero-hop; --flood for more
 ```
 
-The Heltec also runs loranet's echo bot (`ln mc bot`, started from `../loranet`): ask Tanguy before stopping it, then restart it afterwards with the same command and the same `--state`.
-
-Devices on Tanguy's Mac: Heltec V4 (C++ reference) on `/dev/cu.usbmodem*`, ThinkNode M5 on `/dev/cu.wchusbserial*` (CH340 bridge, WCH driver installed). The numbers change whenever USB re-enumerates: check `ls /dev/cu.*` first.
+Hardware setup: a Heltec V4 running MeshCore C++ v1.18 over USB as the reference (`/dev/cu.usbmodem*` on macOS), the ThinkNode M5 on `/dev/cu.wchusbserial*` (CH340 bridge; on macOS the WCH driver). The numbers change whenever USB re-enumerates: check `ls /dev/cu.*` first.

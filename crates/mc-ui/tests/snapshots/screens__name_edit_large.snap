@@ -3,7 +3,7 @@ source: crates/mc-ui/tests/screens.rs
 expression: "text(&mut app, grid, &c)"
 ---
 |Your name    ●2 18:33 87%|
-|Tanguy_                  |
+|Morgan_                  |
 |                         |
 |                         |
 |                         |

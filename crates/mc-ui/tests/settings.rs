@@ -34,7 +34,7 @@ fn ctx(w: &World) -> Ctx<'_> {
 
 fn world() -> World {
     let mut w = World::new(51);
-    w.add("Tanguy", |_| {});
+    w.add("Morgan", |_| {});
     w
 }
 
@@ -84,7 +84,7 @@ fn every_setting_round_trips_and_the_app_sees_it() {
         )
     };
 
-    apply(&mut w, Intent::SetName("Tanguy M5".into()));
+    apply(&mut w, Intent::SetName("Morgan M5".into()));
     apply(
         &mut w,
         Intent::SetRadio {
@@ -114,7 +114,7 @@ fn every_setting_round_trips_and_the_app_sees_it() {
     stored_matches(&w);
     match Response::decode(&self_info(&mut w)).unwrap() {
         Response::SelfInfo(si) => {
-            assert_eq!(si.node_name, b"Tanguy M5");
+            assert_eq!(si.node_name, b"Morgan M5");
             assert_eq!(
                 (si.freq_khz, si.bw_hz, si.sf, si.cr),
                 (869_525, 250_000, 11, 5)

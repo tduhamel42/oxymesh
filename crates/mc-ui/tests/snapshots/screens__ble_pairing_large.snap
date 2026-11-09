@@ -2,7 +2,7 @@
 source: crates/mc-ui/tests/screens.rs
 expression: t
 ---
-|Tanguy             ●2 87%|
+|Morgan             ●2 87%|
 |┌Bluetooth pairing──────┐|
 |│A phone wants to pair. │|
 |│Type this PIN on it:   │|

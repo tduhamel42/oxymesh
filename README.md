@@ -1,5 +1,7 @@
 # oxymesh
 
+[![ci](https://github.com/tduhamel42/oxymesh/actions/workflows/ci.yml/badge.svg)](https://github.com/tduhamel42/oxymesh/actions/workflows/ci.yml)
+
 **MeshCore-compatible** firmware written in Rust, first for the Elecrow **ThinkNode M5**
 (ESP32-S3, SX1262, 200×200 e-paper screen).
 
@@ -8,9 +10,54 @@
   work unchanged (Bluetooth and USB).
 - **On the device**: a new interface, usable without a phone.
 
-Roadmap, rules and commands: [`CLAUDE.md`](CLAUDE.md). Formats: [`docs/spec/`](docs/spec/).
-Decisions: [`docs/decisions/`](docs/decisions/). Attributions: [`NOTICE`](NOTICE).
-Measurements: [`docs/measurements.md`](docs/measurements.md).
+**Status: experimental.**
+- It runs on a ThinkNode M5 (board v1.0) and has been checked against MeshCore C++ v1.18, over the air and with the app ([`docs/measurements.md`](docs/measurements.md)).
+- The 24-hour endurance run on a live network is still to do.
+- Only the companion role and only the M5 are supported.
+
+## Getting started
+
+### Try it without hardware
+
+`mc ui` runs the device's interface in a terminal, on a simulated mesh:
+
+```sh
+cargo run --release -p mc-cli -- ui
+```
+
+On Linux, `mc` needs the D-Bus headers for its Bluetooth client (`libdbus-1-dev` and `pkg-config` on Debian and Ubuntu).
+
+### Flash a ThinkNode M5
+
+1. **Install the toolchains.**
+   - [rustup](https://rustup.rs). The host crates pin their own Rust version in `rust-toolchain.toml`.
+   - The Xtensa toolchain: `cargo install espup --locked && espup install --targets esp32s3`.
+   - The flasher: `cargo install espflash --locked`.
+2. **Plug the M5 in over USB-C.** It shows up as a CH340 serial port.
+3. **Build and flash:**
+
+   ```sh
+   cd firmware/esp32s3
+   . ~/export-esp.sh
+   cargo run --release --bin mc-m5
+   ```
+
+   The runner flashes with oxymesh's partition table ([`partitions.csv`](firmware/esp32s3/partitions.csv), ADR-0006).
+
+**Moving from the C++ firmware.**
+- A fresh M5 imports the C++ identity, settings, contacts and channels at first boot.
+- Settings → System → Import from C++ does it again later.
+
+**Going back to the C++ firmware.**
+- Flash the official MeshCore release for the M5.
+- oxymesh never writes the C++ firmware's storage, so its data is still there. This is how it is designed ([ADR-0006](docs/decisions/0006-partitions-and-migration.md)). The full round trip has not been tested yet.
+
+## Documentation
+
+- **Architecture, rules and commands:** [`CLAUDE.md`](CLAUDE.md).
+- **Formats:** [`docs/spec/`](docs/spec/).
+- **Decisions:** [`docs/decisions/`](docs/decisions/).
+- **Measurements:** [`docs/measurements.md`](docs/measurements.md).
 
 ## Compared with the MeshCore C++ firmware
 
@@ -91,3 +138,24 @@ What Rust does change is **robustness**:
 - **The same interface code** runs on the e-paper, in a terminal, and in snapshot tests of every screen.
 
 The cost is size. The image is 1.31 MB of the 1.75 MB app partition; Bluetooth is about 300 KB of it, the new interface much of the rest. The C++ image size has not been measured here.
+
+## Radio use
+
+You are responsible for using the radio legally where you are.
+- The EU 868 MHz limits (sub-bands, power, duty cycle) are in [`config/eu868.toml`](config/eu868.toml), with their sources. The firmware enforces the duty cycle.
+- Region presets are in [`config/regions.toml`](config/regions.toml).
+
+## Contributing
+
+Issues and pull requests are welcome.
+- **The rules:** [`CLAUDE.md`](CLAUDE.md) holds the architecture, the code rules and the commands. It also serves as the brief for AI coding agents.
+- **Specs come first.** A behaviour change starts in `docs/spec/`.
+- **Before sending a change,** run `scripts/ci.sh`.
+
+To report a security problem, see [`SECURITY.md`](SECURITY.md).
+
+## License
+
+MIT ([`LICENSE`](LICENSE)). Attributions and third-party code: [`NOTICE`](NOTICE).
+
+"MeshCore" is the name of the original project. oxymesh is not part of it and is not endorsed by it.

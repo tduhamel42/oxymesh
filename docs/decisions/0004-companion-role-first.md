@@ -5,7 +5,7 @@
 
 ## Context
 
-MeshCore has six roles (BLE/USB/WiFi companion, repeater, room server, sensor, terminal, KISS modem). Tanguy's M5 runs `companion_radio_ble`.
+MeshCore has six roles (BLE/USB/WiFi companion, repeater, room server, sensor, terminal, KISS modem). The M5 this project started from runs `companion_radio_ble`.
 
 ## Decision
 

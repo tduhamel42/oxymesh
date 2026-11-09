@@ -5,7 +5,7 @@
 
 ## Context
 
-The C++ firmware keeps the identity, settings, contacts, channels and adverts in a SPIFFS (default arduino-esp32 table for 4 MB: `spiffs` at 0x290000, 0x160000 bytes; to be confirmed on the device before the first flash). Tanguy wants to keep his MeshCore identity, and to be able to go back to the C++.
+The C++ firmware keeps the identity, settings, contacts, channels and adverts in a SPIFFS (default arduino-esp32 table for 4 MB: `spiffs` at 0x290000, 0x160000 bytes; to be confirmed on the device before the first flash). A user moving to oxymesh must keep their MeshCore identity, and be able to go back to the C++.
 
 ## Decision
 

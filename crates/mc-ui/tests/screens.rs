@@ -13,11 +13,11 @@ use ratatui_core::terminal::Terminal;
 use Button::{A, B};
 use Gesture::*;
 
-/// "Tanguy" with two contacts heard (Alice, Bob), 2026-11-05 around 18:3x in Paris; Alice
+/// "Morgan" with two contacts heard (Alice, Bob), 2026-11-05 around 18:3x in Paris; Alice
 /// wrote on the Public channel, then Bob wrote a DM.
 fn world() -> mc_sim::World {
     let mut w = mc_sim::World::new(5);
-    let me = w.add("Tanguy", |_| {});
+    let me = w.add("Morgan", |_| {});
     for name in ["Alice", "Bob"] {
         let i = w.add(name, |_| {});
         w.link(me, i);
@@ -25,7 +25,7 @@ fn world() -> mc_sim::World {
         w.node(i).send_self_advert(now, false).unwrap();
         w.run(Duration::from_secs(3));
     }
-    // Tanguy's advert, so Bob can write to him.
+    // Morgan's advert, so Bob can write to them.
     let now = w.now;
     w.node(me).send_self_advert(now, false).unwrap();
     w.run(Duration::from_secs(3));

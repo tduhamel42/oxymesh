@@ -328,7 +328,7 @@ mod tests {
     #[test]
     fn contact_qr_fits_the_body() {
         let mut f = Frame::new();
-        let text = "meshcore://contact/add?name=Tanguy&public_key=2e97bc45b32464c3ef33b36a1d3d24d7d3477bc742260d1b8d1f722aa2cb98ff&type=1";
+        let text = "meshcore://contact/add?name=Morgan&public_key=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef&type=1";
         let at = PixelRect {
             x: 0,
             y: 13,

@@ -351,9 +351,9 @@ impl Client {
 mod tests {
     #[test]
     fn names_match_with_or_without_the_prefix() {
-        assert!(super::matches("MeshCore-Tanguy M5", "Tanguy M5"));
-        assert!(super::matches("MeshCore-Tanguy M5", "MeshCore-Tanguy M5"));
-        assert!(super::matches("MeshCore-Tanguy M5", ""));
-        assert!(!super::matches("MeshCore-Tanguy M5", "Tanguy"));
+        assert!(super::matches("MeshCore-Morgan M5", "Morgan M5"));
+        assert!(super::matches("MeshCore-Morgan M5", "MeshCore-Morgan M5"));
+        assert!(super::matches("MeshCore-Morgan M5", ""));
+        assert!(!super::matches("MeshCore-Morgan M5", "Morgan"));
     }
 }

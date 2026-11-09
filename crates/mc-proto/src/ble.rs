@@ -290,8 +290,8 @@ mod tests {
     #[test]
     fn names() {
         let mut out = [0u8; NAME_MAX];
-        let n = device_name(b"Tanguy M5", [0; 6], &mut out);
-        assert_eq!(&out[..n], b"MeshCore-Tanguy M5");
+        let n = device_name(b"Morgan M5", [0; 6], &mut out);
+        assert_eq!(&out[..n], b"MeshCore-Morgan M5");
         let n = device_name(b"@@MAC", [0x24, 0x58, 0x7c, 0xab, 0x01, 0xfe], &mut out);
         assert_eq!(&out[..n], b"MeshCore-FE01AB7C5824");
         let n = device_name(&[b'x'; 40], [0; 6], &mut out);

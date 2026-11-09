@@ -21,7 +21,7 @@ static ALLOC: Cap<System> = Cap::new(System, usize::MAX);
 /// The world of the screen tour: two contacts, an unread DM and a channel message.
 fn world() -> mc_sim::World {
     let mut w = mc_sim::World::new(5);
-    let me = w.add("Tanguy", |_| {});
+    let me = w.add("Morgan", |_| {});
     for name in ["Alice", "Bob"] {
         let i = w.add(name, |_| {});
         w.link(me, i);

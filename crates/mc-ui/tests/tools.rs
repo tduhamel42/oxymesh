@@ -47,7 +47,7 @@ fn ctx(w: &World) -> Ctx<'_> {
 impl Rig {
     fn new(grid: Grid) -> Self {
         let mut w = World::new(91);
-        let me = w.add("Tanguy", |_| {});
+        let me = w.add("Morgan", |_| {});
         let bob = w.add("Bob", |p| p.telemetry_base = 2);
         let alice = w.add("Alice", |p| {
             p.advert_loc_policy = 1;

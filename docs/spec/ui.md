@@ -47,7 +47,7 @@ Source of truth for `mc-ui`. On-screen text **in English**. 200×200 black and w
 ## 5. Backlight and potentiometer
 
 - The backlight stays on once enabled, so that its brightness can be adjusted with the potentiometer.
-- The potentiometer is not readable by the firmware (`docs/spec/m5.md`): no dead zone is possible at the bottom of its travel. Turning it 100 % off is guaranteed by button B and the auto-off, which cut the LED power (IO5), whatever the knob position. The header always shows the backlight state (Tanguy, 2026-11-06).
+- The potentiometer is not readable by the firmware (`docs/spec/m5.md`): no dead zone is possible at the bottom of its travel. Turning it 100 % off is guaranteed by button B and the auto-off, which cut the LED power (IO5), whatever the knob position. The header always shows the backlight state.
 - Adjustable auto-off: 30 s, 2 min (default), never; the timer restarts on each press.
 
 ## 6. Screens

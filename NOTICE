@@ -1,11 +1,24 @@
 oxymesh — MeshCore-compatible firmware, written in Rust.
 
 This project reimplements MeshCore's protocols (over-the-air packet format and companion
-protocol) from a reading of its sources. No MeshCore file is copied.
+protocol) from a reading of its sources. No MeshCore file is copied. A few pieces of behaviour
+are ported from it, each with its origin cited in the source:
+  - the three notification tunes (RTTTL strings, examples/companion_radio/ui-new/UITask.cpp)
+    in crates/mc-ui/src/tune.rs;
+  - the noise-floor sampler (src/helpers/radiolib/RadioLibWrappers.cpp) in
+    crates/mc-core/src/noise.rs;
+  - the GPS handling (MicroNMEALocationProvider, EnvironmentSensorManager) in
+    firmware/esp32s3/src/gps.rs and crates/mc-nmea;
+  - the layout of the C++ firmware's files (examples/companion_radio/DataStore.cpp) read by
+    crates/mc-spiffs.
 
   MeshCore — https://github.com/meshcore-dev/MeshCore
   Copyright (c) 2025 Scott Powell / rippleradios.com
   MIT License. Reference version: companion-v1.18.0 (commit 81dbae5, 2026-10-15).
+
+The SPIFFS reader (crates/mc-spiffs) is written from SPIFFS's on-disk format
+(https://github.com/pellepl/spiffs, Peter Andersson, MIT) as configured by ESP-IDF; no code is
+taken from either.
 
 Hardware facts about the ThinkNode M5 (pinout, battery curve) also come from Meshtastic's
 ELECROW-ThinkNode-M5 variant (GPL-3.0, commit 9bcf0f7); no code is taken from it.
@@ -13,7 +26,8 @@ The SSD1681 display driver is written from the datasheet, without reusing GxEPD2
 
 The firmware embeds a modified copy of trouble-host 0.7.0 (firmware/esp32s3/vendor/trouble-host):
   trouble — https://github.com/embassy-rs/trouble
-  Copyright the Embassy project contributors. Apache-2.0 OR MIT.
+  Copyright (c) Embassy project contributors. Apache-2.0 OR MIT; both license texts are in
+  firmware/esp32s3/vendor/trouble-host (LICENSE-APACHE, LICENSE-MIT).
   Change: set_passkey backported from trouble-host 0.8.0 (vendor/trouble-host-passkey.patch).
 
 "MeshCore" is the name of the original project; this repository is not part of it and is not endorsed by it.

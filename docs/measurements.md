@@ -28,8 +28,8 @@ Other findings:
 
 ## 2026-11-08 — clock chip, noise, temperature, GPS, C++ import (H1, H2, MC6)
 
-- Setup: ThinkNode M5 on `/dev/cu.wchusbserial210`, `debug-log` build (status line every 10 s on UART0, uptime first: the boot lines can be lost on the CH340, and the line at 5 s comes before anything has arrived). Tanguy's phone connected over Bluetooth. Indoors.
-- **C++ SPIFFS of the M5** read with `espflash read-flash --block-size 0x400 --max-in-flight 1 0x290000 0x160000` (the default block size dropped bytes on the CH340), kept in the scratchpad, never committed. `mc spiffs`: 8 files (identity, `/prefs.json`, `/contacts3`, `/channels2`, 4 stored adverts); identity checked (the private key gives the public key); settings parsed (869.618 MHz, 62.5 kHz, SF8, CR 8, 22 dBm); 5 contacts, 1 channel. The ESP-IDF layout constants hold on a real image. Not imported yet: it would replace the M5's current identity.
+- Setup: ThinkNode M5 on `/dev/cu.wchusbserial210`, `debug-log` build (status line every 10 s on UART0, uptime first: the boot lines can be lost on the CH340, and the line at 5 s comes before anything has arrived). A phone connected over Bluetooth. Indoors.
+- **C++ SPIFFS of the M5** read with `espflash read-flash --block-size 0x400 --max-in-flight 1 0x290000 0x160000` (the default block size dropped bytes on the CH340), kept outside the repository, never committed. `mc spiffs`: 8 files (identity, `/prefs.json`, `/contacts3`, `/channels2`, 4 stored adverts); identity checked (the private key gives the public key); settings parsed (869.618 MHz, 62.5 kHz, SF8, CR 8, 22 dBm); 5 contacts, 1 channel. The ESP-IDF layout constants hold on a real image. Not imported yet: it would replace the M5's current identity.
 - **Clock chip**: `mc advert` set the clock (SET_DEVICE_TIME); after a reset the M5 started at that time (1794168574 at boot against 1794168576 on the Mac when read) instead of 2026-11-05. Power-off not checked yet.
 - **Noise floor**: −111 to −115 dBm once the first round has ended (0 before, like the C++).
 - **Chip temperature**: 42.0 to 49.9 °C over the session (default range DAC); not compared with the Heltec yet.
@@ -71,7 +71,7 @@ Findings:
 ## 2026-11-06 — Bluetooth (MC5)
 
 - M5 `/dev/cu.wchusbserial120` running oxymesh with Bluetooth, advertised as `MeshCore-2E97BC45`; Heltec (C++) `/dev/cu.usbmodem14301`; the Mac as the central (`mc`, btleplug).
-- **First pairing** (`mc info ble:MeshCore-2E97BC45`, Tanguy typed the PIN shown on the M5's panel into macOS's dialog):
+- **First pairing** (`mc info ble:MeshCore-2E97BC45`, the PIN shown on the M5's panel typed into macOS's dialog):
   - passkey entry, the Mac typing and the M5 displaying;
   - EncryptedAuthenticated, bond stored in `mcdata`;
   - ATT MTU 247, so a 176-byte frame fits one notification.
@@ -96,7 +96,7 @@ Findings:
   - a scan duplicate list of 10 (we never scan) saves 1.1 KB.
 - **Flash:** image 1,269,568 B of 1,835,008 (69 %). Bluetooth adds ≈ 300 KB of code and 27 KB of IRAM.
 - **Interface heap on the host** (`crates/mc-ui/tests/heap.rs`): worst screen is compose on the compact grid, 62.7 KB on the host. The host is 64-bit, ≈ 1.45× the device, so ≈ 43 KB on the M5.
-- **One connection only.** An app that reconnects at once (seen here: Tanguy's phone, paired with the M5, running the companion startup sequence: APP_START, DEVICE_QUERY, default scope, contacts) holds it, and the M5 stops advertising, like the C++. `mc` then cannot get in. `mc` reaches a companion it knows by its CoreBluetooth identifier, cached in `~/Library/Caches/oxymesh/ble-peripherals`.
+- **One connection only.** An app that reconnects at once (seen here: a phone paired with the M5, running the companion startup sequence: APP_START, DEVICE_QUERY, default scope, contacts) holds it, and the M5 stops advertising, like the C++. `mc` then cannot get in. `mc` reaches a companion it knows by its CoreBluetooth identifier, cached in `~/Library/Caches/oxymesh/ble-peripherals`.
 
 ## 2026-11-06 — message bursts while the M5 redraws (U6)
 
@@ -122,7 +122,7 @@ Findings:
 - Firmware `mc-m5` with `mc-ui`: 64 KB heap, one Ratatui terminal drawing into the panel frame, overlays, refresh-debt policy, gestures from the two buttons, light auto-off, unread LED, hibernation.
 - Image 900,384 bytes, against a 1.75 MB app partition.
 - `mc duo --a /dev/cu.wchusbserial210 --b /dev/cu.usbmodem1101 --pings 3 --reboot`: 13/13 with the interface running in the same loop as the radio.
-- Checked by hand (Tanguy): a quick reply ("On my way") written on the M5 reached the Heltec (flood, SNR 12.25 dB) and showed "delivered" on the M5; the Heltec's answer (`mc send`, direct, acknowledged in 1.1 s) brought up the new-message banner.
+- Checked by hand: a quick reply ("On my way") written on the M5 reached the Heltec (flood, SNR 12.25 dB) and showed "delivered" on the M5; the Heltec's answer (`mc send`, direct, acknowledged in 1.1 s) brought up the new-message banner.
 - Still to check by hand: the tools on real traffic, light and potentiometer, the unread LED. No packet lost during a refresh: see the bursts below.
 
 ## 2026-11-06 — offline queue in flash, screen history (U2)

@@ -3,8 +3,8 @@ source: crates/mc-ui/tests/screens.rs
 expression: "text(&mut app, grid, &c)"
 ---
 |About                ●2 18:33 87%|
-|Name                       Tanguy|
-|Key                      7888b006|
+|Name                       Morgan|
+|Key                      a3eaa96b|
 |Firmware          v1.18.0-oxymesh|
 |Frequency             869.618 MHz|
 |Modulation       SF8 BW62.5 CR4/5|

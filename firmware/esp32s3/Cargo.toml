@@ -3,6 +3,9 @@ edition      = "2024"
 name         = "oxymesh-esp32s3"
 rust-version = "1.95"
 version      = "0.1.0"
+license      = "MIT"
+publish      = false
+repository   = "https://github.com/tduhamel42/oxymesh"
 
 # MeshCore-compatible firmware for the ESP32-S3 (ThinkNode M5 first). Separate workspace: Xtensa
 # `esp` toolchain. Taken from loranet (firmware/esp32s3) for the esp-hal base and the SX1262 driver.

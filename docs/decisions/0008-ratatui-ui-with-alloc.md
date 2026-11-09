@@ -5,7 +5,7 @@
 
 ## Context
 
-The M5's screen is a 200×200 one-bit e-paper panel with two buttons. Tanguy wants a real interface (messaging, menus, tools, settings) and asked whether Ratatui would fit. Ratatui 0.30 runs `no_std` with `alloc` (`ratatui-core`, `ratatui-widgets`), and `mousefood` 0.5 draws it with embedded-graphics. It needs a heap for its cell buffers. ADR-0003 forbids allocation in the protocol core, and the ESP32-S3 has no PSRAM, while Bluetooth (MC5) will need about 72 KB of heap. The U0 spike measured the cost on the M5 before committing to it (docs/measurements.md, 2026-11-06).
+The M5's screen is a 200×200 one-bit e-paper panel with two buttons. The goal is a real interface (messaging, menus, tools, settings), and the question was whether Ratatui would fit. Ratatui 0.30 runs `no_std` with `alloc` (`ratatui-core`, `ratatui-widgets`), and `mousefood` 0.5 draws it with embedded-graphics. It needs a heap for its cell buffers. ADR-0003 forbids allocation in the protocol core, and the ESP32-S3 has no PSRAM, while Bluetooth (MC5) will need about 72 KB of heap. The U0 spike measured the cost on the M5 before committing to it (docs/measurements.md, 2026-11-06).
 
 ## Decision
 
