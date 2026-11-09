@@ -20,6 +20,10 @@ name = "ui-spike"
 path = "./src/bin/ui-spike.rs"
 
 [[bin]]
+name = "mc-heltec-v4"
+path = "./src/bin/mc-heltec-v4.rs"
+
+[[bin]]
 name = "gps-probe"
 path = "./src/bin/gps-probe.rs"
 

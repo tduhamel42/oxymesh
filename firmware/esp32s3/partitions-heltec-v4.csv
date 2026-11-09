@@ -1,0 +1,12 @@
+# oxymesh partition table for the Heltec V4, 16 MB (ADR-0006, docs/spec/heltec-v4.md).
+# nvs, otadata, spiffs and coredump stay those of the MeshCore C++ firmware (arduino-esp32's
+# default_16MB.csv, the table MeshCore's heltec_v4 boards use): going back to the C++ finds its
+# Bluetooth pairings and SPIFFS intact. `mcdata` lies in the C++'s second OTA slot.
+# To confirm on the device before the first flash: espflash read-flash 0x8000 0x1000.
+# Name,    Type, SubType,  Offset,   Size
+nvs,       data, nvs,      0x9000,   0x5000
+otadata,   data, ota,      0xe000,   0x2000
+factory,   app,  factory,  0x10000,  0x640000
+mcdata,    data, undefined,0x650000, 0xC0000
+spiffs,    data, spiffs,   0xC90000, 0x360000
+coredump,  data, coredump, 0xFF0000, 0x10000

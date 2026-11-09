@@ -140,3 +140,25 @@ Home (always-on face)
 - `mc ui --png <dir>` renders every screen through mousefood into PNG files: the exact panel pixels, overlays included.
 - Snapshot tests (`insta`) of every screen and state at both grid sizes.
 - On the device (U6): navigation with the two buttons, a message composed and delivered with its tick, tools on real traffic, backlight and potentiometer, no packet lost during a refresh (M5 log compared with the Heltec's).
+
+## 12. Status pages (one button, small screen)
+
+The Heltec V4 (`docs/spec/heltec-v4.md`): a 128×64 OLED and one button, too small for the screens above. Like the C++ firmware on that board (`examples/companion_radio/ui-new/UITask.cpp`), it shows pages; the phone does the rest (`mc_ui::status`).
+
+- **Button:** click = next page, double click = previous page, long press = act on the page. The pages go round.
+- **Layout:** 6×10 font, 21 columns. A header line (node name, page `n/6`, battery `87%`, `+87%` while charging), a rule, 5 lines.
+- **Pages:**
+
+  | Page | Shows | Long press |
+  |---|---|---|
+  | Home | time and date, unread count (muted channels left out), Bluetooth state, noise floor | — |
+  | Messages | the newest messages, newest first: `*` unread, `>` sent | marks the newest unread conversation read |
+  | Heard | nodes heard lately: name, hops, how long ago | — |
+  | Radio | frequency, SF / bandwidth / coding rate, TX setting, noise floor | — |
+  | Advert | — | sends a flood advert |
+  | Off | — | powers off (hibernation); the button wakes it |
+
+- An acknowledgement (`> Advert sent`, `> Marked read`, `> Failed`) takes the last line for 2.5 s.
+- While a phone pairs, its PIN covers the page in the large font.
+- `mc ui --board heltec-v4` runs the pages in a terminal; tests snapshot every page as text and two of them as pixels (`crates/mc-ui/tests/status.rs`).
+

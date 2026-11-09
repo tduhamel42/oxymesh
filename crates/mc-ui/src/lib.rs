@@ -23,6 +23,7 @@ pub mod panel;
 pub mod refresh;
 pub mod regions;
 pub mod screens;
+pub mod status;
 pub mod theme;
 pub mod tour;
 pub mod tune;

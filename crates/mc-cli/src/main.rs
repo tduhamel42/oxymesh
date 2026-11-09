@@ -117,6 +117,9 @@ enum Cmd {
         /// Render every screen of the tour as PNG files in this directory, then exit.
         #[arg(long)]
         png: Option<std::path::PathBuf>,
+        /// The board: `m5` (e-paper, two buttons) or `heltec-v4` (OLED status pages, one button).
+        #[arg(long, default_value = "m5")]
+        board: String,
     },
     /// Two companions talk to each other (adverts, DMs, channel, pings), zero-hop unless `--flood`.
     Duo {
@@ -177,7 +180,11 @@ fn main() {
             dut,
             verbose,
         } => airtest::run(&ref_port, &dut, verbose),
-        Cmd::Ui { compact, png } => ui::run(compact, png.as_deref()),
+        Cmd::Ui {
+            compact,
+            png,
+            board,
+        } => ui::run(compact, png.as_deref(), &board),
         Cmd::Duo {
             a,
             b,

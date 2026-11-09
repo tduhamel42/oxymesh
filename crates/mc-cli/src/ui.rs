@@ -118,11 +118,151 @@ fn local_offset_min() -> i16 {
     })
 }
 
-pub fn run(compact: bool, png: Option<&Path>) -> Result<(), String> {
+pub fn run(compact: bool, png: Option<&Path>, board: &str) -> Result<(), String> {
     let grid = if compact { COMPACT } else { LARGE };
-    match png {
-        Some(dir) => render_tour(dir),
-        None => interactive(grid).map_err(|e| e.to_string()),
+    match (board, png) {
+        ("m5", Some(dir)) => render_tour(dir),
+        ("m5", None) => interactive(grid).map_err(|e| e.to_string()),
+        ("heltec-v4", None) => in_terminal(heltec).map_err(|e| e.to_string()),
+        ("heltec-v4", Some(_)) => Err("--png draws the M5's screens only".into()),
+        (b, _) => Err(format!("unknown board {b:?}: m5 or heltec-v4")),
+    }
+}
+
+/// Runs an emulator in the alternate screen, restoring the terminal whatever happens.
+fn in_terminal(f: fn() -> std::io::Result<()>) -> std::io::Result<()> {
+    enable_raw_mode()?;
+    execute!(stdout(), EnterAlternateScreen)?;
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(stdout(), LeaveAlternateScreen);
+        hook(info);
+    }));
+    let res = f();
+    disable_raw_mode()?;
+    execute!(stdout(), LeaveAlternateScreen)?;
+    res
+}
+
+const HELTEC_HELP: [&str; 6] = [
+    "j ↓   click: next page",
+    "k ↑   double: previous page",
+    "Enter long press: act",
+    "p     phone: pair, connect, leave",
+    "q     quit",
+    "",
+];
+
+/// The Heltec V4: its OLED's pixels in half blocks, one button.
+fn heltec() -> std::io::Result<()> {
+    use mc_ui::status::{self, Oled, Status};
+    let mut term = Terminal::new(CrosstermBackend::new(stdout()))?;
+    let mut w = world(now_unix());
+    w.nodes[ME].dev.node.prefs.ui.tz_offset_min = local_offset_min();
+    w.nodes[ME].dev.info.manufacturer = "Heltec V4.3 OLED";
+    w.nodes[ME].dev.info.front_end = mc_node::device::FrontEnd::PaLna;
+    let mut status = Status::new();
+    let mut rng = rand_chacha::ChaCha20Rng::seed_from_u64(1);
+    let start = StdInstant::now();
+    let mut ble = PHONE;
+    let mut log: Vec<String> = Vec::new();
+    let mut next_advert = [(1usize, 3_000u64), (2, 7_000), (3, 5_000), (ME, 4_000)];
+    let mut alice_hello = Some(10_000u64);
+    let mut frame = Oled::new();
+    loop {
+        let wall = start.elapsed().as_millis() as u64;
+        while ms(w.now) < wall {
+            w.step(Duration::from_millis(5));
+        }
+        for (peer, at) in &mut next_advert {
+            if wall >= *at {
+                let now = w.now;
+                let _ = w.node(*peer).send_self_advert(now, false);
+                *at += 120_000;
+            }
+        }
+        if alice_hello.is_some_and(|t| wall >= t) {
+            alice_hello = None;
+            say(&mut w, 1, "Hi! I'm Alice, an echo bot.");
+        }
+        for n in [ME, 1, 2, 3] {
+            w.nodes[n].events.clear();
+        }
+        w.nodes[ME].ui.clear();
+        status.tick(wall);
+        let mut gesture = None;
+        if event::poll(StdDuration::from_millis(40))?
+            && let TermEvent::Key(k) = event::read()?
+            && k.kind == KeyEventKind::Press
+        {
+            gesture = match k.code {
+                KeyCode::Char('q') => return Ok(()),
+                KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => return Ok(()),
+                KeyCode::Char('j') | KeyCode::Down => Some(Gesture::Click(Button::A)),
+                KeyCode::Char('k') | KeyCode::Up => Some(Gesture::Double(Button::A)),
+                KeyCode::Enter => Some(Gesture::Long(Button::A)),
+                KeyCode::Char('p') => {
+                    ble.state = match ble.state {
+                        BleState::Off | BleState::Advertising => BleState::Pairing,
+                        BleState::Pairing => BleState::Connected,
+                        BleState::Connected => BleState::Advertising,
+                    };
+                    None
+                }
+                _ => None,
+            };
+        }
+        if let Some(g) = gesture {
+            let c = ctx(&w, true, ble);
+            if let Some(i) = status.gesture(g, &c) {
+                let now = w.now;
+                let sn = &mut w.nodes[ME];
+                let o = perform(&i, &mut sn.dev, now, &mut rng, &mut sn.st);
+                log.push(format!("{i:?}: {o:?}"));
+                if log.len() > 8 {
+                    log.remove(0);
+                }
+                status.done(&i, &o, wall);
+            }
+        }
+        let c = ctx(&w, true, ble);
+        status.draw(&mut frame, &c);
+        term.draw(|f| {
+            let area = f.area();
+            let rows: Vec<Line<'_>> = (0..status::HEIGHT / 2)
+                .map(|r| {
+                    let s: String = (0..status::WIDTH)
+                        .map(|x| match (frame.lit(x, 2 * r), frame.lit(x, 2 * r + 1)) {
+                            (true, true) => '█',
+                            (true, false) => '▀',
+                            (false, true) => '▄',
+                            (false, false) => ' ',
+                        })
+                        .collect();
+                    Line::from(s)
+                })
+                .collect();
+            let screen = Rect {
+                x: area.x,
+                y: area.y,
+                width: (status::WIDTH as u16 + 2).min(area.width),
+                height: (status::HEIGHT as u16 / 2 + 2).min(area.height),
+            };
+            f.render_widget(
+                Paragraph::new(rows).block(Block::bordered().title(" Heltec V4 128×64 ")),
+                screen,
+            );
+            let side = Rect {
+                x: area.x,
+                y: screen.bottom(),
+                width: area.width,
+                height: area.height.saturating_sub(screen.bottom()),
+            };
+            let mut lines: Vec<Line<'_>> = HELTEC_HELP.iter().map(|h| Line::from(*h)).collect();
+            lines.extend(log.iter().map(|l| Line::from(l.as_str())));
+            f.render_widget(Paragraph::new(lines), side);
+        })?;
     }
 }
 

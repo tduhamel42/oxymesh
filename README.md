@@ -2,8 +2,9 @@
 
 [![ci](https://github.com/tduhamel42/oxymesh/actions/workflows/ci.yml/badge.svg)](https://github.com/tduhamel42/oxymesh/actions/workflows/ci.yml)
 
-**MeshCore-compatible** firmware written in Rust, first for the Elecrow **ThinkNode M5**
-(ESP32-S3, SX1262, 200×200 e-paper screen).
+**MeshCore-compatible** firmware written in Rust, for the Elecrow **ThinkNode M5**
+(ESP32-S3, SX1262, 200×200 e-paper screen) and the **Heltec WiFi LoRa 32 V4** (ESP32-S3,
+SX1262 with an amplifier, 128×64 OLED).
 
 - **Over the air**: interoperates with original MeshCore companions, repeaters and room servers (v1.18).
 - **With the app**: the official MeshCore app, meshcore.js and other companion-protocol clients
@@ -13,7 +14,8 @@
 **Status: experimental.**
 - It runs on a ThinkNode M5 (board v1.0) and has been checked against MeshCore C++ v1.18, over the air and with the app ([`docs/measurements.md`](docs/measurements.md)).
 - The 24-hour endurance run on a live network is still to do.
-- Only the companion role and only the M5 are supported.
+- Only the companion role is supported.
+- The Heltec V4 build is new: it builds and its screen is tested in the emulator, but it has not run on the board yet.
 
 ## Getting started
 
@@ -22,34 +24,32 @@
 `mc ui` runs the device's interface in a terminal, on a simulated mesh:
 
 ```sh
-cargo run --release -p mc-cli -- ui
+cargo run --release -p mc-cli -- ui                      # ThinkNode M5
+cargo run --release -p mc-cli -- ui --board heltec-v4    # Heltec V4 status pages
 ```
 
 On Linux, `mc` needs the D-Bus headers for its Bluetooth client (`libdbus-1-dev` and `pkg-config` on Debian and Ubuntu).
 
-### Flash a ThinkNode M5
+### Flash a board
 
 1. **Install the toolchains.**
    - [rustup](https://rustup.rs). The host crates pin their own Rust version in `rust-toolchain.toml`.
    - The Xtensa toolchain: `cargo install espup --locked && espup install --targets esp32s3`.
    - The flasher: `cargo install espflash --locked`.
-2. **Plug the M5 in over USB-C.** It shows up as a CH340 serial port.
-3. **Build and flash:**
+2. **Plug the board in over USB-C.** The M5 shows up as a CH340 serial port, the Heltec as the ESP32-S3's own USB port.
+3. **Build and flash** with the board's partition table ([`partitions.csv`](firmware/esp32s3/partitions.csv) for the M5, [`partitions-heltec-v4.csv`](firmware/esp32s3/partitions-heltec-v4.csv) for the Heltec, ADR-0006):
 
    ```sh
-   cd firmware/esp32s3
-   . ~/export-esp.sh
-   cargo run --release --bin mc-m5
+   scripts/flash.sh m5 /dev/cu.wchusbserial…
+   scripts/flash.sh heltec-v4 /dev/cu.usbmodem…
    ```
 
-   The runner flashes with oxymesh's partition table ([`partitions.csv`](firmware/esp32s3/partitions.csv), ADR-0006).
-
 **Moving from the C++ firmware.**
-- A fresh M5 imports the C++ identity, settings, contacts and channels at first boot.
-- Settings → System → Import from C++ does it again later.
+- A fresh board imports the C++ identity, settings, contacts and channels at first boot.
+- On the M5, Settings → System → Import from C++ does it again later.
 
 **Going back to the C++ firmware.**
-- Flash the official MeshCore release for the M5.
+- Flash the official MeshCore release for the board.
 - oxymesh never writes the C++ firmware's storage, so its data is still there. This is how it is designed ([ADR-0006](docs/decisions/0006-partitions-and-migration.md)). The full round trip has not been tested yet.
 
 ## Documentation
@@ -113,7 +113,9 @@ The reference is the original MeshCore v1.18 companion firmware on the same M5.
 
 - **Only the companion role.** There are no repeater or room-server builds, which the C++ has.
 - **The `HAS_CONNECTION` keep-alive table** is not implemented.
-- **Only the ThinkNode M5.** The C++ supports dozens of boards. The M5 board v2.0 (AG3352 GPS) is detected but its GPS is not driven, by either firmware.
+- **Two boards: the ThinkNode M5 and the Heltec V4.** The C++ supports dozens.
+  - The M5 board v2.0 (AG3352 GPS) is detected, but its GPS is not driven by either firmware.
+  - The Heltec's optional GPS header is not driven.
 
 ## Does Rust make it faster?
 

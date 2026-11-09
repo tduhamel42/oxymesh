@@ -1,0 +1,45 @@
+---
+source: crates/mc-ui/tests/status.rs
+expression: all
+---
+|Morgan        1/6 87%|
+|18:33  5/11          |
+|2 unread             |
+|Phone connected      |
+|Noise -112 dBm       |
+|                     |
+
+|Morgan        2/6 87%|
+|Messages             |
+|*Bob: Coffee at the r|
+|*Public: Alice: Snow |
+|                     |
+|                     |
+
+|Morgan        3/6 87%|
+|Heard (2)            |
+|Bob          0h  27s |
+|Alice        0h  30s |
+|                     |
+|                     |
+
+|Morgan        4/6 87%|
+|Radio                |
+|869.618 MHz          |
+|SF8 BW62.5 CR4/5     |
+|TX 22 dBm            |
+|Noise -112 dBm       |
+
+|Morgan        5/6 87%|
+|Advert               |
+|Long press: send     |
+|one, flooded.        |
+|                     |
+|                     |
+
+|Morgan        6/6 87%|
+|Power off            |
+|Long press: off.     |
+|Press to wake.       |
+|                     |
+|                     |

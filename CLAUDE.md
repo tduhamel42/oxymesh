@@ -40,10 +40,10 @@ crates/
   mc-proto/   no_std  companion protocol (docs/spec/companion.md), both directions; Strict (app) and Device decoding
   mc-node/    no_std  the state machine: dispatcher, mesh, chat, companion, settings; persistence as StoreOp
   mc-spiffs/  no_std  read-only SPIFFS reader and importers for the C++ firmware
-  mc-ui/      no_std  200×200 screens (docs/spec/ui.md) on Ratatui + mousefood, with alloc (ADR-0008); gestures, e-paper refresh policy
+  mc-ui/      no_std  200×200 screens (docs/spec/ui.md) on Ratatui + mousefood, with alloc (ADR-0008); gestures, e-paper refresh policy; 128×64 status pages
   mc-sim/     std     simple simulated radio linking several mc-node instances
   mc-cli/     std     `mc` binary: info, probe, sniff, inject, emu, conform, spiffs, ui
-firmware/esp32s3/     SEPARATE workspace (Xtensa `esp` toolchain): boards, drivers, runner
+firmware/esp32s3/     SEPARATE workspace (Xtensa `esp` toolchain): drivers, the shared runner (`src/run/`, ADR-0009), one binary per board (mc-m5, mc-heltec-v4)
 fuzz/                 cargo-fuzz targets (separate workspace, nightly)
 config/               regions (radio preset + scope) and regulations (TOML, with sources)
 docs/spec/            specifications — source of truth
@@ -114,7 +114,8 @@ python3 -I testdata/air/gen.py > testdata/air/vectors.toml   # over-the-air vect
 cargo run --release -p mc-cli -- info $M5          # query a USB companion
 cargo run --release -p mc-cli -- sniff $REF --channel '#test'   # packets heard, decoded
 cargo run --release -p mc-cli -- airtest --ref $REF --dut $M5   # mc-air against a C++ node, zero-hop
-cargo run --release -p mc-cli -- ui                  # the device interface in a terminal, on a simulated device (--compact)
+cargo run --release -p mc-cli -- ui                  # the device interface in a terminal, on a simulated device (--compact; --board heltec-v4)
+scripts/flash.sh m5|heltec-v4 <port>                 # build and flash a board with its partition table
 cargo run --release -p mc-cli -- ui --png local/ui-png   # every screen of the tour as panel-exact PNG
 INSTA_UPDATE=always cargo test -p mc-ui              # accept changed screen snapshots (review the diff!)
 cargo run --release -p mc-cli -- advert <port> [--flood]   # make a companion advertise (also sets its clock)
