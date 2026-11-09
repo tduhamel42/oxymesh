@@ -163,20 +163,14 @@ fn matches(name: &str, want: &str) -> bool {
     want.is_empty() || name == want || name.strip_prefix("MeshCore-") == Some(want)
 }
 
-/// Finds the companion, connects, subscribes to TX.
-async fn open(
+/// A companion `mc` reached before, by the identifier CoreBluetooth gave it, whether the system
+/// holds it or it is advertising. macOS only: BlueZ names devices by adapter and address, and
+/// finds them by scanning.
+#[cfg(target_os = "macos")]
+async fn retrieve_known(
+    adapter: &btleplug::platform::Adapter,
     want: &str,
-    timeout: Duration,
-) -> Result<(Peripheral, Characteristic, String), String> {
-    let adapter = adapter().await?;
-    if let Some((p, name)) = held(&adapter)
-        .await
-        .into_iter()
-        .find(|(_, n)| matches(n, want))
-    {
-        return attach(p, name).await;
-    }
-    // Known to this computer: reach it by its identifier, held by the system or advertising.
+) -> Option<(Peripheral, Characteristic, String)> {
     for (id, name) in remembered() {
         if !matches(&name, want) {
             continue;
@@ -193,7 +187,7 @@ async fn open(
             match tokio::time::timeout(Duration::from_secs(8), attach(p.clone(), name.clone()))
                 .await
             {
-                Ok(Ok(v)) => return Ok(v),
+                Ok(Ok(v)) => return Some(v),
                 // Out of range or gone: cancel the pending connection, then scan.
                 r => {
                     debug(|| format!("{name}: {:?}", r.map(|x| x.map(|_| ()))));
@@ -201,6 +195,33 @@ async fn open(
                 }
             }
         }
+    }
+    None
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn retrieve_known(
+    _: &btleplug::platform::Adapter,
+    _: &str,
+) -> Option<(Peripheral, Characteristic, String)> {
+    None
+}
+
+/// Finds the companion, connects, subscribes to TX.
+async fn open(
+    want: &str,
+    timeout: Duration,
+) -> Result<(Peripheral, Characteristic, String), String> {
+    let adapter = adapter().await?;
+    if let Some((p, name)) = held(&adapter)
+        .await
+        .into_iter()
+        .find(|(_, n)| matches(n, want))
+    {
+        return attach(p, name).await;
+    }
+    if let Some(v) = retrieve_known(&adapter, want).await {
+        return Ok(v);
     }
     adapter
         .start_scan(ScanFilter {
