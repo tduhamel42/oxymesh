@@ -13,6 +13,8 @@ const TIMEOUT_BASE: u64 = 500;
 const FLOOD_FACTOR: u64 = 16;
 const DIRECT_PER_HOP: u64 = 6;
 const DIRECT_PER_HOP_EXTRA: u64 = 250;
+/// `CLI_REPLY_DELAY_MILLIS` (`BaseChatMesh.cpp:12`).
+const CLI_REPLY_DELAY_MS: u64 = 600;
 
 fn sat_u32(v: u64) -> u32 {
     u32::try_from(v).unwrap_or(u32::MAX)
@@ -126,6 +128,43 @@ impl Node {
             ack: crc,
             timeout_ms,
         })
+    }
+
+    /// The answer to a console command a contact sent (`BaseChatMesh.cpp:263-292`): CLI data,
+    /// stamped with a unique time that differs from the command's, 600 ms later
+    /// (`CLI_REPLY_DELAY_MILLIS`), direct if the path is known, flooded within the scope if not.
+    pub fn send_cli_reply(
+        &mut self,
+        now: Instant,
+        slot: Slot,
+        sender_ts: u32,
+        text: &[u8],
+    ) -> Result<(), SendError> {
+        let mut ts = self.rtc.unique(now);
+        if ts == sender_ts {
+            ts = ts.wrapping_add(1);
+        }
+        let id = self.id.clone();
+        let c = self.contacts.get_mut(slot).ok_or(SendError::NotFound)?;
+        let secret = c.secret(&id).ok_or(SendError::Failed)?;
+        let dest = c.hash();
+        let mut plain = [0u8; 5 + crate::cli::REPLY_MAX];
+        let mut w = mc_core::Writer::new(&mut plain);
+        w.put_u32_le(ts).map_err(|_| SendError::Failed)?;
+        w.put_u8(1 << 2).map_err(|_| SendError::Failed)?; // TXT_TYPE_CLI_DATA
+        w.put(text).map_err(|_| SendError::Failed)?;
+        let n = w.position();
+        let pkt = payload::datagram(
+            PayloadType::TXT_MSG,
+            dest,
+            id.hash(),
+            &secret,
+            plain.get(..n).unwrap_or(&[]),
+        )
+        .map_err(|_| SendError::Failed)?;
+        self.send_to_contact(now, slot, pkt, CLI_REPLY_DELAY_MS)
+            .ok_or(SendError::Failed)?;
+        Ok(())
     }
 
     /// `SEND_CHANNEL_TXT_MSG`: `"<name>: <text>"` flooded within the scope.

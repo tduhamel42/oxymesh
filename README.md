@@ -112,10 +112,8 @@ The reference is the original MeshCore v1.18 companion firmware on the same M5.
 ### Not there yet
 
 - **Only the companion role.** There are no repeater or room-server builds, which the C++ has.
-- **The device console** (`RUN_CLI_COMMAND`) answers only a few commands.
 - **The `HAS_CONNECTION` keep-alive table** is not implemented.
 - **Only the ThinkNode M5.** The C++ supports dozens of boards. The M5 board v2.0 (AG3352 GPS) is detected but its GPS is not driven, by either firmware.
-- **Two radio housekeeping timers of the C++** are missing: clearing a stale "packet incoming" flag, and the optional periodic AGC reset.
 
 ## Does Rust make it faster?
 

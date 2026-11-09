@@ -127,7 +127,7 @@ pub fn encode_prefs(p: &Prefs) -> [u8; PREFS_RECORD] {
             | (u8::from(p.buzzer_quiet) << 3);
         w.put_u8(flags)?;
         w.put_u8(p.path_hash_mode)?;
-        w.put(&p.interference_threshold.to_le_bytes())?;
+        w.put_u8(p.interference_threshold)?;
         w.put(&p.default_scope_name)?;
         w.put(&p.default_scope_key)?;
         // v2.
@@ -196,7 +196,7 @@ pub fn decode_prefs(b: &[u8], defaults: &Prefs) -> Option<Prefs> {
     p.gps_enabled = flags & 4 != 0;
     p.buzzer_quiet = flags & 8 != 0;
     p.path_hash_mode = r.u8().ok()?;
-    p.interference_threshold = i8::from_le_bytes([r.u8().ok()?]);
+    p.interference_threshold = r.u8().ok()?;
     p.default_scope_name = *r.array::<31>().ok()?;
     p.default_scope_key = *r.array::<16>().ok()?;
     if version >= 2 {

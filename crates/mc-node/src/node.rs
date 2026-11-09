@@ -40,7 +40,9 @@ pub struct Prefs {
     /// Default scope: name (0x00-terminated) and key; all-zero key = none.
     pub default_scope_name: [u8; 31],
     pub default_scope_key: [u8; 16],
-    pub interference_threshold: i8,
+    /// Listen before talk: busy when the RSSI exceeds the noise floor by this many dB (`int.thresh`,
+    /// 0 = off; a `uint8_t` in the C++).
+    pub interference_threshold: u8,
     pub cad_enabled: bool,
     /// AGC reset every this many 4-second units (`agc_reset_interval`; 0 = never, the C++
     /// default).

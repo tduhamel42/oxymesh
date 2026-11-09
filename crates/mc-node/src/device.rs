@@ -2,8 +2,11 @@
 //! app commands, offline message queue, notifications, contact iteration, server requests.
 //! The node (`Node`) handles the network; `Device` talks to the app.
 
+mod console;
 mod screen;
 mod settings;
+
+pub use console::REMOTE_CLI;
 
 pub use screen::{DISCOVERED, Discovered, OUTBOX, REQUESTS, Reply, ReqKind};
 pub use settings::SetResult;
@@ -113,6 +116,19 @@ pub struct Info {
     pub build_date: &'static str,
     pub max_tx_power: i8,
     pub has_gps: bool,
+    /// What sits between the radio and the antenna; set at boot where it is detected.
+    pub front_end: FrontEnd,
+}
+
+/// A radio front end (amplifier) and what the console may do with it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrontEnd {
+    /// None: the board has no front-end commands (the ThinkNode M5).
+    None,
+    /// An amplifier whose receive LNA cannot be switched (Heltec V4.2, GC1109).
+    Pa,
+    /// An amplifier with a switchable receive LNA (Heltec V4.3, KCT8103L).
+    PaLna,
 }
 
 /// Actions requested from the runner.
@@ -126,6 +142,8 @@ pub enum Action {
     PinChanged,
     /// The clock was set (by the app, the GPS…): the board's clock chip follows.
     ClockSet,
+    /// `poweroff` / `shutdown` from the console: the board powers down (hibernates).
+    PowerOff,
 }
 
 #[derive(Debug, Clone)]
@@ -694,6 +712,10 @@ impl Device {
                 author,
                 text,
             } => {
+                // A console command from a contact allowed to run them: answered here, not shown.
+                if *txt_type == 3 && self.remote_console(now, key, *ts, text, st) {
+                    return;
+                }
                 // Plain and signed texts go to the screen's history; CLI data (type 1) does not.
                 let hist = if *txt_type == 1 {
                     0
@@ -1796,68 +1818,12 @@ impl Device {
                 }
             }
             Command::RunCliCommand { cmd } => {
-                let mut reply: heapless::String<160> = heapless::String::new();
-                self.cli(now, cmd, &mut reply, st);
-                self.reply(&Response::CliReply {
-                    text: reply.as_bytes(),
-                });
-            }
-        }
-    }
-
-    /// Device console (`RUN_CLI_COMMAND`), a subset of `CommonRadioPrefs.cpp`.
-    /// A `"xx|"` prefix is echoed back as is. Texts in English.
-    fn cli(
-        &mut self,
-        now: Instant,
-        cmd: &[u8],
-        out: &mut heapless::String<160>,
-        st: &mut impl Storage,
-    ) {
-        let s = core::str::from_utf8(name_str(cmd)).unwrap_or("").trim();
-        let (tag, s) = match s.get(..3) {
-            Some(t) if t.ends_with('|') => (t, s.get(3..).unwrap_or("")),
-            _ => ("", s),
-        };
-        let _ = out.push_str(tag);
-        let p = &mut self.node.prefs;
-        let w = |out: &mut heapless::String<160>, a: core::fmt::Arguments<'_>| {
-            let _ = core::fmt::write(out, a);
-        };
-        match s.split_once(' ').unwrap_or((s, "")) {
-            ("ver", _) => w(out, format_args!("{} (oxymesh)", self.info.version)),
-            ("board", _) => w(out, format_args!("{}", self.info.manufacturer)),
-            ("clock", _) => w(out, format_args!("{}", self.node.rtc.now(now))),
-            ("get", "name") => w(
-                out,
-                format_args!(
-                    "> {}",
-                    core::str::from_utf8(name_str(&p.name)).unwrap_or("?")
-                ),
-            ),
-            ("get", "radio") => w(
-                out,
-                format_args!(
-                    "> {}.{:03},{}.{},{},{}",
-                    p.radio.freq_khz / 1000,
-                    p.radio.freq_khz % 1000,
-                    p.radio.bw_hz / 1000,
-                    (p.radio.bw_hz % 1000) / 100,
-                    p.radio.sf,
-                    p.radio.cr
-                ),
-            ),
-            ("get", "tx") => w(out, format_args!("> {}", p.radio.tx_power_dbm)),
-            ("set", rest) if rest.starts_with("name ") => {
-                self.set_name(rest.get(5..).unwrap_or("").as_bytes(), st);
-                let _ = out.push_str("OK");
-            }
-            ("reboot", _) => {
-                let _ = self.actions.push_back(Action::Reboot);
-                let _ = out.push_str("OK");
-            }
-            _ => {
-                let _ = out.push_str("Unknown command");
+                let mut reply = crate::cli::Reply::new();
+                if self.console(cmd, &mut reply, st) == console::Delivery::Send {
+                    self.reply(&Response::CliReply {
+                        text: reply.as_bytes(),
+                    });
+                }
             }
         }
     }

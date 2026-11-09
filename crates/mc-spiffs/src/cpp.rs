@@ -108,7 +108,7 @@ pub fn prefs<F: Flash>(fs: &mut Spiffs<F>, base: &Prefs) -> Option<Prefs> {
                 (b"radio", b"cr") => p.radio.cr = u8v()?,
                 (b"radio", b"tx") => p.radio.tx_power_dbm = i8::try_from(int()?).ok()?,
                 (b"radio", b"cad") => p.cad_enabled = int()? != 0,
-                (b"radio", b"int_thr") => p.interference_threshold = i8::try_from(int()?).ok()?,
+                (b"radio", b"int_thr") => p.interference_threshold = u8v()?,
                 (b"radio", b"rxgain") => p.rx_boosted_gain = int()? != 0,
                 (b"radio", b"fem_rxgain") => p.fem_rxgain = int()? != 0,
                 (b"radio", b"agc_int") => p.agc_reset_interval = u8v()?,

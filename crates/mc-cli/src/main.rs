@@ -81,6 +81,12 @@ enum Cmd {
     Spiffs { image: std::path::PathBuf },
     /// The device's custom variables (`GET_CUSTOM_VARS`), or set one: `gps:1`, `gps_interval:60`.
     Var { port: String, set: Option<String> },
+    /// Device console commands (`RUN_CLI_COMMAND`), one reply per line: `mc cli $M5 "get radio" ver`.
+    Cli {
+        port: String,
+        #[arg(required = true)]
+        commands: Vec<String>,
+    },
     /// Make the device send its advert (zero hop unless `--flood`).
     Advert {
         port: String,
@@ -156,6 +162,7 @@ fn main() {
         Cmd::Inbox { port } => inbox(&port),
         Cmd::Spiffs { image } => spiffs(&image),
         Cmd::Var { port, set } => var(&port, set.as_deref()),
+        Cmd::Cli { port, commands } => console(&port, &commands),
         Cmd::Latency { port, count } => latency(&port, count),
         Cmd::Burst {
             a,
@@ -337,6 +344,25 @@ fn var(path: &str, set: Option<&str>) -> Result<(), String> {
         Some(v) => p.ask(&Command::SetCustomVar { var: v.as_bytes() })?,
         None => p.ask(&Command::GetCustomVars)?,
     };
+    Ok(())
+}
+
+fn console(path: &str, commands: &[String]) -> Result<(), String> {
+    let mut p = Port::open(path, "device")?;
+    p.ask(&Command::DeviceQuery { app_ver: APP_VER })?;
+    for c in commands {
+        match p.ask(&Command::RunCliCommand { cmd: c.as_bytes() }) {
+            Ok(f) => match Response::decode(&f) {
+                Ok(Response::CliReply { text }) => {
+                    println!("{c:<28} {:?}", String::from_utf8_lossy(text));
+                }
+                Ok(r) => println!("{c:<28} unexpected: {r}"),
+                Err(e) => println!("{c:<28} unreadable: {e:?}"),
+            },
+            // `reboot` and `poweroff` are never answered.
+            Err(_) => println!("{c:<28} (no reply)"),
+        }
+    }
     Ok(())
 }
 

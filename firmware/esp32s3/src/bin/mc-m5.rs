@@ -45,7 +45,7 @@ use log::{error, info};
 use mc_air::crypto::LocalIdentity;
 use mc_core::noise::NoiseFloor;
 use mc_core::rx_watch::{self, RxWatch};
-use mc_node::device::{Action, Info, UiEvent};
+use mc_node::device::{Action, FrontEnd, Info, UiEvent};
 use mc_node::{Device, Prefs};
 use mc_proto::{FROM_DEVICE, TO_DEVICE, USB_MAX, UsbDeframer, usb_frame};
 use mc_spiffs::{Spiffs, cpp};
@@ -53,7 +53,7 @@ use mc_ui::input::{Button, Gestures};
 use mc_ui::overlay::{self, Overlay, PixelRect};
 use mc_ui::panel::{self, COMPACT, Grid, LARGE};
 use mc_ui::refresh::{self, Kind, Policy};
-use mc_ui::{App, Ble, Ctx, Outcome, perform};
+use mc_ui::{App, Ble, Ctx, Intent, Outcome, perform};
 use oxymesh_esp32s3::battery::{Smoother, percent};
 use oxymesh_esp32s3::ble::{self as bt, Control, Server, Shared};
 use oxymesh_esp32s3::buzzer;
@@ -83,6 +83,7 @@ const INFO: Info = Info {
     build_date: "06-Nov-2026",
     max_tx_power: m5::TX_POWER_MAX,
     has_gps: true,
+    front_end: FrontEnd::None,
 };
 
 /// Heap in main DRAM, which it shares with the stack. With the second region: 98 KB for the
@@ -131,7 +132,7 @@ fn lora_of(p: &Prefs) -> LoRaConfig {
 fn channel_busy(
     radio: &mut Sx126x<'_>,
     receiving: bool,
-    (int_thresh, cad): (i8, bool),
+    (int_thresh, cad): (u8, bool),
     floor: i16,
     cfg: &LoRaConfig,
 ) -> bool {
@@ -735,6 +736,7 @@ async fn main(_spawner: Spawner) -> ! {
             }
 
             // Actions requested by the app.
+            let mut power_off = false;
             while let Some(a) = dev.poll_action() {
                 match a {
                     Action::Reboot => {
@@ -774,6 +776,8 @@ async fn main(_spawner: Spawner) -> ! {
                         let _ = ble_sh.control.try_send(Control::Pin(pin));
                         want_draw = true;
                     }
+                    // `poweroff` from the console: hibernate, as from the menu.
+                    Action::PowerOff => power_off = true,
                 }
             }
 
@@ -864,7 +868,8 @@ async fn main(_spawner: Spawner) -> ! {
                     app.tick(&c);
                 }
             }
-            for i in app.take_intents() {
+            let console = power_off.then_some(Intent::Hibernate);
+            for i in app.take_intents().into_iter().chain(console) {
                 let mut o = perform(&i, dev, mc_now(), &mut rng, &mut store);
                 if o == Outcome::CppFind {
                     o = Outcome::Cpp(match cpp_fs() {

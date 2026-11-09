@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use mc_air::crypto::LocalIdentity;
 use mc_core::{Duration, Instant};
-use mc_node::device::{Frame, Info, UiEvent};
+use mc_node::device::{Frame, FrontEnd, Info, UiEvent};
 use mc_node::history::HISTORY_RECORD;
 use mc_node::persist::{CHANNEL_RECORD, CONTACT_RECORD, PREFS_RECORD};
 use mc_node::{Device, Event, Node, Prefs, Storage};
@@ -83,6 +83,7 @@ pub const SIM_INFO: Info = Info {
     build_date: "06-Nov-2026",
     max_tx_power: 22,
     has_gps: false,
+    front_end: FrontEnd::None,
 };
 
 #[allow(missing_debug_implementations)]

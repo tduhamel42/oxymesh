@@ -127,7 +127,7 @@ Each outgoing frame goes out on **all** active interfaces; the first available f
 | 63 | SET_DEFAULT_FLOOD_SCOPE | len ≥ 48: name `[1..31]` (NUL, 1..30 chars), key `[32..47]`; shorter clears | saved; OK / ERR 6 | M:1989-2005 |
 | 64 | GET_DEFAULT_FLOOD_SCOPE | — | (28) + name[31] + key[16] (48 bytes), or 1 byte if none | M:2006-2014 |
 | 65 | SEND_RAW_PACKET | len ≥ 4; `[1]` priority, raw packet | transmitted as is; OK / ERR 6 / ERR 3 | M:2045-2058 |
-| 66 | RUN_CLI_COMMAND (v14+) | len ≥ 3; ASCII command | CLI_REPLY (29) + text; an `"xx|"` prefix is echoed back. Commands: `src/helpers/CommonRadioPrefs.cpp:31-231`, M:2079-2211 | M:1118-1131 |
+| 66 | RUN_CLI_COMMAND (v14+) | len ≥ 3; ASCII command (up to its first NUL) | CLI_REPLY (29) + text, or nothing for `reboot`/`poweroff`/`shutdown`; console in §6.1 | M:1118-1131 |
 
 ## 3. Response formats
 
@@ -238,6 +238,40 @@ Only one request (login, status, telemetry, discovery, binary) pending at a time
 - Channels: channel 0 is preloaded as "Public" with PSK `izOH6cXN6mrJ5e26oRXNcg==`, then replaced by the saved data (M:1002-1003).
 - Flood scope: `send_unscoped` > RAM scope (cmd 54) > default scope (saved, cmd 63) > none (M:491-525).
 
+### 6.1 Device console (`RUN_CLI_COMMAND`, remote CLI)
+
+`MyMesh::handleCommand` (M:2079-2211, `src/helpers/CommonRadioPrefs.cpp:31-231`; `mc_node::cli`, `device/console.rs`). Leading spaces are skipped (not trailing ones). If the text is longer than 4 characters and its third is `|`, the first 3 are echoed at the start of the reply. Anything not below: `Unknown command`. Every successful `set` is saved at once.
+
+| Command | Reply | Effect |
+|---|---|---|
+| `get radio` | `> <freq>,<bw>,<sf>,<cr>`, e.g. `> 869.6179809,62.5,8,8` | — |
+| `set radio f,bw,sf,cr` | `OK - reboot to apply`, or `Error, invalid radio params` (f 150-2500, bw 7-500, sf 5-12, cr 5-8) | saved; applied at the next start (or the next radio change) |
+| `get freq` | `> <freq>` | — |
+| `get af` / `set af x` | `> <af>` / `OK`, `ERROR: af must be 0-9` | airtime factor |
+| `get dutycycle` / `set dutycycle x` | `> 50.0%` / `OK - 50.0%`, `ERROR: dutycycle must be 1-100` | af = 100 / x − 1 |
+| `get int.thresh` / `set int.thresh n` | `> n` / `OK` (n as a `uint8_t`, unchecked) | listen before talk (`docs/spec/air.md` §4.5) |
+| `get cad` / `set cad on\|…` | `> on\|off` / `OK` (anything not starting with `on` is off) | hardware CAD before transmitting |
+| `get radio.rxgain` / `set radio.rxgain on\|…` | `> on\|off` / `OK` | boosted RX gain, applied at once |
+| `get tx` (or `get tx …`) | `> n`, the setting as a `uint8_t` (−9 prints 247) | — |
+| `set tx n` | `OK` (unchecked) | saved; applied at once when within −9 and the board maximum, otherwise at the next start, clamped (C++ M:993) |
+| `get rxdelay` / `set rxdelay x` | `> x` / `OK`, `Error, must be 0-20` | rx delay base |
+| `get agc.reset.interval` / `set agc.reset.interval s` | `> s` / `OK - interval rounded to s` (0-1020 s, kept in 4 s units) | AGC reset (`docs/spec/air.md` §4.5) |
+| `get path.hash.mode` / `set path.hash.mode n` | `> n` / `OK`, `Error, must be 0,1, or 2` | — |
+| `get multi.acks` / `set multi.acks n` | `> n` / `OK` | — |
+| `get txdelay`, `get direct.txdelay` / `set … x` | `> x` / `OK`, `Error, must be 0-2` | flood and direct retransmit delay factors |
+| `get radio.fem.rxgain` / `set radio.fem.rxgain on\|off` | `> on\|off` / `OK - LoRa FEM RX gain on\|off`, `Error: state must be on or off`; `Error: unsupported` on a front end without a switchable LNA; `Unknown command` on boards without one (M5) | front-end LNA (Heltec V4, `HeltecV4Board.cpp:89-122`) |
+| `reboot` | none | restart |
+| `poweroff`, `shutdown` | none | power down (the M5 hibernates) |
+| `set name s` / `get name` | `OK`, `Error, bad chars` (`[ ] \ : , ? *`) / `> name` | — |
+| `set pin n` | `> pin is now %06d` | `ble_pin` (deviation 9: applied at once) |
+| `board` | the manufacturer name | — |
+| `ver` | `<version> (Build: <date>)` | — |
+| `get tz.offset` / `set tz.offset h` | `> h` / `OK`, `Error, must be from -12 to +14` | hours (kept in minutes for the screen) |
+
+Numbers print as the C++ prints its `float`s: the nearest single-precision value, then `StrHelper::ftoa` (up to 7 decimals, digits generated after dropping low mantissa bits: 0.2 prints `0.1999999`) or `ftoa3` for the bandwidth (3 decimals, trailing zeros removed).
+
+Over the air (`BaseChatMesh.cpp:263-292`, M:538-548): a TXT_MSG of type CLI_COMMAND (3) from a contact whose flags have 0x10 (`isRemoteCLIAllowed`) runs through the same console; a non-empty reply goes back as CLI_DATA (type 1) 600 ms later, stamped with a unique time that differs from the command's, direct if the contact's path is known, otherwise flooded within the scope. From other contacts the command goes to the app as a message, as before.
+
 ## 7. Default settings (M5 BLE build)
 
 Name = first 4 bytes of the key as 8 uppercase hex digits; 869.618 MHz / 62.5 kHz / SF8 / CR 5; 22 dBm; airtime_factor 1.0; tx_delay 0.5; direct 0.2; rx_delay 0; multi_acks 0; manual_add 0; telemetry 0/0/0; advert_loc_policy 0; ble_pin 0; repeat disabled; path_hash_mode 0; autoadd 0/0; boosted RX gain; GPS disabled; no default scope; no advert at boot (M:916-1007).
@@ -282,7 +316,7 @@ Settings record v2 (160 bytes, `mc_node::persist`). Fields were added within v2 
 6. Automatic retries for messages sent from the screen.
 7. SEND_CHANNEL_TXT_MSG shorter than 7 bytes: ERR 1. The C++ does not check the length there and passes a negative text length to `memcpy` (M:1178-1197, BCM:528): likely crash, except for type ≠ 0 (ERR 1) or an invalid channel (ERR 2).
 8. Bytes read beyond the frame (§10): zeros. The C++ reads the rest of `cmd_frame` (M.h:267), a buffer of the global object `the_mesh` (`main.cpp:117`, hence zero at boot) that keeps the bytes of previous frames (only `cmd_frame[len]` is sometimes reset to 0): it reads zeros as long as no longer frame has gone through since boot. No known app sends such frames.
-9. A new PIN (`SET_DEVICE_PIN`, or from the screen) applies at once instead of at the next boot; back to 0 draws a new random PIN. The app does not see the active PIN either way.
+9. A new PIN (`SET_DEVICE_PIN`, the console's `set pin`, or the screen) applies at once instead of at the next boot; back to 0 draws a new random PIN. The app does not see the active PIN either way.
 10. USB stays a companion interface next to Bluetooth (the M5's C++ BLE build has Bluetooth only). As in §1.3, every frame goes out on both and either can send commands. With nothing on the USB port this is invisible.
 11. The GAP device name (read after connecting) holds at most 22 bytes, the `trouble-host` limit: `MeshCore-` and the first 13 bytes of the node name. The advertised name, which apps show while scanning, is whole up to 29 bytes as in the C++.
 
