@@ -119,6 +119,35 @@ fn to_panel(src: &Frame, dst: &mut Frame, invert: bool, rotate: bool) {
     }
 }
 
+/// Reset reasons of the last four boots, oldest first (`esp_hal::system::reset_reason`), kept
+/// in RTC memory across resets that leave the power on: what ended a run no log could see.
+/// The `debug-log` build prints them on its status line.
+mod boots {
+    #[esp_hal::ram(unstable(rtc_fast, persistent))]
+    static mut BOOTS: [u32; 5] = [0; 5];
+    const MAGIC: u32 = 0x0B00_75ED;
+
+    pub fn note() {
+        let r = esp_hal::system::reset_reason().map_or(0, |r| r as u32);
+        // SAFETY: written once at boot, before anything else runs; read only afterwards.
+        unsafe {
+            let b = &mut *(&raw mut BOOTS);
+            if b[0] != MAGIC {
+                *b = [MAGIC, 0, 0, 0, 0];
+            }
+            b.copy_within(2..5, 1);
+            b[4] = r;
+        }
+    }
+
+    #[cfg_attr(not(feature = "debug-log"), allow(dead_code))]
+    pub fn last() -> [u32; 4] {
+        // SAFETY: see `note`.
+        let b = unsafe { *(&raw const BOOTS) };
+        [b[1], b[2], b[3], b[4]]
+    }
+}
+
 /// RAM high-water marks, logged with `debug-log`: the main stack is painted at boot and the
 /// untouched part measured later; the heap counts its own peak.
 #[cfg(feature = "debug-log")]
@@ -241,6 +270,7 @@ async fn main(_spawner: Spawner) -> ! {
     esp_println::logger::init_logger_from_env();
     #[cfg(feature = "debug-log")]
     diag::paint();
+    boots::note();
     let p = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
     let lpwr = p.LPWR;
     let timg0 = TimerGroup::new(p.TIMG0);
@@ -558,8 +588,9 @@ async fn main(_spawner: Spawner) -> ! {
                     diag::log();
                     // Boot lines can be lost on the CH340 (FIFO overrun); the state again here.
                     info!(
-                        "status: up {} s; gps board {revision:?} ({highs}/10 high) {} (switch {}, {} B, {} sentences, {} errors, {} sats, fix {}); noise {} dBm; chip {:?} (0.1 °C); clock {}",
+                        "status: up {} s; boots {:x?}; gps board {revision:?} ({highs}/10 high) {} (switch {}, {} B, {} sentences, {} errors, {} sats, fix {}); noise {} dBm; chip {:?} (0.1 °C); clock {}",
                         Instant::now().as_secs(),
+                        boots::last(),
                         if gps_rx.as_ref().is_some_and(|g| g.is_on()) {
                             "on"
                         } else {

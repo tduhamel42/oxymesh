@@ -127,6 +127,7 @@ cargo run --release -p mc-cli -- latency <port> --count 150   # USB command roun
 cargo run --release -p mc-cli -- var <port> [gps:1]                 # custom variables (gps, gps_interval): read, or set one
 cargo run --release -p mc-cli -- cli <port> "get radio" ver        # device console commands (RUN_CLI_COMMAND), one reply per line
 cargo run --release -p mc-cli -- stats <port> [--every 60 --count 5]   # noise floor, airtime, battery, uptime, packet counters (GET_STATS)
+cargo run --release -p mc-cli -- log <port> --secs 30        # what a debug-log build prints, without resetting the device (espflash monitor resets it)
 cargo run --release -p mc-cli -- spiffs <image>             # what the C++ firmware left in a SPIFFS image (espflash read-flash 0x290000 0x160000; keep it out of git)
 python3 -I testdata/spiffs/gen.py                           # the made-up C++ SPIFFS test image (testdata/spiffs/cpp.bin)
 cargo run --release -p mc-cli -- duo --a $M5 --b $REF   # two companions talk (adverts, DMs, channel, pings), zero-hop; --flood for more

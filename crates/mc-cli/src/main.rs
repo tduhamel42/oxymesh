@@ -81,6 +81,13 @@ enum Cmd {
     Spiffs { image: std::path::PathBuf },
     /// The device's custom variables (`GET_CUSTOM_VARS`), or set one: `gps:1`, `gps_interval:60`.
     Var { port: String, set: Option<String> },
+    /// The text a `debug-log` firmware prints on its serial port, for `secs` seconds, without
+    /// resetting the device (unlike `espflash monitor`).
+    Log {
+        port: String,
+        #[arg(long, default_value_t = 20)]
+        secs: u64,
+    },
     /// Radio, core and packet counters (`GET_STATS` 1, 0, 2): noise floor, airtime, errors.
     /// `--every N` repeats every N seconds, `--count` times.
     Stats {
@@ -176,6 +183,7 @@ fn main() {
         Cmd::Var { port, set } => var(&port, set.as_deref()),
         Cmd::Cli { port, commands } => console(&port, &commands),
         Cmd::Stats { port, every, count } => stats(&port, every, count),
+        Cmd::Log { port, secs } => log(&port, secs),
         Cmd::Latency { port, count } => latency(&port, count),
         Cmd::Burst {
             a,
@@ -361,6 +369,29 @@ fn var(path: &str, set: Option<&str>) -> Result<(), String> {
         Some(v) => p.ask(&Command::SetCustomVar { var: v.as_bytes() })?,
         None => p.ask(&Command::GetCustomVars)?,
     };
+    Ok(())
+}
+
+fn log(path: &str, secs: u64) -> Result<(), String> {
+    use std::io::{Read, Write};
+    let mut port = serialport::new(path, 115_200)
+        .timeout(std::time::Duration::from_millis(200))
+        .open()
+        .map_err(|e| format!("{path}: {e}"))?;
+    let end = std::time::Instant::now() + std::time::Duration::from_secs(secs);
+    let mut buf = [0u8; 512];
+    let mut out = std::io::stdout();
+    while std::time::Instant::now() < end {
+        match port.read(&mut buf) {
+            Ok(n) => {
+                let _ =
+                    out.write_all(&String::from_utf8_lossy(&buf[..n]).into_owned().into_bytes());
+                let _ = out.flush();
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {}
+            Err(e) => return Err(format!("{path}: {e}")),
+        }
+    }
     Ok(())
 }
 

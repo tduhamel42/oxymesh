@@ -2,6 +2,17 @@
 
 Log of tests on the real devices. Each entry: date, setup, command, result.
 
+## 2026-11-09/10 — radio housekeeping, console, board layer, GPS rework on the M5 (R1, R2, B1, G2)
+
+- Setup: ThinkNode M5 (board v1.0) on USB, firmware after B1/G2 (`scripts/flash.sh m5`); Heltec V4.3 running MeshCore C++ v1.18 on USB as the other end of `mc duo`. Region fr (869.618 MHz, SF8, 62.5 kHz).
+- **Flashing over the previous oxymesh**: identity, radio settings and the clock chip's time kept; the settings record written by the previous firmware reads back with the new fields at their C++ defaults (AGC reset off, boosted RX gain on).
+- **Console** (`mc cli`): 22 commands, every reply in the C++ format (`> 869.6179809,62.5,8,5`, `> 0.1999999` for the direct TX delay, `ab|> name`, `Unknown command` for `clock` and `radio.fem.rxgain` on the M5, `Error, bad chars`). `poweroff` gets no reply and hibernates the M5; the top button wakes it.
+- **USB latency** (`mc latency --count 150`): 10 / 12 / 12 ms (min / median / max), none over 100 ms.
+- **AGC reset every 8 s, `int.thresh` 10, CAD on**: adverts go out, no CAD-timeout flag; noise floor steady at −111/−112 dBm over 7 minutes; `mc duo` with the Heltec: adverts, DMs both ways, channel datagrams and pings received (12/13 and 8/13, see below).
+- **GPS** (`debug-log` build): the L76K sends about 560 bytes and 2 sentences per second, no read errors (no fix indoors).
+- **`mc duo` M5 ↔ Heltec**: 26 runs. Early in the session, 4 of the first 5 runs (AGC/CAD/threshold on and off alike) went wrong around a DM from the Heltec: twice its delivery acknowledgement was lost, twice the host's serial port broke ("Broken pipe"). The M5 had restarted after two of them (uptime); in one the port broke while the M5 kept running, so the USB bridge itself went away. Not seen again in the 21 runs since, including 6 right after a wake from hibernation and 8 with a phone app connected (those 8 fail on cross-talk only: with a phone connected the device's frames also reach USB, deviation 10, so `mc duo` reads the app's replies). Open: the cause. Firmware builds now keep the reset reasons of their last four boots in RTC memory (`boots` on the `debug-log` status line, read with `mc log`, which does not reset the device); a full chip reset (flashing, `espflash monitor`) clears them.
+- RAM and size: image 1,333,392 bytes of 1,835,008 (72.7 %).
+
 ## 2026-11-05 — `mc airtest`: mc-air against MeshCore C++ v1.18 (MC1)
 
 - Setup: Heltec V4 running `companion_radio_usb` v1.18.0 (reference, `/dev/cu.usbmodem141101`); ThinkNode M5 running `companion_radio_usb` v1.18.0-81dbae5 (device under test, `/dev/cu.wchusbserial120`). Region fr: 869.618 MHz, 62.5 kHz, SF8, CR 4/8.
