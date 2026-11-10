@@ -110,8 +110,10 @@ impl FrontEnd for Fem<'_> {
         }
     }
 
+    /// The LNA setting, applied at once: the radio is receiving whenever settings change.
     fn apply(&mut self, prefs: &Prefs) {
         self.lna = prefs.fem_rxgain;
+        self.rx();
     }
 }
 

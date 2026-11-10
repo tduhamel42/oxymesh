@@ -21,7 +21,7 @@ ESP32-S3R2: 16 MB flash, 2 MB PSRAM (unused so far), 240 MHz. **Native USB** (US
 | | KCT8103L | GPIO2 = CSD (enable), GPIO5 = CTX (in RX: low = LNA on, high = bypass; high in TX) | MC, MT |
 | | gain | +11 dB up to 15 dBm in, +10 at 16-17, +9 at 18-19, +7 at 21 (GC1109, measured); 28 dBm out at most | MT |
 | OLED | controller | SSD1306/SSD1315, 128×64, I2C 0x3C on SDA 17 / SCL 18, reset GPIO21 | MC, LN |
-| | power | Vext, GPIO36, **active low** (MT, LN; MC's `PIN_VEXT_EN_ACTIVE=HIGH` disagrees: to confirm on the board) | MT, LN |
+| | power | Vext, GPIO36, **active low** (MT, LN; MC's `PIN_VEXT_EN_ACTIVE=HIGH` is wrong for this: checked on a V4.3, 2026-11-10) | MT, LN, test |
 | Button | user (PRG) | GPIO0, active low, pull-up; wake-up source | MC, MT |
 | LED | white | GPIO35 (MC: TX light) | MC, MT |
 | Battery | voltage | ADC GPIO1, 2.5 dB attenuation, enabled by GPIO37 high; multiplier 5.42 (MC) or 4.9 × 1.045 (MT): to calibrate | MC, MT |
@@ -36,7 +36,7 @@ ESP32-S3R2: 16 MB flash, 2 MB PSRAM (unused so far), 240 MHz. **Native USB** (US
 
 ## 4. Flash
 
-`firmware/esp32s3/partitions-heltec-v4.csv`: nvs, otadata, `spiffs` (0xC90000, 3.4 MB) and coredump at the C++'s places (arduino-esp32 `default_16MB.csv`); the app at 0x10000; `mcdata` (768 KB) at 0x650000, inside the C++'s second OTA slot. To confirm on the device before the first flash (4 KB at 0x8000). First boot imports the C++ node from `spiffs` like the M5 (ADR-0006).
+`firmware/esp32s3/partitions-heltec-v4.csv`: nvs, otadata, `spiffs` (0xC90000, 3.4 MB) and coredump at the C++'s places (arduino-esp32 `default_16MB.csv`, read from a V4.3 running C++ v1.18 on 2026-11-10: nvs 0x9000, otadata 0xE000, app0 0x10000 and app1 0x650000 of 6.25 MB each, spiffs 0xC90000, coredump 0xFF0000); the app at 0x10000; `mcdata` (768 KB) at 0x650000, inside the C++'s second OTA slot. First boot imports the C++ node from `spiffs` like the M5 (ADR-0006).
 
 `scripts/flash.sh heltec-v4 <port>` builds and flashes with this table.
 

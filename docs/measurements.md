@@ -2,6 +2,15 @@
 
 Log of tests on the real devices. Each entry: date, setup, command, result.
 
+## 2026-11-10 — the Heltec V4 on oxymesh (B2)
+
+- Setup: Heltec V4.3 (KCT8103L front end) that ran MeshCore C++ v1.18; its whole flash read twice into a temp folder outside the repository (identical, it holds the private key) to put the C++ back afterwards; partition table read from it (the C++ 16 MB layout, as `partitions-heltec-v4.csv` assumed). `scripts/flash.sh heltec-v4`: image 947,552 bytes.
+- **First boot**: the C++ node imported (same key and name, 869.618 MHz / 62.5 kHz / SF8 / CR 4/8, TX 10 dBm, its contacts and channels); front end found as the KCT8103L ("Heltec V4.3 OLED", like the C++); console `radio.fem.rxgain` answers.
+- **LNA**: noise floor −79 dBm with the LNA on at boot, −104 to −102 dBm with it off (about the 21 dB it adds). Found and fixed: a new LNA setting only took effect after the next transmission. Switching it back on leaves the floor low until an AGC reset or a restart, as in the C++ sampler (it only takes samples near the current floor).
+- **`mc duo` M5 ↔ Heltec, both oxymesh**: 2 runs, 12/12 each; DM round trips 1078 to 1240 ms, pings 1023 to 1032 ms.
+- **Screen and button** (checked by hand): status pages, click / double click / long press as specified; Vext is active low.
+- Battery: 4395 mV read with the starting multiplier (no battery fitted; to compare with the C++'s reading).
+
 ## 2026-11-09/10 — radio housekeeping, console, board layer, GPS rework on the M5 (R1, R2, B1, G2)
 
 - Setup: ThinkNode M5 (board v1.0) on USB, firmware after B1/G2 (`scripts/flash.sh m5`); Heltec V4.3 running MeshCore C++ v1.18 on USB as the other end of `mc duo`. Region fr (869.618 MHz, SF8, 62.5 kHz).
